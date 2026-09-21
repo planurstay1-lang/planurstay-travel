@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Book Flight — PlanurStay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://payment-wrapper.liteapi.travel/dist/liteAPIPayment.js?v=a1"></script>
+</head>
+<body>
+
+  <header>
+    <div class="container header-inner">
+      <a href="/" class="logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 16v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2"/>
+          <polyline points="21 12 12 8 3 12"/>
+          <polyline points="19 18 12 14 5 18"/>
+          <circle cx="12" cy="14" r="2" fill="currentColor" stroke="none"/>
+        </svg>
+        PlanurStay
+      </a>
+      <nav class="nav-tabs">
+        <a href="/hotels" class="nav-tab hotel-tab" id="navHotelsTab">🏨 Hotels</a>
+        <a href="/flights" class="nav-tab flight-tab active" id="navFlightsTab">✈️ Flights</a>
+      </nav>
+      <div class="header-actions">
+        <a href="/my-bookings" class="btn-ghost" id="myBookingsBtn">My Bookings</a>
+        <a href="/login" class="btn-ghost" id="signInBtn">Sign In</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="results-page">
+    <div class="container">
+
+      <!-- Loader -->
+      <div id="loader" class="loading-text" style="display:none">
+        <span class="spinner"></span> Loading flight...
+      </div>
+
+      <!-- Not found -->
+      <div id="noFlight" class="empty-state" style="display:none">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        <h3>Flight not found</h3>
+        <p>This flight may no longer be available. Try searching again.</p>
+        <a href="/flights" class="btn-primary">Search flights</a>
+      </div>
+
+      <!-- Flight detail -->
+      <div id="flightDetail" style="display:none">
+
+        <div style="margin-bottom:20px">
+          <a href="/flights" class="back-link" style="font-size:14px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+            Back to results
+          </a>
+        </div>
+
+        <!-- Route display -->
+        <div class="flight-hero">
+          <div class="flight-bright-route">
+            <div class="br-big-seg" id="brSeg1">
+              <img id="brLogo1" src="" alt="" class="br-logo" onerror="this.style.display='none'">
+              <div class="br-times">
+                <span class="br-time" id="brDepTime1">--:--</span>
+                <span class="br-time-type">Depart</span>
+                <div class="br-route-line">
+                  <span class="br-route-name" id="brFrom1"></span>
+                  <div class="br-arrow">→</div>
+                  <span class="br-route-name" id="brTo1"></span>
+                </div>
+                <span class="br-time" id="brArrTime1" style="color:var(--text-secondary);font-weight:600">--:--</span>
+                <span class="br-time-type" id="brArrDate1"></span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;color:var(--text-muted);font-size:10px;gap:2px" id="brConnector">
+              <div style="width:2px;height:24px;background:var(--border)"></div>
+              <div style="width:5px;height:5px;border-radius:50%;background:var(--text-muted)"></div>
+              <div style="width:2px;height:24px;background:var(--border)"></div>
+            </div>
+            <div class="br-big-seg" id="brSeg2" style="display:none">
+              <img id="brLogo2" src="" alt="" class="br-logo" onerror="this.style.display='none'">
+              <div class="br-times">
+                <span class="br-time" id="brDepTime2">--:--</span>
+                <span class="br-time-type">Depart</span>
+                <div class="br-route-line">
+                  <span class="br-route-name" id="brFrom2"></span>
+                  <div class="br-arrow">→</div>
+                  <span class="br-route-name" id="brTo2"></span>
+                </div>
+                <span class="br-time" id="brArrTime2" style="color:var(--text-secondary);font-weight:600">--:--</span>
+                <span class="br-time-type" id="brArrDate2"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flight-meta-strip">
+            <div class="meta-item">
+              <span class="meta-label">Duration</span>
+              <span class="meta-value" id="fdmDuration">--</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Stops</span>
+              <span class="meta-value" id="fdmStops">--</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Airline</span>
+              <span class="meta-value" id="fdmAirline">--</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Meal</span>
+              <span class="meta-value" id="fdmMeal">--</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Check-in</span>
+              <span class="meta-value" id="fdmCheckin">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Price hero -->
+        <div class="flight-price-hero">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:0.7;margin-bottom:6px">Total price</div>
+          <div class="price-amount" id="flightPrice">$0</div>
+          <div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:6px">
+            <span class="price-currency" id="flightCurrency">USD</span>
+            <span style="font-size:12px;opacity:0.7">· per passenger</span>
+            <span style="font-size:12px;opacity:0.7" id="fareFamily"></span>
+          </div>
+        </div>
+
+        <!-- Info cards -->
+        <div class="flight-info-grid">
+          <div class="info-card">
+            <div class="info-card-title">Baggage</div>
+            <div id="baggageInfo" style="font-size:13px;line-height:1.6"></div>
+          </div>
+          <div class="info-card">
+            <div class="info-card-title">Cancellation</div>
+            <div id="cancellationInfo" style="font-size:13px;line-height:1.6"></div>
+          </div>
+          <div class="info-card">
+            <div class="info-card-title">Seat Selection</div>
+            <div id="seatInfo" style="font-size:13px;line-height:1.6"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Payment section -->
+      <div id="paymentSection" style="display:none">
+        <div class="payment-box">
+          <h2 class="section-title-side" style="margin-bottom:16px">Complete your booking</h2>
+          <div id="paymentSummary" class="payment-summary"></div>
+
+          <form id="flightBookForm">
+            <div class="form-row">
+              <div class="form-field flex-1">
+                <label for="fFirstName">First Name</label>
+                <input type="text" id="fFirstName" required placeholder="John">
+              </div>
+              <div class="form-field flex-1">
+                <label for="fLastName">Last Name</label>
+                <input type="text" id="fLastName" required placeholder="Smith">
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="fEmail">Email</label>
+              <input type="email" id="fEmail" required placeholder="john@example.com">
+            </div>
+            <div class="form-field">
+              <label for="fPhone">Phone</label>
+              <input type="tel" id="fPhone" required placeholder="+1 555-0123">
+            </div>
+            <div class="form-row">
+              <div class="form-field flex-1">
+                <label for="fNationality">Nationality (2-letter code)</label>
+                <input type="text" id="fNationality" value="US" required placeholder="US" style="text-transform:uppercase">
+              </div>
+              <div class="form-field" style="max-width:150px">
+                <label for="fBirthday">Birthday</label>
+                <input type="date" id="fBirthday" required>
+              </div>
+            </div>
+
+            <div class="voucher-field" style="margin-top:4px">
+              <input type="text" id="fVoucher" placeholder="Voucher code (optional)" style="flex:1;padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px">
+            </div>
+
+            <div id="paymentPortal" class="payment-sdk-box" style="margin-top:12px">
+              <div style="color:var(--text-secondary);font-size:13px;padding:8px">
+                Payment portal will load here...
+              </div>
+            </div>
+
+            <button type="button" class="payment-submit" id="initPaymentBtn" style="margin-top:12px">
+              Proceed to Payment
+            </button>
+          </form>
+
+          <div class="payment-note" style="margin-top:12px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Secure checkout via LiteAPI. Your card details are never stored on our servers.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <div class="footer-bottom">
+        <span>© 2026 PlanurStay. All rights reserved.</span>
+        <span>Powered by LiteAPI</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/flight-book.js"></script>
+
+</body>
+</html>

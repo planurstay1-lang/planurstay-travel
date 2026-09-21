@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PlanurStay — Hotels & Flights Worldwide</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://payment-wrapper.liteapi.travel/dist/liteAPIPayment.js?v=a1"></script>
+</head>
+<body>
+
+  <!-- ═══ HEADER ═══ -->
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a href="/" class="site-logo">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 16v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2"/>
+          <polyline points="21 12 12 8 3 12"/>
+          <polyline points="19 18 12 14 5 18"/>
+          <circle cx="12" cy="14" r="2" fill="currentColor" stroke="none"/>
+        </svg>
+        PlanurStay
+      </a>
+      <nav class="site-nav">
+        <a href="/hotels" class="nav-link active" data-tab="stays">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          Stays
+        </a>
+        <a href="/flights" class="nav-link" data-tab="flights">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+          Flights
+        </a>
+        <a href="/hotels" class="nav-link">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+          Deals
+        </a>
+        <a href="/my-bookings" class="nav-link">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          My Trips
+        </a>
+      </nav>
+      <div class="header-actions">
+        <a href="/login" class="btn-ghost-sm" id="signInBtn">Sign In</a>
+        <a href="/login" class="btn-outline-sm" id="joinBtn">Join Free</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ═══ HERO ═══ -->
+    <section class="hero">
+      <div class="hero-fallback">
+        <img src="https://images.unsplash.com/photo-1488646953054-079a0076e178?w=1600&h=900&fit=crop&auto=format" alt="" loading="eager">
+      </div>
+      <div class="hero-overlay"></div>
+      <div class="hero-content">
+        <div class="hero-content-inner">
+
+          <!-- Trust strip -->
+          <div class="trust-strip">
+            <span class="trust-label">Trusted by travelers worldwide</span>
+            <span class="trust-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
+              Secure booking
+            </span>
+            <span class="trust-item">
+              24/7
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              Customer support
+            </span>
+            <span class="trust-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+              Best Price Guarantee
+            </span>
+            <span class="trust-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
+              1M+ properties
+            </span>
+          </div>
+
+          <!-- Headline -->
+          <div class="hero-eyebrow">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            Book worldwide — live prices, every time
+          </div>
+          <h1 class="hero-title">Find your next trip in seconds</h1>
+          <p class="hero-subtitle">Search over a million hotels and flights across the globe. Real-time prices, instant confirmation, zero hidden fees.</p>
+
+          <!-- ═══ UNIFIED TABBED SEARCH CARD ═══ -->
+          <div class="search-section">
+            <div class="search-card-wrapper">
+              <div class="search-card">
+
+                <!-- Tab bar -->
+                <div class="search-tabs">
+                  <button class="search-tab active" data-tab="stays" id="tabStays">
+                    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    Stays
+                    <span class="tab-count">1M+</span>
+                  </button>
+                  <button class="search-tab" data-tab="flights" id="tabFlights">
+                    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                    Flights
+                    <span class="tab-count">500+ airlines</span>
+                  </button>
+                  <button class="search-tab" data-tab="bundle" id="tabBundle">
+                    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+                    Flight + Hotel
+                  </button>
+                </div>
+
+                <!-- Card body — Stays form -->
+                <div class="search-card-body" id="staysForm">
+                  <form id="hotelSearchForm" class="search-form">
+                    <div class="search-form-row">
+                      <div class="search-field">
+                        <label class="search-field-label">
+                          <svg class="sf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                          Destination
+                        </label>
+                        <div class="search-input-wrap">
+                          <svg class="sf-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                          <input type="text" class="search-input" id="hotelCity" placeholder="Where are you going?" required autocomplete="off">
+                        </div>
+                        <span class="sf-tag free-cancel">Free cancellation on most hotels</span>
+                      </div>
+                      <div class="search-field compact">
+                        <label class="search-field-label">
+                          <svg class="sf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                          Country
+                        </label>
+                        <div class="search-input-wrap">
+                          <svg class="sf-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                          <select class="search-select" id="hotelCountry">
+                            <option value="US">United States</option>
+                            <option value="GB">United Kingdom</option>
+                            <option value="FR">France</option>
+                            <option value="DE">Germany</option>
+                            <option value="IT">Italy</option>
+                            <option value="ES">Spain</option>
+                            <option value="AE">UAE</option>
+                            <option value="TH">Thailand</option>
+                            <option value="JP">Japan</option>
+                            <option value="AU">Australia</option>
+                            <option value="CA">Canada</option>
+                            <option value="IN">India</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="search-form-row">
+                      <div class="search-field">
+                        <label class="search-field-label">
+                          <svg class="sf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                          Check-in
+                          <span class="sf-tag flexible">Flexible dates</span>
+                        </label>
+                        <div class="search-input-wrap">
+                          <svg class="sf-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                          <input type="date" class="search-input" id="hotelCheckin" required>
+                        </div>
+                      </div>
+                      <div class="search-field">
+                        <label class="search-field-label">
+                          <svg class="sf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                          Check-out
+                        </label>
+                        <div class="search-input-wrap">
+                          <svg class="sf-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                          <input type="date" class="search-input" id="hotelCheckout" required>
+                        </div>
+                      </div>
+                      <div class="search-field compact">
+                        <label class="search-field-label">
+                          <svg class="sf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-4h-2"/><circle cx="17" cy="7" r="4"/></svg>
+                          Guests
+                        </label>
+                        <div class="search-input-wrap">
+                          <svg class="sf-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-4h-2"/><circle cx="17" cy="7" r="4"/></svg>
+                          <select class="search-select" id="hotelAdults">
+                            <option value="1">1 Adult</option>
+                            <option value="2" selected>2 Adults</option>
+                            <option value="3">3 Adults</option>
+                            <option value="4">4 Adults</option>
+                            <option value="5">5 Adults</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="search-cta">
+                      <button type="submit" class="search-btn">
+                        <svg class="search-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                        Search Hotels
+                      </button>
+                      <div class="search-cta-note">
+                        <strong>Free to search</strong><br>
+                        No account needed
+                      </div>
+                    </div>
+                  </form>
+                </div>
+
+                <!-- Card body — Flights form -->
+                <div class="search-card-body" id="flightsForm" style="display:none">
+                  <form id="flightSearchForm" class="search-form">
+                    <div class="search-form-row">
+                      <div class="search-field">
+                        <label class="search-field-label">
+                          <svg class="sf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                          From
+                        </label>
+                        <div class="search-input-wrap">
+                          <svg class="sf-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                          <input type="text" class="search-input" id="flightFrom" placeholder="New York (JFK)" required autocomplete="off" aria-label="Departure airport">
+                          <div id="flightFromSuggestions" class="autocomplete-suggestions"></div>
+                        </div>
+                      </div>
+                      <div class="search-field">
+                        <label class="search-field-label">
+                          <svg class="sf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/></svg>
+                          To
+                        </label>
+                        <div class="search-input-wrap">
+                          <svg class="sf-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/></svg>
+                          <input type="text" class="search-input" id="flightTo" placeholder="Destination airport" required autocomplete="off" aria-label="Destination airport">
+                          <div id="flightToSuggestions" class="autocomplete-suggestions"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="search-form-row">
+                      <div class="search-field">
+                        <label class="search-field-label">
+                          <svg class="sf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                          Depart
+                        </label>
+                        <div class="search-input-wrap">
+                          <svg class="sf-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                          <input type="date" class="search-input" id="flightDepart" required>
+                        </div>
+                      </div>
+                      <div class="search-field">
+                        <label class="search-field-label">
+                          <svg class="sf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                          Return
+                        </label>
+                        <div class="search-input-wrap">
+                          <svg class="sf-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                          <input type="date" class="search-input" id="flightReturn">
+                        </div>
+                      </div>
+                      <div class="search-field compact">
+                        <label class="search-field-label">
+                          <svg class="sf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-4h-2"/><circle cx="17" cy="7" r="4"/></svg>
+                          Passengers
+                        </label>
+                        <div class="search-input-wrap">
+                          <svg class="sf-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-4h-2"/><circle cx="17" cy="7" r="4"/></svg>
+                          <select class="search-select" id="flightAdults">
+                            <option value="1">1 Adult</option>
+                            <option value="2" selected>2 Adults</option>
+                            <option value="3">3 Adults</option>
+                            <option value="4">4 Adults</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="search-cta">
+                      <button type="submit" class="search-btn alt">
+                        <svg class="search-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4z"/></svg>
+                        Search Flights
+                      </button>
+                      <div class="search-cta-note">
+                        <strong>500+ airlines</strong><br>
+                        Best fare guaranteed
+                      </div>
+                    </div>
+                  </form>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ DEALS SECTION ═══ -->
+    <section class="deals-section">
+      <div class="container">
+        <div class="section-head">
+          <h2 class="section-title">Today's top deals</h2>
+          <a href="/hotels" class="section-link">View all deals →</a>
+        </div>
+        <div class="deals-grid">
+
+          <a href="/hotels?city=Paris&countryCode=FR" class="deal-card">
+            <img class="deal-image" src="https://images.unsplash.com/photo-1502602898657-3e91760c9e93?w=400&h=250&fit=crop" alt="Paris" loading="lazy">
+            <span class="deal-badge sale">-28%</span>
+            <div class="deal-body">
+              <div class="deal-location">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                Paris, France
+              </div>
+              <div class="deal-name">Le Marais boutique hotel</div>
+              <div class="deal-meta">
+                <span class="deal-meta-item">⭐ 9.2</span>
+                <span class="deal-meta-item">Free cancel</span>
+                <span class="deal-meta-item">Breakfast</span>
+              </div>
+              <div class="deal-footer">
+                <span class="deal-price">€68</span>
+                <span class="deal-price-unit">/ night</span>
+                <button class="deal-book-btn">Book now</button>
+              </div>
+            </div>
+          </a>
+
+          <a href="/hotels?city=London&countryCode=GB" class="deal-card">
+            <img class="deal-image" src="https://images.unsplash.com/photo-1513635269975-59546716d307?w=400&h=250&fit=crop" alt="London" loading="lazy">
+            <span class="deal-badge new">New</span>
+            <div class="deal-body">
+              <div class="deal-location">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                London, UK
+              </div>
+              <div class="deal-name">Kings Cross hidden gem</div>
+              <div class="deal-meta">
+                <span class="deal-meta-item">⭐ 8.9</span>
+                <span class="deal-meta-item">Bar</span>
+                <span class="deal-meta-item">WiFi</span>
+              </div>
+              <div class="deal-footer">
+                <span class="deal-price">£72</span>
+                <span class="deal-price-unit">/ night</span>
+                <button class="deal-book-btn">Book now</button>
+              </div>
+            </div>
+          </a>
+
+          <a href="/hotels?city=Tokyo&countryCode=JP" class="deal-card">
+            <img class="deal-image" src="https://images.unsplash.com/photo-1549692521-ff40c63fe5fa?w=400&h=250&fit=crop" alt="Tokyo" loading="lazy">
+            <span class="deal-badge deal">Flash deal</span>
+            <div class="deal-body">
+              <div class="deal-location">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                Tokyo, Japan
+              </div>
+              <div class="deal-name">Shibuya modern stay</div>
+              <div class="deal-meta">
+                <span class="deal-meta-item">⭐ 9.0</span>
+                <span class="deal-meta-item">Onsen</span>
+                <span class="deal-meta-item">City view</span>
+              </div>
+              <div class="deal-footer">
+                <span class="deal-price">¥8,400</span>
+                <span class="deal-price-unit">/ night</span>
+                <button class="deal-book-btn">Book now</button>
+              </div>
+            </div>
+          </a>
+
+          <a href="/flights?from=NYC&to=PAR&depart=2026-09-20&return=2026-09-27" class="deal-card">
+            <img class="deal-image" src="https://images.unsplash.com/photo-1436491865332-7a61a1086c68?w=400&h=250&fit=crop" alt="Flight deal" loading="lazy">
+            <span class="deal-badge sale">-35%</span>
+            <div class="deal-body">
+              <div class="deal-location">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                New York → Paris • Round trip
+              </div>
+              <div class="deal-name">Economy fare — nonstop</div>
+              <div class="deal-meta">
+                <span class="deal-meta-item">🛩 7h 30m</span>
+                <span class="deal-meta-item">✈ Air France</span>
+              </div>
+              <div class="deal-footer">
+                <span class="deal-price">$486</span>
+                <span class="deal-price-unit">/ person</span>
+                <button class="deal-book-btn">Book now</button>
+              </div>
+            </div>
+          </a>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ STATS SECTION ═══ -->
+    <section class="stats-section">
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-number">1M+</div>
+          <div class="stat-label"> Hotels worldwide</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number">500+</div>
+          <div class="stat-label"> Airlines</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number">200+</div>
+          <div class="stat-label"> Countries</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number">24/7</div>
+          <div class="stat-label"> Customer support</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ POPULAR DESTINATIONS ═══ -->
+    <section class="dest-section">
+      <div class="container">
+        <div class="section-head">
+          <h2 class="section-title">Popular destinations</h2>
+          <a href="/hotels" class="section-link">Explore all →</a>
+        </div>
+        <div class="dest-grid">
+          <a href="/hotels?city=Paris&countryCode=FR" class="dest-card">
+            <img src="https://images.unsplash.com/photo-1502602898657-3e91760c9e93?w=400&h=300&fit=crop" alt="Paris" loading="lazy">
+            <div class="dest-overlay">
+              <div class="dest-name">Paris</div>
+              <div class="dest-price">From €68/night</div>
+            </div>
+          </a>
+          <a href="/hotels?city=London&countryCode=GB" class="dest-card">
+            <img src="https://images.unsplash.com/photo-1513635269975-59546716d307?w=400&h=300&fit=crop" alt="London" loading="lazy">
+            <div class="dest-overlay">
+              <div class="dest-name">London</div>
+              <div class="dest-price">From £72/night</div>
+            </div>
+            <span class="dest-hot">🔥 Trending</span>
+          </a>
+          <a href="/hotels?city=New+York&countryCode=US" class="dest-card">
+            <img src="https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=400&h=300&fit=crop" alt="New York" loading="lazy">
+            <div class="dest-overlay">
+              <div class="dest-name">New York</div>
+              <div class="dest-price">From $95/night</div>
+            </div>
+          </a>
+          <a href="/hotels?city=Tokyo&countryCode=JP" class="dest-card">
+            <img src="https://images.unsplash.com/photo-1549692521-ff40c63fe5fa?w=400&h=300&fit=crop" alt="Tokyo" loading="lazy">
+            <div class="dest-overlay">
+              <div class="dest-name">Tokyo</div>
+              <div class="dest-price">From ¥8,400/night</div>
+            </div>
+            <span class="dest-hot">✈ Deals</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer class="site-footer">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a href="/" class="site-logo" style="color:white">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2"/>
+            <polyline points="21 12 12 8 3 12"/>
+            <polyline points="19 18 12 14 5 18"/>
+            <circle cx="12" cy="14" r="2" fill="currentColor" stroke="none"/>
+          </svg>
+          PlanurStay
+        </a>
+        <p>Your gateway to the world. Book hotels and flights with live prices, instant confirmation, and 24/7 support. Powered by LiteAPI.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Book</h4>
+        <a href="/hotels">Hotels</a>
+        <a href="/flights">Flights</a>
+        <a href="/">Deals</a>
+        <a href="/hotels">Destinations</a>
+      </div>
+      <div class="footer-col">
+        <h4>Account</h4>
+        <a href="/login">Sign In</a>
+        <a href="/login">Join Free</a>
+        <a href="/my-bookings">My Trips</a>
+      </div>
+      <div class="footer-col">
+        <h4>Company</h4>
+        <a href="#">About</a>
+        <a href="#">Careers</a>
+        <a href="#">Press</a>
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 PlanurStay. All rights reserved.</span>
+      <span>Powered by LiteAPI</span>
+    </div>
+  </footer>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/homepage.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — PlanurStay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <header>
+    <div class="container header-inner">
+      <a href="/" class="logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 16v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2"/>
+          <polyline points="21 12 12 8 3 12"/>
+          <polyline points="19 18 12 14 5 18"/>
+          <circle cx="12" cy="14" r="2" fill="currentColor" stroke="none"/>
+        </svg>
+        PlanurStay
+      </a>
+      <nav class="nav-tabs">
+        <a href="/hotels" class="nav-tab hotel-tab" id="navHotelsTab">🏨 Hotels</a>
+        <a href="/flights" class="nav-tab flight-tab" id="navFlightsTab">✈️ Flights</a>
+      </nav>
+      <div class="header-actions">
+        <a href="/my-bookings" class="btn-ghost" id="myBookingsBtn">My Bookings</a>
+        <a href="/login" class="btn-ghost" id="signInBtn">Sign In</a>
+      </div>
+    </div>
+  </header>
+
+  <main style="min-height:calc(100vh - 80px);display:flex;align-items:center;justify-content:center;padding:24px">
+    <div style="width:100%;max-width:420px">
+      <!-- Sign In -->
+      <div class="auth-card" id="loginCard">
+        <h1 class="auth-title">Welcome back</h1>
+        <p class="auth-subtitle">Sign in to access exclusive rates</p>
+        <div id="authError" class="auth-error" style="display:none"></div>
+        <form id="authForm" class="auth-form">
+          <div class="form-field">
+            <label for="authEmail">Email</label>
+            <input type="email" id="authEmail" placeholder="your@email.com" required autocomplete="email">
+          </div>
+          <div class="form-field">
+            <label for="authPassword">Password</label>
+            <input type="password" id="authPassword" placeholder="Your password" required autocomplete="current-password" minlength="6">
+          </div>
+          <button type="submit" class="payment-submit" id="authSubmitBtn">Sign In</button>
+        </form>
+        <div class="auth-footer">
+          Don't have an account? <a href="#" id="showSignup" style="color:var(--primary);font-weight:600">Create one</a>
+        </div>
+      </div>
+
+      <!-- Sign Up -->
+      <div class="auth-card" id="signupCard" style="display:none">
+        <h1 class="auth-title">Create an account</h1>
+        <p class="auth-subtitle">Free to join — unlock better rates</p>
+        <div id="signupError" class="auth-error" style="display:none"></div>
+        <form id="signupForm" class="auth-form">
+          <div class="form-field">
+            <label for="signupEmail">Email</label>
+            <input type="email" id="signupEmail" placeholder="your@email.com" required autocomplete="email">
+          </div>
+          <div class="form-field">
+            <label for="signupPassword">Password (min 6 characters)</label>
+            <input type="password" id="signupPassword" placeholder="Choose a password" required autocomplete="new-password" minlength="6">
+          </div>
+          <button type="submit" class="payment-submit" id="signupSubmitBtn">Create Account</button>
+        </form>
+        <div class="auth-footer">
+          Already have an account? <a href="#" id="showLogin" style="color:var(--primary);font-weight:600">Sign in</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const authForm = document.getElementById("authForm");
+      const signupForm = document.getElementById("signupForm");
+      const authError = document.getElementById("authError");
+      const signupError = document.getElementById("signupError");
+      const authSubmitBtn = document.getElementById("authSubmitBtn");
+      const signupSubmitBtn = document.getElementById("signupSubmitBtn");
+      const showSignup = document.getElementById("showSignup");
+      const showLogin = document.getElementById("showLogin");
+      const loginCard = document.getElementById("loginCard");
+      const signupCard = document.getElementById("signupCard");
+
+      showSignup.addEventListener("click", (e) => {
+        e.preventDefault();
+        loginCard.style.display = "none";
+        signupCard.style.display = "block";
+      });
+      showLogin.addEventListener("click", (e) => {
+        e.preventDefault();
+        signupCard.style.display = "none";
+        loginCard.style.display = "block";
+      });
+
+      authForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        authError.style.display = "none";
+        authSubmitBtn.textContent = "Signing in...";
+        authSubmitBtn.disabled = true;
+
+        const result = await login(
+          document.getElementById("authEmail").value,
+          document.getElementById("authPassword").value
+        );
+
+        if (result.error) {
+          authError.textContent = result.error;
+          authError.style.display = "block";
+          authSubmitBtn.textContent = "Sign In";
+          authSubmitBtn.disabled = false;
+          return;
+        }
+
+        window.location.href = "/";
+      });
+
+      signupForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        signupError.style.display = "none";
+        signupSubmitBtn.textContent = "Creating account...";
+        signupSubmitBtn.disabled = true;
+
+        const result = await signup(
+          document.getElementById("signupEmail").value,
+          document.getElementById("signupPassword").value
+        );
+
+        if (result.error) {
+          signupError.textContent = result.error;
+          signupError.style.display = "block";
+          signupSubmitBtn.textContent = "Create Account";
+          signupSubmitBtn.disabled = false;
+          return;
+        }
+
+        signupCard.style.display = "none";
+        loginCard.style.display = "block";
+        document.getElementById("authEmail").value = document.getElementById("signupEmail").value;
+        authError.textContent = "Account created! Please sign in.";
+        authError.style.display = "block";
+        authSubmitBtn.textContent = "Sign In";
+        authSubmitBtn.disabled = false;
+      });
+    });
+  </script>
+
+</body>
+</html>

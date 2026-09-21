@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hotel Results — PlanurStay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://payment-wrapper.liteapi.travel/dist/liteAPIPayment.js?v=a1"></script>
+</head>
+<body>
+
+  <header>
+    <div class="container header-inner">
+      <a href="/" class="logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2"/><polyline points="21 12 12 8 3 12"/><polyline points="19 18 12 14 5 18"/><circle cx="12" cy="14" r="2" fill="currentColor" stroke="none"/></svg>
+        PlanurStay
+      </a>
+      <nav class="nav-tabs">
+        <a href="/hotels" class="nav-tab hotel-tab active" id="navHotelsTab">🏨 Hotels</a>
+        <a href="/flights" class="nav-tab flight-tab" id="navFlightsTab">✈️ Flights</a>
+      </nav>
+      <div class="header-actions">
+        <a href="/my-bookings" class="btn-ghost" id="myBookingsBtn">My Bookings</a>
+        <a href="/login" class="btn-ghost" id="signInBtn">Sign In</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="results-page">
+    <div class="container">
+
+      <div class="results-top">
+        <a href="/" class="back-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+          Back to home
+        </a>
+        <h1 class="results-title">
+          <span id="cityDisplay"></span>
+          <span style="font-size:14px;font-weight:400;color:var(--text-secondary);margin-left:6px" id="resultsMeta"></span>
+        </h1>
+      </div>
+
+      <!-- Filters bar -->
+      <div class="results-filters" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px;padding:12px;background:var(--card);border-radius:var(--radius);border:1px solid var(--border)">
+        <div class="filter-group" style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:13px;color:var(--text-secondary);white-space:nowrap">⭐ Stars:</label>
+          <select id="filterStars" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--background);color:var(--foreground);cursor:pointer">
+            <option value="">Any stars</option>
+            <option value="3">3+ stars</option>
+            <option value="4">4+ stars</option>
+            <option value="5">5 stars only</option>
+          </select>
+        </div>
+
+        <div class="filter-group" style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:13px;color:var(--text-secondary);white-space:nowrap">💰 Max price:</label>
+          <select id="filterMaxPrice" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--background);color:var(--foreground);cursor:pointer">
+            <option value="">Any price</option>
+            <option value="50">Under $50</option>
+            <option value="100">Under $100</option>
+            <option value="150">Under $150</option>
+            <option value="200">Under $200</option>
+            <option value="300">Under $300</option>
+            <option value="500">Under $500</option>
+          </select>
+        </div>
+
+        <div class="filter-group" style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:13px;color:var(--text-secondary);white-space:nowrap">🔄</label>
+          <input type="checkbox" id="filterRefundable" style="width:16px;height:16px;accent-color:var(--primary)">
+          <label for="filterRefundable" style="font-size:13px;color:var(--text-secondary);white-space:nowrap;cursor:pointer">Refundable only</label>
+        </div>
+
+        <div style="margin-left:auto">
+          <button id="clearFilters" style="font-size:12px;color:var(--primary);background:none;border:none;cursor:pointer;padding:4px 8px">Clear filters</button>
+        </div>
+      </div>
+
+      <div id="loader" class="loading-text" style="display:none">
+        <span class="spinner"></span> Loading hotels...
+      </div>
+
+      <div id="noResults" class="empty-state" style="display:none">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <h3>No hotels found</h3>
+        <p>Try different dates, a nearby city, or check your spelling.</p>
+        <a href="/" class="btn-primary">Search again</a>
+      </div>
+
+      <div id="hotelList" class="hotel-grid"></div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <div class="footer-bottom">
+        <span>© 2026 PlanurStay. All rights reserved.</span>
+        <span>Powered by LiteAPI</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/hotel-results.js"></script>
+
+</body>
+</html>

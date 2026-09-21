@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Book Hotel — PlanurStay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://payment-wrapper.liteapi.travel/dist/liteAPIPayment.js?v=a1"></script>
+</head>
+<body>
+
+  <header>
+    <div class="container header-inner">
+      <a href="/" class="logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 16v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2"/>
+          <polyline points="21 12 12 8 3 12"/>
+          <polyline points="19 18 12 14 5 18"/>
+          <circle cx="12" cy="14" r="2" fill="currentColor" stroke="none"/>
+        </svg>
+        PlanurStay
+      </a>
+      <nav class="nav-tabs">
+        <a href="/hotels" class="nav-tab hotel-tab active" id="navHotelsTab">🏨 Hotels</a>
+        <a href="/flights" class="nav-tab flight-tab" id="navFlightsTab">✈️ Flights</a>
+      </nav>
+      <div class="header-actions">
+        <a href="/my-bookings" class="btn-ghost" id="myBookingsBtn">My Bookings</a>
+        <a href="/login" class="btn-ghost" id="signInBtn">Sign In</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="results-page">
+    <div class="container">
+
+      <!-- Loader -->
+      <div id="loader" class="loading-text" style="display:none">
+        <span class="spinner"></span> Loading hotel...
+      </div>
+
+      <!-- Not found -->
+      <div id="noHotel" class="empty-state" style="display:none">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <h3>Hotel not found</h3>
+        <p>This hotel may no longer be available. Try searching again.</p>
+        <a href="/hotels" class="btn-primary">Search hotels</a>
+      </div>
+
+      <!-- Hotel detail -->
+      <div id="hotelDetail" style="display:none">
+
+        <!-- Back link -->
+        <div style="margin-bottom:20px">
+          <a href="/hotels" class="back-link" style="font-size:14px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+            Back to results
+          </a>
+        </div>
+
+        <!-- Photo + Info -->
+        <div class="detail-grid">
+          <div class="hotel-photo-large">
+            <img id="hotelMainPhoto" src="" alt="" onerror="this.style.display='none'">
+          </div>
+          <div class="hotel-info-large">
+            <h1 class="hotel-name-large" id="hotelName"></h1>
+            <p class="hotel-addr" id="hotelAddress"></p>
+            <div class="hotel-rating-large" id="hotelRatingBox">
+              <span class="score" id="hotelRating"></span>
+              <span class="score-label">/10 rating</span>
+              <div class="star-row" id="hotelStars"></div>
+            </div>
+            <p id="hotelDescription"></p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px" id="hotelMetaTags"></div>
+          </div>
+        </div>
+
+        <!-- Rates -->
+        <div class="rates-section">
+          <h2 class="section-title-side">
+            Select a room
+            <span class="result-count" id="ratesCount"></span>
+          </h2>
+          <div id="ratesLoader" class="loading-text" style="display:none;text-align:left;padding:12px;background:var(--primary-light);border-radius:var(--radius);color:var(--primary-dark);font-weight:600">
+            <span class="spinner"></span> Loading rooms...
+          </div>
+          <div id="ratesList" class="rates-list"></div>
+        </div>
+
+      </div>
+
+      <!-- Payment form -->
+      <div id="paymentSection" style="display:none">
+        <div class="payment-box">
+          <h2 class="section-title-side" style="margin-bottom:16px">Complete your booking</h2>
+          <div id="paymentSummary" class="payment-summary"></div>
+
+          <form id="bookingForm">
+            <div class="form-field">
+              <label for="guestFirstName">Guest First Name</label>
+              <input type="text" id="guestFirstName" required placeholder="John">
+            </div>
+            <div class="form-field">
+              <label for="guestLastName">Guest Last Name</label>
+              <input type="text" id="guestLastName" required placeholder="Smith">
+            </div>
+            <div class="form-field">
+              <label for="guestEmail">Guest Email</label>
+              <input type="email" id="guestEmail" required placeholder="john@example.com">
+            </div>
+
+            <div class="voucher-field">
+              <input type="text" id="voucherCode" placeholder="Voucher code (optional)" style="flex:1;padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px">
+              <span style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Have a promo code?</span>
+            </div>
+
+            <div id="paymentPortal" class="payment-sdk-box">
+              <div style="color:var(--text-secondary);font-size:13px;padding:8px">
+                Payment portal will load here...
+              </div>
+            </div>
+
+            <button type="submit" class="payment-submit" id="paymentSubmitBtn">
+              Proceed to Payment
+            </button>
+          </form>
+
+          <div class="payment-note">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Secure checkout via LiteAPI. We never store your card details.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <div class="footer-bottom">
+        <span>© 2026 PlanurStay. All rights reserved.</span>
+        <span>Powered by LiteAPI</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/hotel-book.js"></script>
+
+</body>
+</html>
