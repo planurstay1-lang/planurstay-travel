@@ -61,6 +61,8 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
+// Migration: add prebook_id column to bookings if missing
+try { db.prepare("ALTER TABLE bookings ADD COLUMN prebook_id TEXT").run(); } catch (e) { /* already exists */ }
   CREATE TABLE IF NOT EXISTS vouchers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT UNIQUE NOT NULL,
