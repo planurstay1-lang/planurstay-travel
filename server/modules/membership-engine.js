@@ -181,9 +181,9 @@ function getUserMembership(db, userId) {
 function awardMonthlyBonusIfDue(db, userId) {
 }
 
-// ─── Stripe helpers ───────────────────────────────────────────────────────────
+// ─── Stripe helpers ───────────────────────────────────────────────────
 
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || null);
+const stripe = process.env.STRIPE_SECRET_KEY ? require("stripe")(process.env.STRIPE_SECRET_KEY) : null;
 
 async function createStripeSubscription(dbConn, userId, planId, paymentMethodId) {
   const plan = PLANS[planId];
