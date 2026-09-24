@@ -115,6 +115,8 @@ try { db.prepare("ALTER TABLE bookings ADD COLUMN prebook_id TEXT").run(); } cat
     FOREIGN KEY (booking_id) REFERENCES bookings(id)
   );
 `);
+// Migration: add prebook_id column to bookings if missing
+try { db.prepare("ALTER TABLE bookings ADD COLUMN prebook_id TEXT").run(); } catch (e) { /* already exists */ }
 
 // ─── Auth middleware ───
 function requireLogin(req, res, next) {
