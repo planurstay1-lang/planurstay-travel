@@ -422,8 +422,8 @@ app.post("/api/hotels/book", async (req, res) => {
         email: guestEmail
       },
       payment: {
-        method: "TRANSACTION_ID",
-        transactionId
+        method: transactionId ? "TRANSACTION_ID" : "NUITEE_PAY",
+        transactionId: transactionId || undefined
       },
       guests: [{
         occupancyNumber: 1,
