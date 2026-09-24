@@ -234,7 +234,7 @@ async function completeBooking(body, userId = null, db) {
   if (!body.prebookId) {
     return { success: false, error: { code: 400, message: "prebookId required", key: "bodyRequest.prebookId" } };
   }
-  if (!body.transactionId && body.payment?.method === "TRANSACTION_ID") {
+  if (!body.transactionId && !body.payment?.transactionId && body.payment?.method === "TRANSACTION_ID") {
     return { success: false, error: { code: 400, message: "transactionId required for TRANSACTION_ID payment", key: "bodyRequest.transactionId" } };
   }
   if (!body.holder || !body.holder.firstName || !body.holder.lastName || !body.holder.email) {
@@ -262,7 +262,7 @@ async function completeBooking(body, userId = null, db) {
     },
     payment: {
       method:        body.payment?.method || "TRANSACTION_ID",
-      transactionId: body.transactionId || undefined,
+      transactionId: body.payment?.transactionId || body.transactionId || undefined,
     },
   };
   if (body.guests && Array.isArray(body.guests) && body.guests.length > 0) {
