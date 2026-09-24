@@ -477,7 +477,7 @@ app.post("/api/hotels/book", async (req, res) => {
     res.json({ success: true, data: booking });
   } catch (err) {
     console.error("Book error:", err.message);
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: err.message || "Server error" });
   }
 });
 
