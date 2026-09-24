@@ -33,7 +33,9 @@ const key = selectApiKey();
 const liteApi = require("liteapi-node-sdk")(key);
 
 // ─── Database ──────────────────────────────────────────────────────────────
-const db = new Database("./data/bookings.db");
+const dbPath = "./data/bookings.db";
+if (!fs.existsSync(require("path").dirname(dbPath))) { fs.mkdirSync(require("path").dirname(dbPath), { recursive: true }); }
+const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
