@@ -431,9 +431,10 @@ app.post("/api/hotels/book", async (req, res) => {
       }]
     };
 
-    const result = await liteApi.book(bookData);
-    if (result.status === "failed") {
-      return res.status(400).json({ error: result.error || "Booking failed" });
+    // Use hotel engine's completeBooking which uses liteFetch (working)
+    const result = await hotelEngine.completeBooking(bookData, null, db);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error?.message || "Booking failed" });
     }
 
     const booking = result.data;
