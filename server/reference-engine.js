@@ -328,10 +328,10 @@ async function getWeather(lat, lon) {
   const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
   if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
   try {
+    const today = new Date();
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 7);
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 1);
+    const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const url = `https://api.liteapi.travel/v3.0/data/weather?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&startDate=${startDate.toISOString().split('T')[0]}&endDate=${endDate.toISOString().split('T')[0]}`;
     const res = await fetch(url, {
       method: "GET",
