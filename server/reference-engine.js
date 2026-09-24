@@ -325,12 +325,20 @@ async function getWeather(lat, lon) {
   if (!lat || !lon) {
     return { success: false, error: { code: 400, message: "lat and lon required" } };
   }
+  const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
+  if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
   try {
-    const result = await liteApi.getWeather(lat, lon);
-    if (result.status === "failed") {
-      return { success: false, error: { code: 500, message: "Failed to fetch weather" } };
+    const url = `https://api.liteapi.travel/v3.0/data/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "X-API-Key": key, Accept: "application/json" },
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      const err = json.error || { code: res.status, message: "Failed to fetch weather" };
+      return { success: false, error: err };
     }
-    return { success: true, data: result.data };
+    return { success: true, data: json.data || json };
   } catch (err) {
     return { success: false, error: { code: 500, message: err.message } };
   }

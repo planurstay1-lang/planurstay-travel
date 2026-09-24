@@ -65,7 +65,7 @@ async function listDestinations(params = {}) {
   if (params.page)        query.set("page",        params.page);
   if (params.limit)       query.set("limit",       params.limit);
 
-  const path = "/esimply/destinations" + (query.toString() ? `?${query.toString()}` : "");
+  const path = "/data/esimply/destinations" + (query.toString() ? `?${query.toString()}` : "");
   const result = await apiCall(path);
 
   if (!result.ok) {

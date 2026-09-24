@@ -79,7 +79,7 @@ async function getEsimPackages(countryCode) {
 
   try {
     const res = await fetch(
-      `https://api.liteapi.travel/v3.0/addons/esimly/packages/${countryCode}`,
+      `https://api.liteapi.travel/v3.0/data/esimply/destinations/${countryCode}/packages`,
       {
         method: "GET",
         headers: {
