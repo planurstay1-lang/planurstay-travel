@@ -19,7 +19,7 @@
 const Database = require("better-sqlite3");
 
 function apiKeyEnv() {
-  return process.env.SAND_API_KEY || process.env.PROD_API_KEY || null;
+  return process.env.PROD_API_KEY || process.env.SAND_API_KEY || null;
 }
 
 function bookBaseUrl() {
@@ -437,10 +437,88 @@ async function getBooking(bookingId) {
 
 // ─── Build Flight Confirmation Response ──────────────────────────────────────
 
+// ─── Baggage & Transfer Notes ────────────────────────────────────────
+
+function extractBaggage(b) {
+  const journey = b.journey || b.flight || {};
+  // Try to get baggage from cheapestOffer
+  const offers = journey.cheapestOffer ? [journey.cheapestOffer] : (journey.offers || []);
+  const offer = offers[0] || {};
+  const bg = offer.baggage || {};
+  const included = bg.included || [];
+  const paid = bg.paid || [];
+
+  return {
+    hasCarryOn: bg.hasCarryOnBag !== false,
+    hasChecked: bg.hasCheckedBag === true,
+    includedBags: included.map(i => ({
+      type: i.bagType,
+      description: i.description,
+      pieces: i.pieces || 1,
+      price: i.pricing?.display?.amount ?? 0,
+    })),
+    paidBags: paid.map(p => ({
+      type: p.bagType,
+      description: p.description,
+      price: p.pricing?.display?.amount ?? 0,
+      weight: p.weightKg || p.size || null,
+    })),
+    totalPrice: offer.pricing?.display?.total || b.price || 0,
+    currency: b.currency || "USD",
+    fareFamily: offer.fare?.family || journey.fareFamily || null,
+    refundable: offer.terms?.refundable || false,
+    changesAllowed: offer.terms?.changeable || false,
+  };
+}
+
+function buildTransferNotes(flight, baggage) {
+  const notes = [];
+  const segments = flight.segments || [];
+
+  // Check for terminal changes
+  for (let i = 0; i < segments.length - 1; i++) {
+    const curr = segments[i];
+    const next = segments[i + 1];
+    const currTerm = curr.departureTerminal || curr.arrivalTerminal;
+    const nextTerm = next.departureTerminal || next.arrivalTerminal;
+    if (currTerm && nextTerm && currTerm !== nextTerm) {
+      notes.push({
+        type: "terminal",
+        severity: "warning",
+        message: `Terminal change at ${curr.arrivalAirport}: ${currTerm} → ${nextTerm}`,
+      });
+    }
+  }
+
+  // Check for different airlines (potential baggage collect/recheck)
+  const carriers = [...new Set(segments.map(s => s.carrierCode).filter(Boolean))];
+  if (carriers.length > 1) {
+    notes.push({
+      type: "baggage",
+      severity: "info",
+      message: "Multiple airlines — baggage transfer depends on interline agreement. Confirm at check-in.",
+    });
+  }
+
+  // Fare-based baggage note
+  if (baggage && !baggage.hasChecked) {
+    notes.push({
+      type: "baggage",
+      severity: "info",
+      message: "Checked bag not included in fare. Add at checkout or at airport.",
+    });
+  }
+
+  return notes;
+}
+
 function buildFlightConfirmation(bookingData, extras = {}) {
   const b = bookingData.data || bookingData;
   const uber = extractUberVoucher(b);
   const pricing = extractFlightPricing(b);
+  const flight = extractFlightDetails(b);
+  const baggage = extractBaggage(b);
+  const transferNotes = buildTransferNotes(flight, baggage);
 
   return {
     success: true,
@@ -452,7 +530,9 @@ function buildFlightConfirmation(bookingData, extras = {}) {
     currency: b.currency || "USD",
     pricing: pricing,
     guest: extractGuest(b),
-    flight: extractFlightDetails(b),
+    flight: flight,
+    baggage: baggage,
+    transferNotes: transferNotes,
     uberVoucher: uber,
     loyalty: extras.loyalty || null,
     voucher: b.voucherCode ? { code: b.voucherCode, discount: b.voucherTotalAmount || 0 } : null,
@@ -487,8 +567,8 @@ function extractGuest(b) {
 }
 
 function extractFlightDetails(b) {
-  const journey = b.journey || b.flight || {};
-  const segments = journey.segments || b.segs || [];
+  const journey = b.journey || b.flight || b.booking?.journey || {};
+  const segments = journey.segments || b.segments || b.segs || [];
   const carrier = journey.carrier || b.carrier || segments[0]?.carrier || {};
   return {
     segments: segments.map(s => ({
