@@ -1012,7 +1012,7 @@
     // elsewhere it's rendered above the fields.
     const tripEl = init.tripToggle || null;
     host.innerHTML = `
-      ${tripEl ? "" : `<div class="trip-type"><button type="button" class="chip-toggle" data-trip="round">Round trip</button><button type="button" class="chip-toggle" data-trip="oneway">One way</button></div>`}
+      ${tripEl ? "" : `<div class="trip-type"><button type="button" class="chip-toggle" data-trip="round">Round trip</button><button type="button" class="chip-toggle" data-trip="oneway">One way</button><label class="chip-check"><input type="checkbox" data-nonstop>Non-stop only</label></div>`}
       <form class="sfields flights" novalidate>
         <div class="sfield route wide">
           <div class="route-half from">${PS.icon("plane", 20)}<div class="sfield-body"><span class="lbl">From</span><input type="text" placeholder="City or airport" autocomplete="off" aria-label="From" value="${PS.esc(label(from))}"></div></div>
@@ -1068,6 +1068,8 @@
       if (b.dataset.trip === "round" && !dp.get().end) setTimeout(() => dp.open("end"), 0);
     });
     setTrip(trip);
+    const nonstopEl = (tripEl || host).querySelector("[data-nonstop]");
+    if (nonstopEl) nonstopEl.checked = q.nonstop === "1" || q.nonstop === 1;
     const guests = PS.guestsPicker(form.querySelector(".guests"), { adults: +q.adults || 1, mode: "flights" });
 
     const resolveTyped = async (field, current) => {
@@ -1091,7 +1093,7 @@
       ret = trip === "round" ? g.end : null;
       location.href = PS.url("/flights", {
         from: from.code, fromCity: from.city, fromCountry: from.countryCode, to: to.code, toCity: to.city,
-        depart: PS.iso(depart), return: ret ? PS.iso(ret) : "", adults: guests.adults,
+        depart: PS.iso(depart), return: ret ? PS.iso(ret) : "", adults: guests.adults, nonstop: nonstopEl?.checked ? 1 : "",
       });
     });
   };

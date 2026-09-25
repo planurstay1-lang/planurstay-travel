@@ -188,6 +188,8 @@
       shown: 15, open: null, timeLeg: "out",
     });
     let st = defaults();
+    // "Non-stop only" from the search form
+    if (q.nonstop === "1") { if (J.some(j => j.stops === 0)) st.stops = 0; else setTimeout(() => PS.toast("No non-stop flights on this route, so we're showing flights with stops"), 600); }
     document.getElementById("clearFilters").onclick = () => { const s = st.sort; st = defaults(); st.sort = s; update(); };
 
     const pass = (j, skip) =>

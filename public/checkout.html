@@ -107,9 +107,11 @@
           <div><b>${PS.time(l.segs[0].departureTime)} ${l.segs[0].originCode} → ${PS.time(l.segs[l.segs.length - 1].arrivalTime)} ${l.segs[l.segs.length - 1].destinationCode}</b>
           <div class="price-sub">${PS.fmtDay(l.segs[0].departureTime.slice(0, 10))} · ${l.segs.length === 1 ? "Nonstop" : PS.plural(l.segs.length - 1, "stop")} · ${PS.dur(l.minutes)}</div>
           ${(l.conns || []).map(c => `<div class="price-sub" style="color:${c.changeAirport ? "var(--red)" : "#a66a00"}">${PS.dur(c.duration?.minutes || 0)} layover in ${c.arrivalAirportCode}${c.changeAirport ? " · change to " + c.departureAirportCode : ""}${c.overnight ? " · overnight" : ""}</div>`).join("")}</div></div>`).join("")}
-        <div class="co-sec"><div class="co-lines">
-          ${sumBox("Fare", PS.esc(offer.fare?.family || "Economy"))}
-          ${sumBox("Travelers", PS.plural(+search.adults || 1, "adult"))}
+        <div class="co-sec"><h4>Price breakdown</h4><div class="co-lines">
+          ${sumBox(`${PS.plural(+search.adults || 1, "ticket")} (${PS.plural(+search.adults || 1, "adult")}) · ${PS.esc(offer.fare?.family || "Economy")}`, PS.money(total, cur, 2))}
+          ${(+search.adults || 1) > 1 ? sumBox("Per adult", PS.money(total / (+search.adults || 1), cur, 2), "muted") : ""}
+          ${sumBox("Baggage", PS.esc(bagText(offer.baggage)))}
+          ${sumBox("Taxes, fees and charges", "Included", "muted")}
           ${sumBox("Changes", offer.terms?.changeable ? "Allowed" : "Not allowed")}
           ${sumBox("Refunds", offer.terms?.refundable ? "Refundable" : "Non-refundable")}
           ${o.voucher ? sumBox("Promo code", `−${PS.money(o.voucher, cur, 2)}`, "good") : ""}
@@ -117,7 +119,17 @@
         <div class="co-total"><div><b>Total</b><b>${PS.money(Math.max(0, total - (o.voucher || 0)), cur, 2)}</b></div><small>Includes taxes and carrier fees for all travelers.</small></div>
         <div id="earnNote"></div>
       </div>
-      <div class="secure-note">${PS.icon("lock", 14)}Secure, encrypted payment</div>`;
+      <div class="co-why"><b>Why book with us</b>
+        <span>${PS.icon("lock", 14)}Secure, encrypted payment</span>
+        <span>${PS.icon("check", 14, 2.6)}Tickets issued by the airline, e-ticket by email</span>
+        <span>${PS.icon("user", 14)}Help by chat and email, any time</span></div>`;
+    }
+    function bagText(b = {}) {
+      const inc = b.included || [];
+      const cabin = inc.filter(x => x.bagType === "cabin" || x.bagType === "carry_on").reduce((a, x) => Math.max(a, x.pieces || 1), 0) || (b.hasCarryOnBag ? 1 : 0);
+      const checked = inc.filter(x => x.bagType === "checked").reduce((a, x) => Math.max(a, x.pieces || 1), 0) || (b.hasCheckedBag ? 1 : 0);
+      const parts = [cabin ? `${cabin}× cabin bag` : "", checked ? `${checked}× checked bag` : ""].filter(Boolean);
+      return parts.length ? parts.join(", ") + " included" : "Personal item only";
     }
     function groupLegs(j) {
       const out = [];
@@ -128,8 +140,30 @@
       });
       return out;
     }
-    const repaint = () => { sumCol.innerHTML = summaryHTML(held && heldKey === holdKey() ? { total: held.price, currency: held.currency, voucher: held.voucherTotalAmount } : {}); paintEarn(); };
-    sumCol.innerHTML = summaryHTML();
+    const repaint = () => { sumCol.innerHTML = timerHTML() + summaryHTML(held && heldKey === holdKey() ? { total: held.price, currency: held.currency, voucher: held.voucherTotalAmount } : {}); paintEarn(); };
+    // ─── Price hold countdown (flights): the fare is only guaranteed until the offer expires ───
+    let expiresAt = type === "flight" && sel.offer.expiration ? Date.parse(sel.offer.expiration) : null;
+    let expired = false;
+    const timerHTML = (cls = "") => !expiresAt ? "" : expired
+      ? `<div class="co-timer done ${cls}">${PS.icon("alert", 18)}<span>This price has expired.</span><a class="link" href="${PS.url("/flights", sel.search)}">Get the latest price</a></div>`
+      : `<div class="co-timer ${cls}">${PS.icon("clock", 18)}<span>Price held for</span><b class="co-timer-val">--:--</b></div>`;
+    function tick() {
+      if (!expiresAt) return;
+      const left = Math.max(0, expiresAt - Date.now());
+      const txt = `${String(Math.floor(left / 60000)).padStart(2, "0")}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")}`;
+      document.querySelectorAll(".co-timer-val").forEach(el => { el.textContent = txt; });
+      document.querySelectorAll(".co-timer").forEach(b => b.classList.toggle("low", left < 3 * 60000));
+      if (!left && !expired) {
+        expired = true;
+        document.querySelectorAll(".co-timer").forEach(b => { b.outerHTML = timerHTML(b.classList.contains("mob") ? "mob" : ""); });
+        const b = document.getElementById("continueBtn");
+        if (b && b.dataset.mode !== "edit") { b.disabled = true; b.textContent = "Price expired, search again"; }
+        document.getElementById("formMsg").innerHTML = `<div class="alert warn" style="margin-top:14px">${PS.icon("alert", 18)}<div><b>Your price hold ran out.</b> Fares change quickly. <a class="link" href="${PS.url("/flights", sel.search)}">Search again</a> to get the latest price for this flight.</div></div>`;
+      }
+    }
+    const timerLoop = setInterval(() => { if (!expiresAt) return; tick(); if (expired) clearInterval(timerLoop); }, 1000);
+    sumCol.innerHTML = timerHTML() + summaryHTML();
+    tick();
 
     const auth = await PS.auth();
     const me = auth.loggedIn ? (auth.user || {}) : {};
@@ -142,12 +176,26 @@
     const phoneField = (req) => `<div class="field full" data-f="phone"><label for="phone">Phone${req ? ' <i class="req">*</i>' : ""}</label>
       <div class="phone-row"><select id="dial" aria-label="Country code">${DIAL.map(([c, n]) => `<option value="${c}" ${c === guessDial() ? "selected" : ""}>${c} ${n}</option>`).join("")}</select>
       <input id="phone" type="tel" autocomplete="tel-national" placeholder="Enter phone number"></div></div>`;
-    const countries = ["US", "CA", "GB", "IN", "AU", "FR", "DE", "IT", "ES", "MX", "BR", "AE", "SG", "JP", "CN", "PH", "PK", "NG", "IE", "NL", "NZ", "ZA"];
-    const regionName = (c) => { try { return new Intl.DisplayNames(["en"], { type: "region" }).of(c); } catch { return c; } };
-    const countrySelect = (id, label, def = "CA") => `<div class="field" data-f="${id}"><label for="${id}">${label} <i class="req">*</i></label><select id="${id}">${countries.map(c => `<option value="${c}" ${c === def ? "selected" : ""}>${regionName(c)}</option>`).join("")}</select></div>`;
+    // Every country (ISO 3166 codes that the browser can name), sorted by name
+    const regionName = (() => { let dn = null; try { dn = new Intl.DisplayNames(["en"], { type: "region" }); } catch {} return (c) => { try { return dn ? dn.of(c) : c; } catch { return c; } }; })();
+    const NOT_COUNTRY = new Set(["EU", "EZ", "UN", "QO", "XA", "XB", "ZZ", "AC", "CP", "DG", "EA", "IC", "TA", "CQ", "AN", "BU", "CS", "DD", "FX", "NT", "QU", "SU", "TP", "YD", "YU", "ZR"]);
+    const countries = (() => { const out = []; const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      for (const a of A) for (const b of A) { const c = a + b; if (NOT_COUNTRY.has(c)) continue; const nm = regionName(c); if (nm && nm !== c && !/unknown/i.test(nm)) out.push([c, nm]); }
+      return out.length > 100 ? out.sort((x, y) => x[1].localeCompare(y[1])) : ["US", "CA", "GB", "IN", "AU", "FR", "DE", "IT", "ES", "MX", "BR", "AE"].map(c => [c, c]); })();
+    const countrySelect = (id, label, def = "CA") => `<div class="field" data-f="${id}"><label for="${id}">${label} <i class="req">*</i></label><select id="${id}">${countries.map(([c, nm]) => `<option value="${c}" ${c === def ? "selected" : ""}>${PS.esc(nm)}</option>`).join("")}</select></div>`;
+    const defCountry = (sel?.search?.fromCountry || (navigator.language || "").split("-")[1] || "CA").toUpperCase();
+    const thisYear = new Date().getFullYear();
+    // Day / Month / Year pickers (easier than a calendar for birthdays); a hidden input holds YYYY-MM-DD
+    const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const dateSel = (id, label, y1, y2) => { const step = y1 < y2 ? 1 : -1, years = []; for (let y = y1; step > 0 ? y <= y2 : y >= y2; y += step) years.push(y);
+      return `<div class="field" data-f="${id}"><label for="${id}_d">${label} <i class="req">*</i></label><div class="date3" data-date="${id}">
+        <select id="${id}_d" aria-label="${label}: day"><option value="">DD</option>${Array.from({ length: 31 }, (_, k) => `<option>${String(k + 1).padStart(2, "0")}</option>`).join("")}</select>
+        <select id="${id}_m" aria-label="${label}: month"><option value="">Month</option>${MONTHS.map((m, k) => `<option value="${String(k + 1).padStart(2, "0")}">${m}</option>`).join("")}</select>
+        <select id="${id}_y" aria-label="${label}: year"><option value="">YYYY</option>${years.map(y => `<option>${y}</option>`).join("")}</select>
+        <input type="hidden" id="${id}"></div></div>`; };
     const signInLink = auth.loggedIn ? "" : `<a class="link" href="/login?redirect=${here}">Sign in</a>`;
 
-    let html = `<div class="co-note">${PS.icon("info", 16)}All fields marked with <i class="req">*</i> are required.</div>
+    let html = `${timerHTML("mob")}<div class="co-note">${PS.icon("info", 16)}All fields marked with <i class="req">*</i> are required.</div>
       ${auth.loggedIn ? `<div class="alert success" style="margin-bottom:16px">${PS.icon("check", 18)}<div>Signed in as <b>${PS.esc(me.email)}</b>. This trip will be saved to your account and earn points.</div></div>`
         : `<div class="co-guest">${PS.icon("tag", 18)}<div><b>Checking out as a guest.</b> <a class="link" href="/login?redirect=${here}">Sign in</a> or <a class="link" href="/login?mode=signup&redirect=${here}">join free</a>${type === "hotel" ? " for member prices and" : " to"} earn points.</div></div>`}`;
     if (type === "hotel") {
@@ -180,23 +228,41 @@
       </section>`;
     } else {
       const n = +sel.search.adults || 1;
-      html += `<section class="co-panel" id="detailsPanel">
+      const carriers = [...new Map((sel.journey.segments || []).map(sg => [sg.carrier?.marketingCode, sg.carrier?.marketingName])).entries()].filter(([c]) => c);
+      html += `<ol class="co-steps"><li class="on"><span>1</span>Travelers &amp; contact</li><li><span>2</span>Review &amp; pay</li></ol>
+      <section class="co-panel" id="detailsPanel">
         <div class="co-head"><h2>Traveler details</h2>${signInLink}</div>
-        <div class="alert info" style="margin-bottom:16px">${PS.icon("info", 18)}<div>Enter names exactly as they appear on each passport. Airlines may refuse boarding if they don't match.</div></div>
-        ${Array.from({ length: n }, (_, i) => `<div class="pax-card"><h3>${PS.icon("user", 18)}Adult ${i + 1}${i === 0 ? " (lead traveler)" : ""}</h3>
+        <div class="alert warn" style="margin-bottom:16px">${PS.icon("alert", 18)}<div><b>Names must match the passport or ID exactly</b>, including middle names. Use English letters only (é → e, ñ → n). No titles like Mr or Dr. Airlines can refuse boarding if the name doesn't match, and name changes usually aren't allowed.</div></div>
+        ${Array.from({ length: n }, (_, i) => `<div class="pax-card"><h3>${PS.icon("user", 18)}Traveler ${i + 1} · Adult${i === 0 ? " (lead traveler)" : ""}</h3>
+          <div class="form-grid three">
+            ${f(`p${i}_first`, "First name", 'autocomplete="given-name" placeholder="As on document"')}
+            ${f(`p${i}_mid`, "Middle name(s)", 'autocomplete="additional-name" placeholder="If on document"', "", false)}
+            ${f(`p${i}_last`, "Last name", 'autocomplete="family-name" placeholder="As on document"')}
+          </div>
+          <div class="name-preview" id="p${i}_preview"></div>
           <div class="form-grid">
-            ${f(`p${i}_first`, "First & middle names", 'autocomplete="given-name"')}
-            ${f(`p${i}_last`, "Last name", 'autocomplete="family-name"')}
-            <div class="field" data-f="p${i}_gender"><label for="p${i}_gender">Gender (as on passport) <i class="req">*</i></label><select id="p${i}_gender"><option value="">Select</option><option value="M">Male</option><option value="F">Female</option></select></div>
-            ${f(`p${i}_dob`, "Date of birth", `type="date" max="${PS.iso(PS.addDays(PS.today(), -365 * 12))}"`)}
-            ${countrySelect(`p${i}_nat`, "Nationality")}
-            ${f(`p${i}_doc`, "Passport number", 'autocomplete="off"')}
-            ${f(`p${i}_exp`, "Passport expiry", `type="date" min="${PS.iso(PS.today())}"`)}
-            ${countrySelect(`p${i}_iss`, "Passport issued by")}
-          </div></div>`).join("")}
+            <div class="field" data-f="p${i}_gender"><label for="p${i}_gender">Gender (as on document) <i class="req">*</i></label><select id="p${i}_gender"><option value="">Select</option><option value="M">Male</option><option value="F">Female</option></select></div>
+            ${dateSel(`p${i}_dob`, "Date of birth", thisYear - 12, thisYear - 110)}
+            ${countrySelect(`p${i}_nat`, "Nationality", defCountry)}
+          </div>
+          <h4 class="co-mini">Travel document</h4>
+          <div class="form-grid">
+            <div class="field" data-f="p${i}_dtype"><label for="p${i}_dtype">Document type <i class="req">*</i></label><select id="p${i}_dtype"><option value="passport">Passport</option><option value="id_card">National ID card</option></select></div>
+            ${countrySelect(`p${i}_iss`, "Issuing country", defCountry)}
+            ${f(`p${i}_doc`, "Document number", 'autocomplete="off" autocapitalize="characters" spellcheck="false"')}
+            ${dateSel(`p${i}_exp`, "Expiry date", thisYear, thisYear + 15)}
+          </div>
+          <div class="hint" id="p${i}_exp_hint"></div>
+          <details class="ff"><summary>Add frequent flyer number (optional)</summary>
+            <div class="form-grid" style="margin-top:10px">
+              <div class="field"><label for="p${i}_ffair">Airline program</label><select id="p${i}_ffair"><option value="">Select airline</option>${carriers.map(([c, nm]) => `<option value="${PS.esc(c)}">${PS.esc(nm || c)} (${PS.esc(c)})</option>`).join("")}</select></div>
+              ${f(`p${i}_ffnum`, "Member number", 'autocomplete="off"', "", false)}
+            </div></details>
+        </div>`).join("")}
+        <label class="co-confirm" data-f="nameOk"><input type="checkbox" id="nameOk"><span>I confirm every name and document above matches the traveler's passport or ID exactly.</span></label>
         <h3 class="co-sub">Contact details</h3>
         <div class="form-grid">
-          ${f("email", "Email", `full type="email" autocomplete="email" value="${PS.esc(me.email || "")}"`, "Tickets and updates go here.")}
+          ${f("email", "Email", `full type="email" autocomplete="email" value="${PS.esc(me.email || "")}"`, "Your e-tickets and flight updates go here.")}
           ${phoneField(true)}
         </div>
       </section>`;
@@ -217,6 +283,37 @@
       <button class="btn btn-primary btn-lg btn-block co-go" id="continueBtn">Continue to payment ${PS.icon("right", 18)}</button>
       <p class="agree-note">By continuing you agree to our <a href="/terms" target="_blank">Terms</a>, <a href="/cancellation-policy" target="_blank">Cancellation policy</a> and <a href="/privacy" target="_blank">Privacy policy</a>, and the ${type === "hotel" ? "hotel's" : "airline's"} own rules.</p>`;
     formCol.innerHTML = html;
+    tick();
+    document.querySelectorAll("[data-date]").forEach(w => {
+      const id = w.dataset.date, sync = () => {
+        const d = w.querySelector(`#${id}_d`).value, m = w.querySelector(`#${id}_m`).value, y = w.querySelector(`#${id}_y`).value;
+        const ok = d && m && y && new Date(`${y}-${m}-${d}T12:00:00Z`).getUTCDate() === +d;
+        w.querySelector(`#${id}`).value = ok ? `${y}-${m}-${d}` : (d || m || y ? "invalid" : "");
+        if (/_exp$/.test(id)) expHint(id);
+      };
+      w.querySelectorAll("select").forEach(x => x.addEventListener("change", sync));
+    });
+    // Airline systems only take plain A–Z names: strip accents as people type, show how the ticket will read
+    const plain = (v) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss").replace(/æ/gi, "ae").replace(/ø/gi, "o").replace(/ł/gi, "l");
+    const lastTravel = () => sel?.search?.return || sel?.search?.depart;
+    function namePreview(i) {
+      const el = document.getElementById(`p${i}_preview`); if (!el) return;
+      const first = val(`p${i}_first`), mid = val(`p${i}_mid`), last = val(`p${i}_last`);
+      el.innerHTML = first || last ? `${PS.icon("plane", 14)}Name on ticket: <b>${PS.esc(plain(last).toUpperCase() || "LAST NAME")} / ${PS.esc(plain([first, mid].filter(Boolean).join(" ")).toUpperCase() || "FIRST NAME")}</b>` : "";
+    }
+    function expHint(id) {
+      const h = document.getElementById(id + "_hint"), v = val(id); if (!h) return;
+      h.className = "hint"; h.textContent = "";
+      if (!/^\d{4}-\d\d-\d\d$/.test(v) || !lastTravel()) return;
+      const exp = PS.parse(v), end = PS.parse(lastTravel()), six = PS.addDays(end, 182);
+      if (exp < end) { h.className = "hint bad"; h.textContent = "This document expires before your trip ends. You'll need a valid one to travel."; }
+      else if (exp < six) { h.className = "hint warnc"; h.textContent = "Heads up: many countries need your passport to be valid for 6 months after you arrive. Check the entry rules for your destination."; }
+    }
+    for (let i = 0; i < (+sel.search?.adults || 1); i++) ["first", "mid", "last"].forEach(k => {
+      const el = document.getElementById(`p${i}_${k}`); if (!el) return;
+      el.addEventListener("input", () => namePreview(i));
+      el.addEventListener("blur", () => { const c = plain(el.value).replace(/\s+/g, " ").trim(); if (c !== el.value) el.value = c; namePreview(i); });
+    });
 
     // Who is the booking for
     document.querySelectorAll('input[name="who"]').forEach(r => r.onchange = () => {
@@ -317,14 +414,29 @@
         if (val("phone")) need("phone", "Enter a valid phone number", phoneOk);
         if (document.querySelector('input[name="who"]:checked')?.value === "other") { need("gFirst", "Enter the guest's first name"); need("gLast", "Enter the guest's last name"); }
       } else {
+        const latin = (v) => /^[A-Za-z][A-Za-z' -]*$/.test(v);
+        const isoDate = (v) => /^\d{4}-\d\d-\d\d$/.test(v);
+        const endTrip = PS.parse(lastTravel()) || PS.today();
+        const ageAt = (dob) => { const b = PS.parse(dob); let a = endTrip.getFullYear() - b.getFullYear(); if (endTrip < new Date(endTrip.getFullYear(), b.getMonth(), b.getDate())) a--; return a; };
         for (let i = 0; i < (+sel.search.adults || 1); i++) {
-          need(`p${i}_first`, "Required"); need(`p${i}_last`, "Required"); need(`p${i}_gender`, "Required");
-          need(`p${i}_dob`, "Required"); need(`p${i}_doc`, "Required", v => v.length >= 5);
-          need(`p${i}_exp`, "Required");
+          need(`p${i}_first`, "Enter the first name as on the document (English letters)", v => latin(v));
+          if (val(`p${i}_mid`)) need(`p${i}_mid`, "English letters only", v => latin(v));
+          need(`p${i}_last`, "Enter the last name as on the document (English letters)", v => latin(v));
+          if (/^(mr|mrs|ms|miss|dr)\.?$/i.test(val(`p${i}_first`).split(" ")[0])) setErr(`p${i}_first`, "Leave out titles like Mr or Dr"), ok = false;
+          need(`p${i}_gender`, "Select a gender");
+          need(`p${i}_dob`, "Choose a valid date of birth", v => isoDate(v) && ageAt(v) >= 12 && ageAt(v) < 120);
+          if (isoDate(val(`p${i}_dob`)) && ageAt(val(`p${i}_dob`)) < 12) setErr(`p${i}_dob`, "Adults must be 12 or older on the travel date");
+          need(`p${i}_doc`, "Enter the document number", v => /^[A-Za-z0-9]{5,20}$/.test(v.replace(/[\s-]/g, "")));
+          need(`p${i}_exp`, "Choose a valid expiry date", v => isoDate(v) && PS.parse(v) >= endTrip);
+          if (isoDate(val(`p${i}_exp`)) && PS.parse(val(`p${i}_exp`)) < endTrip) setErr(`p${i}_exp`, "This document expires before your trip ends");
+          if (val(`p${i}_ffnum`) && !val(`p${i}_ffair`)) { setErr(`p${i}_ffnum`, "Choose the airline program"); ok = false; }
         }
         need("email", "Enter a valid email", emailOk); need("phone", "Enter a valid phone number", phoneOk);
+        const conf = document.getElementById("nameOk");
+        const cw = document.querySelector('[data-f="nameOk"]'); cw.classList.toggle("err", !conf.checked);
+        if (!conf.checked) { ok = false; if (document.querySelectorAll(".field.err").length === 0) cw.scrollIntoView({ behavior: "smooth", block: "center" }); }
       }
-      if (!ok) document.querySelector(".field.err input, .field.err select")?.focus();
+      if (!ok) document.querySelector(".field.err input:not([type=hidden]), .field.err select")?.focus();
       return ok;
     }
 
@@ -344,20 +456,24 @@
       } else {
         const phone = phoneFull();
         const passengers = Array.from({ length: +sel.search.adults || 1 }, (_, i) => ({
-          type: "ADT", firstName: val(`p${i}_first`), lastName: val(`p${i}_last`), gender: val(`p${i}_gender`),
-          birthday: val(`p${i}_dob`), nationality: val(`p${i}_nat`), documentType: "passport",
-          documentNumber: val(`p${i}_doc`), documentExpiry: val(`p${i}_exp`), documentIssueCountry: val(`p${i}_iss`),
+          type: "ADT", passengerType: 0, firstName: val(`p${i}_first`), middleName: val(`p${i}_mid`) || undefined, lastName: val(`p${i}_last`), gender: val(`p${i}_gender`),
+          birthday: val(`p${i}_dob`), nationality: val(`p${i}_nat`), documentType: val(`p${i}_dtype`) || "passport",
+          documentNumber: val(`p${i}_doc`).replace(/[\s-]/g, "").toUpperCase(), documentExpiry: val(`p${i}_exp`), documentIssueCountry: val(`p${i}_iss`),
+          loyaltyPrograms: val(`p${i}_ffnum`) && val(`p${i}_ffair`) ? [{ airlineCode: val(`p${i}_ffair`), programNumber: val(`p${i}_ffnum`) }] : undefined,
           email: i === 0 ? val("email") : undefined,
         }));
         pb = (await PS.api("/api/flights/prebook", { method: "POST", body: {
           offerId: sel.offer.offerId, usePaymentSdk: true, voucherCode,
-          contact: { firstName: passengers[0].firstName, lastName: passengers[0].lastName, email: val("email"), phoneNumber: phone, phoneCountryCode: val("dial").replace("+", "") },
+          // LiteAPI wants the national number and the country code separately
+          contact: { firstName: passengers[0].firstName, lastName: passengers[0].lastName, email: val("email"), phoneNumber: val("phone").replace(/\D/g, "").replace(/^0+/, ""), phoneCountryCode: val("dial").replace("+", "") },
           passengers,
         }})).data;
         pb._passengers = passengers;
       }
       if (!pb?.prebookId || !pb?.secretKey) throw new Error("We couldn't hold this option. Please pick another one.");
       held = pb; heldKey = key;
+      const hx = Date.parse(pb.servicesAttachable?.expiresAt || "");
+      if (type === "flight" && hx && (!expiresAt || hx > expiresAt)) expiresAt = hx;
       return pb;
     }
 
@@ -395,9 +511,11 @@
     btn.onclick = async () => {
       if (btn.dataset.mode === "edit") { // back to editing the details; the hold is kept
         lockForm(false); document.getElementById("payPanel").classList.add("hidden");
+        document.querySelectorAll(".co-steps li").forEach((li, k) => li.classList.toggle("on", k === 0));
         btn.dataset.mode = ""; btn.innerHTML = `Continue to payment ${PS.icon("right", 18)}`; return;
       }
       msg.innerHTML = "";
+      if (expired) return;
       if (!validate()) return;
       btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Holding your ${type === "hotel" ? "room" : "seats"}…`;
       let pb;
@@ -430,6 +548,7 @@
       lockForm(true);
       btn.disabled = false; btn.dataset.mode = "edit"; btn.classList.remove("btn-primary"); btn.classList.add("btn-ghost");
       btn.innerHTML = `${PS.icon("left", 16)} Edit details`;
+      document.querySelectorAll(".co-steps li").forEach((li, k) => li.classList.toggle("on", k === 1));
       showPayment(pb);
     };
 

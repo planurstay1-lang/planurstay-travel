@@ -217,12 +217,18 @@ async function createPrebook(body, userId = null, db) {
     if (p.documentExpiration && !np.documentExpiry) {
       np.documentExpiry = p.documentExpiration;
     }
-    // Ensure phone has country code
+    // LiteAPI wants the national number in phoneNumber and the country code in phoneCountryCode.
+    // Older clients sent "+<cc><number>" in phoneNumber: split that out.
     if (body.contact && body.contact.phoneNumber) {
-      const ph = body.contact.phoneNumber;
-      if (!ph.startsWith('+') && !ph.startsWith('00')) {
-        body.contact.phoneNumber = '+1' + ph.replace(/^\D+/g, '');
+      let ph = String(body.contact.phoneNumber).trim();
+      const cc = String(body.contact.phoneCountryCode || '').replace(/\D/g, '');
+      if (ph.startsWith('+') || ph.startsWith('00')) {
+        const digits = ph.replace(/^\+|^00/, '').replace(/\D/g, '');
+        if (cc && digits.startsWith(cc)) ph = digits.slice(cc.length);
+        else if (!cc && digits.startsWith('1') && digits.length === 11) { ph = digits.slice(1); body.contact.phoneCountryCode = '1'; }
+        else ph = digits;
       }
+      body.contact.phoneNumber = ph.replace(/\D/g, '');
     }
     if (body.contact && body.contact.phoneCountryCode) {
       const cc = String(body.contact.phoneCountryCode).replace(/\D/g, '');
