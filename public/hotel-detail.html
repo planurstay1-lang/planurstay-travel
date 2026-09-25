@@ -235,47 +235,118 @@
       bar.querySelectorAll("[data-rf]").forEach(b => b.onclick = () => { rf[b.dataset.rf] = !rf[b.dataset.rf]; paintRoomFilters(); renderRooms(); });
       bar.querySelector("#roomSort").onchange = (e) => { rf.sort = e.target.value; renderRooms(); };
     }
+    // ─── Rooms: grouped by room type, each with its rate options (like Expedia) ───
+    const feeTotal = (o) => (o.taxesExcluded || []).reduce((s, t) => s + (t.amount || 0), 0);
+    const cancelText = (o) => {
+      if (!o.refundable) return `<li class="no">${PS.icon("x", 14, 2.6)}Non-refundable</li>`;
+      const first = (o.cancelPolicy || []).find(c => c.amount > 0) || (o.cancelPolicy || [])[0];
+      const when = first?.from || o.cancelBy;
+      const d = when ? new Date(String(when).replace(" ", "T")) : null;
+      return `<li class="ok">${PS.icon("check", 14, 2.6)}Free cancellation${d && !isNaN(d) ? ` until ${PS.fmtDate(d, { month: "short", day: "numeric" })}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}</li>`;
+    };
+    const feesHTML = (o) => {
+      const fees = o.taxesExcluded || [];
+      if (!fees.length) return `<span class="price-sub">Includes taxes &amp; fees</span>`;
+      const cur = fees[0].currency || o.currency;
+      return `<details class="fee-d"><summary>+ ${PS.money(feeTotal(o), cur, 0)} due at hotel</summary>
+        <ul>${fees.map(f => `<li><span>${PS.esc(f.description)}</span><b>${PS.money(f.amount, f.currency || cur, 2)}</b></li>`).join("")}</ul>
+        <p>Collected by the hotel at check-in or check-out, not included in the price you pay now.</p></details>`;
+    };
+    function roomDetails(rm, opts, photos) {
+      const back = document.createElement("div");
+      back.className = "modal-back";
+      const amen = (rm.roomAmenities || []).map(a => a.name).filter(Boolean);
+      const beds = (rm.bedTypes || []).map(b => `${b.quantity} ${b.bedType}${b.bedSize ? ` (${b.bedSize})` : ""}`).join(", ");
+      const notes = [...new Set(opts.map(o => (o.remarks || "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").trim()).filter(Boolean))][0] || "";
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Room details" style="width:min(820px,100%)">
+        <div class="modal-head"><h2>${PS.esc(rm.roomName || opts[0].name)}</h2><button class="modal-close" aria-label="Close">${PS.icon("x", 20)}</button></div>
+        <div class="modal-body">
+          ${photos.length ? `<div class="rd-photos">${photos.slice(0, 8).map(u => `<img src="${PS.esc(u)}" alt="" loading="lazy">`).join("")}</div>` : ""}
+          <div class="room-meta" style="font-size:14.5px;margin:14px 0">
+            ${rm.roomSizeSquare ? `<span>${PS.icon("sqm", 16)}${rm.roomSizeSquare} ${PS.esc(rm.roomSizeUnit || "m²")}</span>` : ""}
+            ${beds ? `<span>${PS.icon("bed", 16)}${PS.esc(beds)}</span>` : ""}
+            ${rm.maxOccupancy || opts[0].maxOccupancy ? `<span>${PS.icon("users", 16)}Sleeps ${rm.maxOccupancy || opts[0].maxOccupancy}</span>` : ""}
+            ${(rm.views || []).length ? `<span>${PS.icon("photo", 16)}${PS.esc(rm.views.map(v => v.view || v.name || v).join(", "))}</span>` : ""}
+          </div>
+          ${rm.description ? `<p style="color:var(--text-2);margin-bottom:16px">${PS.esc(String(rm.description).replace(/<[^>]+>/g, " "))}</p>` : ""}
+          ${amen.length ? `<h3 style="font-size:16px;margin-bottom:10px">Room amenities</h3><div class="amen-grid" style="margin-bottom:18px">${amen.map(a => `<div class="amen">${PS.icon("check", 15, 2.6)}${PS.esc(a)}</div>`).join("")}</div>` : ""}
+          ${opts.some(o => (o.taxesExcluded || []).length) ? `<h3 style="font-size:16px;margin-bottom:10px">Paid at the hotel</h3><div class="alert warn" style="margin-bottom:18px">${PS.icon("info", 18)}<div>${opts.find(o => (o.taxesExcluded || []).length).taxesExcluded.map(f => `${PS.esc(f.description)}: <b>${PS.money(f.amount, f.currency, 2)}</b>`).join("<br>")}<br><small>Collected by the hotel at check-in or check-out, on top of the price you pay online.</small></div></div>` : ""}
+          ${notes ? `<h3 style="font-size:16px;margin-bottom:8px">Good to know</h3><p style="color:var(--text-2);white-space:pre-line;font-size:14px">${PS.esc(notes)}</p>` : ""}
+        </div></div>`;
+      const close = () => { back.remove(); document.body.style.overflow = ""; };
+      back.addEventListener("click", (e) => { if (e.target === back) close(); });
+      back.querySelector(".modal-close").onclick = close;
+      document.body.appendChild(back); document.body.style.overflow = "hidden";
+    }
+
     function renderRooms() {
-      const offers = allOffers.filter(o => (!rf.refund || o.refundable) && (!rf.breakfast || hasBreakfast(o)) && (!rf.sleeps3 || (o.maxOccupancy || 0) >= 3))
-        .sort((a, b) => rf.sort === "high" ? b.total - a.total : a.total - b.total);
+      const offers = allOffers.filter(o => (!rf.refund || o.refundable) && (!rf.breakfast || hasBreakfast(o)) && (!rf.sleeps3 || (o.maxOccupancy || 0) >= 3));
       if (!offers.length) {
-        roomsEl.innerHTML = `<div class="empty" style="padding:30px 20px"><div class="ei">${PS.icon("filter", 26)}</div><h3>No rooms match these filters</h3><p>Try removing a filter. ${allOffers.length} room${allOffers.length === 1 ? " is" : "s are"} available for your dates.</p></div>`;
+        roomsEl.innerHTML = `<div class="empty" style="padding:30px 20px"><div class="ei">${PS.icon("filter", 26)}</div><h3>No rooms match these filters</h3><p>Try removing a filter. ${allOffers.length} room option${allOffers.length === 1 ? " is" : "s are"} available for your dates.</p></div>`;
         return;
       }
       const n = PS.nights(PS.iso(checkin), PS.iso(checkout));
-      roomsEl.innerHTML = offers.map((o, i) => {
+      // Group rate options under their room type
+      const groups = new Map();
+      offers.forEach(o => {
         const rm = roomsById.get(o.mappedRoomId) || {};
-        const photo = (rm.photos || []).find(p => p.hd_url || p.url);
+        const key = o.mappedRoomId || (rm.roomName || o.name).toLowerCase();
+        if (!groups.has(key)) groups.set(key, { rm, opts: [] });
+        groups.get(key).opts.push(o);
+      });
+      const list = [...groups.values()].map(g => ({ ...g, opts: g.opts.sort((a, b) => a.total - b.total), min: Math.min(...g.opts.map(o => o.total)) }))
+        .sort((a, b) => rf.sort === "high" ? b.min - a.min : a.min - b.min);
+      const flat = [];
+      roomsEl.innerHTML = list.map((g, gi) => {
+        const rm = g.rm, o0 = g.opts[0];
+        const photos = (rm.photos || []).map(p => p.hd_url || p.url).filter(Boolean);
         const beds = (rm.bedTypes || []).map(b => `${b.quantity} ${b.bedType}`).join(", ");
-        const tax = (o.taxesExcluded || []).reduce((s, t) => s + (t.amount || 0), 0);
-        return `<div class="room fade-in">
-          <div class="room-img">${photo ? `<img src="${PS.esc(photo.hd_url || photo.url)}" alt="" loading="lazy" onerror="this.remove()">` : (images[i + 1] ? `<img src="${PS.esc(images[i + 1])}" alt="" loading="lazy">` : "")}</div>
-          <div class="room-body">
-            <div>
-              <h3>${PS.esc(rm.roomName || o.name)}</h3>
+        const amen = (rm.roomAmenities || []).map(a => a.name).filter(Boolean).slice(0, 6);
+        return `<div class="rgroup fade-in">
+          <div class="rg-top">
+            <button type="button" class="rg-img" data-rd="${gi}" aria-label="See room photos and details">
+              ${photos[0] ? `<img src="${PS.esc(photos[0])}" alt="" loading="lazy" onerror="this.remove()">` : (images[gi + 1] ? `<img src="${PS.esc(images[gi + 1])}" alt="" loading="lazy">` : "")}
+              ${photos.length > 1 ? `<span class="rg-count">${PS.icon("photo", 13)}${photos.length}</span>` : ""}
+            </button>
+            <div class="rg-info">
+              <h3>${PS.esc(rm.roomName || o0.name)}</h3>
               <div class="room-meta">
                 ${rm.roomSizeSquare ? `<span>${PS.icon("sqm", 14)}${rm.roomSizeSquare} ${PS.esc(rm.roomSizeUnit || "m²")}</span>` : ""}
                 ${beds ? `<span>${PS.icon("bed", 14)}${PS.esc(beds)}</span>` : ""}
-                ${o.maxOccupancy ? `<span>${PS.icon("users", 14)}Sleeps ${o.maxOccupancy}</span>` : ""}
+                ${o0.maxOccupancy ? `<span>${PS.icon("users", 14)}Sleeps ${o0.maxOccupancy}</span>` : ""}
               </div>
-              <div class="tags">
-                ${o.refundable ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation${o.cancelBy ? " before " + PS.fmtDate(new Date(o.cancelBy)) : ""}</span>` : `<span class="tag">Non-refundable</span>`}
-                <span class="tag ${/breakfast|board|inclusive/i.test(o.board || "") ? "amber" : ""}">${PS.icon("coffee", 13)}${PS.esc(o.board || "Room only")}</span>
-                ${(o.perks || []).slice(0, 2).map(p => `<span class="tag blue">${PS.esc(p)}</span>`).join("")}
-              </div>
-            </div>
-            <div class="price-col">
-              ${o.strikeTotal ? `<span class="price-strike">${PS.money(o.strikeTotal, o.currency, 0)}</span>` : ""}
-              <span class="price-big">${PS.money(o.total, o.currency, 0)}</span>
-              <span class="price-sub">total for ${PS.plural(n, "night")}</span>
-              ${tax ? `<span class="price-sub">+ ${PS.money(tax, o.currency, 0)} taxes paid at property</span>` : `<span class="price-sub">Includes taxes &amp; fees</span>`}
-              <button class="btn btn-coral" data-offer="${i}">Reserve</button>
+              ${amen.length ? `<div class="rg-amen">${amen.map(a => `<span>${PS.icon("check", 12, 3)}${PS.esc(a)}</span>`).join("")}</div>` : ""}
+              <button type="button" class="link rg-more" data-rd="${gi}">Room details &amp; photos ${PS.icon("right", 14)}</button>
             </div>
           </div>
+          <div class="rg-opts">${g.opts.map((o, k) => { const i = flat.push(o) - 1; return `
+            <div class="ropt">
+              <div class="ropt-inc">
+                <b>${k === 0 && g.opts.length > 1 ? `<span class="tag blue" style="margin-right:6px">Best price</span>` : ""}${hasBreakfast(o) ? PS.esc(o.board) : "Room only"}</b>
+                <ul>
+                  ${cancelText(o)}
+                  <li class="${hasBreakfast(o) ? "ok" : "no"}">${PS.icon("coffee", 14)}${hasBreakfast(o) ? PS.esc(o.board) : "Breakfast not included"}</li>
+                  ${(o.perks || []).slice(0, 3).map(p => `<li class="ok">${PS.icon("star", 14)}${PS.esc(p)}</li>`).join("")}
+                  <li class="ok">${PS.icon("lock", 14)}Pay now, secure checkout</li>
+                </ul>
+              </div>
+              <div class="ropt-price">
+                ${o.strikeTotal ? `<span class="price-strike">${PS.money(o.strikeTotal, o.currency, 0)}</span>` : ""}
+                <span class="price-big">${PS.money(o.total, o.currency, 0)}</span>
+                <span class="price-sub">${PS.money(o.total / n, o.currency, 0)}/night · ${PS.plural(n, "night")}</span>
+                ${feesHTML(o)}
+                <button class="btn btn-coral" data-offer="${i}">Reserve</button>
+                ${o.refundable ? `<span class="price-sub" style="color:var(--green)">You won't be charged a cancellation fee before the deadline</span>` : ""}
+              </div>
+            </div>`; }).join("")}</div>
         </div>`;
       }).join("");
+      roomsEl.querySelectorAll("[data-rd]").forEach(b => b.onclick = () => {
+        const g = list[+b.dataset.rd];
+        roomDetails(g.rm, g.opts, (g.rm.photos || []).map(p => p.hd_url || p.url).filter(Boolean));
+      });
       roomsEl.querySelectorAll("[data-offer]").forEach(b => b.onclick = () => {
-        const o = offers[+b.dataset.offer];
+        const o = flat[+b.dataset.offer];
         const rm = roomsById.get(o.mappedRoomId) || {};
         PS.store.set("ps_hotel_sel", {
           hotel: { id: hotelId, name: hotel.name, photo: images[0] || hotel.main_photo, address: [hotel.address, hotel.city].filter(Boolean).join(", "), city: hotel.city, country: String(hotel.country || "").toUpperCase(), stars: hotel.starRating, rating },

@@ -449,6 +449,22 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     }
   });
 
+  // Merge fee lines with the same name/currency and give them a readable label.
+  function mergeFees(list) {
+    const out = new Map();
+    for (const t of list) {
+      if (!(t.amount > 0)) continue;
+      const raw = String(t.description || "").trim();
+      const label = !raw || /^\$?[\d.,]+\s*[a-z]{3}\b/i.test(raw) || /^usd per/i.test(raw) ? "Local taxes and fees"
+        : raw.replace(/\s+/g, " ").replace(/^./, c => c.toUpperCase());
+      const key = label.toLowerCase() + "|" + (t.currency || "");
+      const cur = out.get(key) || { description: label, amount: 0, currency: t.currency || "USD" };
+      cur.amount = Math.round((cur.amount + t.amount) * 100) / 100;
+      out.set(key, cur);
+    }
+    return [...out.values()];
+  }
+
   // ─── All rooms & rates for one hotel ───
   app.post("/api/stays/rooms", async (req, res) => {
     const b = req.body || {};
@@ -485,7 +501,10 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           strikeTotal: rt.suggestedSellingPrice?.amount > rt.offerRetailRate?.amount ? rt.suggestedSellingPrice.amount : null,
           refundable: cp.refundableTag === "RFN",
           cancelBy: (cp.cancelPolicyInfos || []).map(c => c.cancelTime).sort()[0] || null,
-          taxesExcluded: (rate.retailRate?.taxesAndFees || []).filter(t => !t.included).map(t => ({ description: t.description, amount: t.amount, currency: t.currency })),
+          // Fees are itemized per rate (one rate per room in multi-room searches): merge them by name.
+          taxesExcluded: mergeFees((rt.rates || []).flatMap(r => (r.retailRate?.taxesAndFees || []).filter(t => !t.included))),
+          taxesIncluded: mergeFees((rt.rates || []).flatMap(r => (r.retailRate?.taxesAndFees || []).filter(t => t.included))),
+          cancelPolicy: (cp.cancelPolicyInfos || []).map(c => ({ from: c.cancelTime, amount: c.amount, currency: c.currency, type: c.type })).sort((a, b2) => String(a.from).localeCompare(String(b2.from))),
           remarks: rate.remarks || "",
           perks: (rate.perks || []).map(p => p.name || p).filter(Boolean),
         };

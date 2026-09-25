@@ -1236,3 +1236,47 @@ p { margin: 0; }
   .cur-btn { height: 32px; padding: 0 9px; font-size: 12.5px; }
   .hdr-right .btn-sm { padding: 0 11px; height: 32px; font-size: 13px; }
 }
+
+/* ─── Rooms: grouped by type with rate options ────────────────────────── */
+.rgroup { border: 1px solid #e6eaf2; border-radius: 18px; overflow: hidden; margin-bottom: 16px; background: #fff; }
+.rg-top { display: grid; grid-template-columns: 220px 1fr; gap: 18px; padding: 16px; border-bottom: 1px solid var(--line-2); }
+.rg-img { position: relative; height: 150px; border: 0; padding: 0; border-radius: 14px; overflow: hidden; background: var(--line-2); cursor: pointer; }
+.rg-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s var(--ease); }
+.rg-img:hover img { transform: scale(1.05); }
+.rg-count { position: absolute; right: 8px; bottom: 8px; display: inline-flex; gap: 4px; align-items: center; padding: 3px 8px; border-radius: 8px; background: rgba(8,18,45,.7); color: #fff; font-size: 12px; font-weight: 700; }
+.rg-info h3 { font-size: 18px; font-weight: 800; }
+.rg-amen { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 13.5px; color: var(--text-2); }
+.rg-amen span { display: inline-flex; gap: 5px; align-items: center; }
+.rg-amen svg { color: var(--green); }
+.rg-more { display: inline-flex; gap: 4px; align-items: center; margin-top: 12px; background: none; border: 0; padding: 0; font-size: 14px; }
+.ropt { display: grid; grid-template-columns: 1fr 230px; gap: 16px; padding: 16px; }
+.ropt + .ropt { border-top: 1px dashed var(--line); }
+.ropt-inc b { color: var(--ink); font-size: 15px; display: flex; align-items: center; }
+.ropt-inc ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; font-size: 14px; }
+.ropt-inc li { display: flex; gap: 8px; align-items: center; }
+.ropt-inc li.ok { color: var(--green); } .ropt-inc li.ok svg { flex: none; }
+.ropt-inc li.no { color: var(--text-2); }
+.ropt-price { display: flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 2px; }
+.ropt-price .btn { margin-top: 10px; width: 100%; }
+.fee-d { margin-top: 4px; font-size: 13px; color: #a66a00; text-align: right; }
+.fee-d summary { cursor: pointer; font-weight: 700; list-style: none; text-decoration: underline dotted; text-underline-offset: 3px; }
+.fee-d summary::-webkit-details-marker { display: none; }
+.fee-d ul { list-style: none; padding: 8px 10px; margin: 6px 0 0; background: var(--amber-50); border-radius: 10px; display: grid; gap: 4px; text-align: left; color: #7a4d00; }
+.fee-d li { display: flex; justify-content: space-between; gap: 10px; }
+.fee-d p { color: var(--muted); font-size: 12px; margin-top: 6px; text-align: left; }
+.rd-photos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.rd-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 12px; }
+.rd-photos img:first-child { grid-column: span 2; grid-row: span 2; aspect-ratio: auto; height: 100%; }
+.pay-hotel { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--amber-50); color: #7a4d00; font-size: 14px; display: grid; gap: 4px; }
+.pay-hotel b { display: flex; gap: 6px; align-items: center; color: #5c3a00; }
+.pay-hotel div { display: flex; justify-content: space-between; gap: 10px; }
+.pay-hotel small { color: #9a6a1e; font-size: 12.5px; margin-top: 2px; }
+@media (max-width: 760px) {
+  .rg-top { grid-template-columns: 1fr; } .rg-img { height: 190px; }
+  .ropt { grid-template-columns: 1fr; } .ropt-price { align-items: flex-start; text-align: left; }
+  .fee-d { text-align: left; } .rd-photos { grid-template-columns: 1fr 1fr; }
+}
+.term-link { display: inline-flex; gap: 4px; align-items: center; margin-left: 6px; font-size: 12.5px; font-weight: 700; color: var(--blue); white-space: nowrap; }
+.term-link:hover { text-decoration: underline; }
+.bag-note { display: flex; gap: 8px; align-items: flex-start; color: var(--text-2); font-size: 13px; line-height: 1.45; margin-top: 4px; }
+.bag-note svg { flex: none; margin-top: 2px; color: var(--muted); }

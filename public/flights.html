@@ -331,7 +331,8 @@
         const ac = am?.aircraftType ? (AIRCRAFT[am.aircraftType] || "") : "";
         const op = s.carrier?.operatingName && s.carrier.operatingName !== s.carrier.marketingName ? ` · Operated by ${PS.esc(s.carrier.operatingName)}` : "";
         return `<div class="fseg">
-          <div><b style="color:var(--ink)">${PS.esc(s.carrier?.marketingName || "")} ${PS.esc(s.carrier?.marketingCode || "")}${PS.esc(s.flight?.marketingNumber || "")}</b> · Flight time ${PS.dur(s.duration?.minutes || 0)}</div>
+          <div><b style="color:var(--ink)">${PS.esc(s.carrier?.marketingName || "")} ${PS.esc(s.carrier?.marketingCode || "")}${PS.esc(s.flight?.marketingNumber || "")}</b> · Flight time ${PS.dur(s.duration?.minutes || 0)}
+            <a class="term-link" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent(`${s.carrier?.marketingCode || ""}${s.flight?.marketingNumber || ""} ${s.departureTime.slice(0, 10)} terminal`)}">${PS.icon("info", 12)}Check terminal &amp; gate</a></div>
           <div class="leg-more hidden">${[cabin, ac].filter(Boolean).map(PS.esc).join(" · ")}${op}
             ${am?.amenities?.length ? `<div class="amen-row" style="margin-top:6px">${am.amenities.map(a => `<span>${PS.icon(AMEN_ICON[a.category] || "check", 12)}${PS.esc(a.details || a.name)}${a.chargeable ? " ($)" : ""}</span>`).join("")}</div>` : ""}</div>
         </div>`;
@@ -348,11 +349,19 @@
           const c = l.conns[k] || { arrivalAirportCode: s.destinationCode, arrivalAirportName: s.destinationName, departureAirportCode: next.originCode, departureAirportName: next.originName, duration: { minutes: Math.round((new Date(next.departureTime) - new Date(s.arrivalTime)) / 60000) }, changeAirport: s.destinationCode !== next.originCode };
           const mins = c.duration?.minutes || 0;
           const warns = [];
-          if (c.changeAirport) warns.push(["red", `Change airports: ${c.arrivalAirportCode} → ${c.departureAirportCode}`], ["red", "Collect & re-check baggage"]);
+          const sameAirline = (s.carrier?.marketingCode || "") === (next.carrier?.marketingCode || "");
+          if (c.changeAirport) warns.push(["red", `Change airports: ${c.arrivalAirportCode} → ${c.departureAirportCode}`], ["red", "Collect & re-check your bags"]);
           if (c.overnight) warns.push(["", "Overnight layover"]);
           if (mins < 60) warns.push(["", "Short connection"]);
           rows += `<div class="t">${arrDD > 0 ? `<small>${PS.fmtDate(s.arrivalTime.slice(0, 10))}</small>` : ""}${PS.time(s.arrivalTime)}</div><div class="rail"><span class="dot"></span></div><div class="ap">${s.destinationCode} <span>${PS.esc(s.destinationName || "")}</span></div>`;
-          rows += `<div></div><div class="rail"></div><div class="xfer"><div>Transfer in <b>${PS.esc(cityOf(c.arrivalAirportName, c.arrivalAirportCode))}</b> · ${PS.dur(mins)}</div>${warns.map(([cls, w]) => `<div class="w ${cls}">${PS.icon("alert", 14)}${w}</div>`).join("")}</div>`;
+          const bagNote = c.changeAirport
+            ? "Pick up your checked bags, travel to the other airport and check in again."
+            : sameAirline
+              ? `Checked bags are normally sent through to ${PS.esc(lastSeg.destinationCode)} when both flights are on one booking. Confirm when you check in.`
+              : `Different airlines (${PS.esc(s.carrier?.marketingName || "")} → ${PS.esc(next.carrier?.marketingName || "")}): ask at check-in whether your bags go through to ${PS.esc(lastSeg.destinationCode)} or need collecting here.`;
+          rows += `<div></div><div class="rail"></div><div class="xfer"><div>Transfer in <b>${PS.esc(cityOf(c.arrivalAirportName, c.arrivalAirportCode))}</b> · ${PS.dur(mins)}</div>${warns.map(([cls, w]) => `<div class="w ${cls}">${PS.icon("alert", 14)}${w}</div>`).join("")}
+            <div class="bag-note">${PS.icon("suitcase", 14)}<span>${bagNote}</span></div>
+            <div class="bag-note">${PS.icon("info", 14)}<span>Your arrival and departure terminals may differ. Check them with "Check terminal &amp; gate" and allow time to transfer${mins < 90 ? "; this connection is tight" : ""}.</span></div></div>`;
         }
       });
       rows += `<div class="t">${dd > 0 ? `<small>${PS.fmtDate(l.arr.slice(0, 10))}</small>` : ""}${PS.time(l.arr)}</div><div class="rail last"><span class="dot"></span></div><div class="ap">${lastSeg.destinationCode} <span>${PS.esc(lastSeg.destinationName || "")}</span></div>`;

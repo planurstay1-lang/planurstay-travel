@@ -73,7 +73,7 @@
           </div>
           <div class="divider"></div>
           <div class="sum-total"><span>Total due now</span><b>${PS.money(total, cur, 2)}</b></div>
-          ${tax ? `<div class="price-sub" style="margin-top:6px">Plus ${PS.money(tax, cur, 2)} in local taxes, paid at the property.</div>` : `<div class="price-sub" style="margin-top:6px">Taxes and fees included.</div>`}
+          ${tax ? `<div class="pay-hotel"><b>${PS.icon("info", 15)}Due at the hotel</b>${(offer.taxesExcluded || []).map(f => `<div><span>${PS.esc(f.description)}</span><span>${PS.money(f.amount, f.currency || cur, 2)}</span></div>`).join("")}<small>Collected by the hotel at check-in or check-out, not charged now.</small></div>` : `<div class="price-sub" style="margin-top:6px">Taxes and fees included.</div>`}
         </div>
         <div class="secure-note">${PS.icon("lock", 14)}Secure, encrypted payment</div>`;
       }
