@@ -165,6 +165,8 @@ require("./modules/guides").registerGuideRoutes(app, { APP_URL });
 require("./modules/legal").registerLegalRoutes(app);
 const rewards = require("./modules/rewards").createRewards({ db, apiKey: key, jwt, JWT_SECRET });
 rewards.register(app);
+// Public health check (no paths or data): lets monitors and deploy checks confirm the DB is on the disk.
+app.get("/api/health", (req, res) => res.json({ ok: true, dbPathSet: !!process.env.DB_PATH, dbPersistent: dbInfo.persistent, dbError: dbInfo.error ? dbInfo.error.split(":")[0] : null }));
 const admin = require("./modules/admin").createAdmin({ db, apiKey: () => key, jwt, JWT_SECRET, dbInfo });
 admin.register(app);
 require("./modules/analytics").createAnalytics({ db, isAdmin: admin.isAdmin }).register(app);
