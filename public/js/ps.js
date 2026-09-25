@@ -402,9 +402,10 @@
           <span>Paid</span><span>${a.total != null ? PS.money(+a.total, a.currency, 2) : "–"}</span>
           <span>Cancellation fee</span><span class="${a.fee ? "bad" : "good"}">${a.fee != null ? (a.fee ? PS.money(+a.fee, a.currency, 2) : "Free") : "Shown by the hotel"}</span>
           <span>Estimated refund</span><span><b>${a.refund != null ? PS.money(+a.refund, a.currency, 2) : "–"}</b></span>
+          ${a.refundTo ? `<span>Refund goes to</span><span>${PS.esc({ original_payment: "Your card", voucher: "Airline voucher", agency_deposit: "PlanurStay (we refund you)", manual: "Our team" }[a.refundTo] || "Your payment method")}</span>` : ""}
         </div>
         ${a.needsCode ? `<label class="cx-code">Code from your email<input inputmode="numeric" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code"></label><button type="button" class="cx-resend">Send a new code</button>` : ""}
-        <p class="cx-note">The hotel confirms the final amount. Refunds go back to your card in 5–10 business days.</p>
+        <p class="cx-note">${a.flight ? `The airline confirms the final amount${a.estimate ? " (this is an estimate)" : ""}. It can take a little while to confirm.` : "The hotel confirms the final amount. Refunds go back to your card in 5–10 business days."}</p>
         <div class="cx-btns"><button type="button" class="btn btn-ghost btn-sm cx-keep">Keep booking</button><button type="button" class="btn btn-sm cx-go">Cancel booking</button></div>
         <div class="cx-msg"></div>
       </div>`;
@@ -457,7 +458,10 @@
         try {
           const r = await PS.api("/api/support/cancel", { method: "POST", body: { token: a.token, code } });
           a.done = true;
-          state.msgs.push({ role: "assistant", content: `Done. Booking **${a.bookingId}** is cancelled.${r.refund != null ? ` Refund: **${PS.money(+r.refund, r.currency || a.currency, 2)}**${r.fee ? ` (fee ${PS.money(+r.fee, r.currency || a.currency, 2)})` : ""}.` : ""} We've emailed a confirmation. Refunds usually reach your card in 5–10 business days.` });
+          const amt = r.refund != null ? ` Refund: **${PS.money(+r.refund, r.currency || a.currency, 2)}**${r.fee ? ` (fee ${PS.money(+r.fee, r.currency || a.currency, 2)})` : ""}.` : "";
+          state.msgs.push({ role: "assistant", content: r.pending
+            ? `We've asked the airline to cancel booking **${a.bookingId}**.${amt} The airline is confirming it; we'll email you as soon as it's final.`
+            : `Done. Booking **${a.bookingId}** is cancelled.${amt} We've emailed a confirmation.${r.refundTo === "voucher" ? " The airline issues the refund as a travel voucher." : " Refunds usually reach your card in 5–10 business days."}` });
           PS.track("page", { cancelled: 1 });
         } catch (err) {
           e.target.disabled = false; e.target.textContent = "Cancel booking";

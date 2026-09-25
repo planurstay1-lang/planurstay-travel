@@ -23,9 +23,9 @@ function apiKeyEnv() {
 }
 
 function bookBaseUrl() {
-  return !require("./modules/api-key").isSandbox()
-    ? "https://book.liteapi.travel/v3.0"
-    : "https://sandbox.book.liteapi.travel/v3.0";
+  // One host for both environments: the API key decides sandbox vs live
+  // (sandbox.book.liteapi.travel does not resolve).
+  return "https://book.liteapi.travel/v3.0";
 }
 
 function apiBaseUrl() {

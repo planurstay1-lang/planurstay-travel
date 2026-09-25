@@ -42,9 +42,9 @@ function createSupport({ db, jwt, JWT_SECRET, apiKey, isSandbox, sendEmail, isAd
     );
   `);
   const SUPPORT_EMAIL = () => process.env.SUPPORT_EMAIL || "info@planurstay.com";
-  // Hotels: one host for both environments (the key decides). Flights: separate sandbox host.
+  // Hotels: one host for both environments (the key decides).
   const bookHost = () => "https://book.liteapi.travel/v3.0";
-  const flightHost = () => (isSandbox() ? "https://sandbox.book.liteapi.travel/v3.0" : "https://book.liteapi.travel/v3.0");
+  const flightHost = () => "https://api.liteapi.travel/v3.0"; // GET /flights/bookings/{id} lives on the API host
   const lite = async (url, method = "GET") => {
     const r = await fetch(url, { method, headers: { "X-API-Key": apiKey(), Accept: "application/json" }, signal: AbortSignal.timeout(45000) });
     const j = await r.json().catch(() => ({}));
@@ -161,7 +161,24 @@ function createSupport({ db, jwt, JWT_SECRET, apiKey, isSandbox, sendEmail, isAd
     if (!o) return { error: "No booking found for that booking ID and email." };
     if (o.type === "flight") {
       const s = await flightStatus(o.row);
-      return { type: "flight", selfService: false, ...s, next: "Flight cancellations are handled by our team with the airline. Offer to open a support ticket (create_support_ticket, category 'cancellation') and share the quote above." };
+      const q = s.cancellationQuote;
+      if (/CANCEL/i.test(s.status || "")) return { type: "flight", alreadyCancelled: true, ...s };
+      // Self-service only with a confirmed/estimated airline quote; anything else goes to a person.
+      if (!q || !["confirmed", "estimated"].includes(q.confidence)) {
+        return { type: "flight", selfService: false, ...s, next: "The airline's refund can't be confirmed automatically. Offer a support ticket (category 'cancellation') so our team handles it with the airline." };
+      }
+      let segs = []; try { segs = JSON.parse(o.row.segments_json || "[]"); } catch {}
+      const out = segs[0] || {}, back = segs.filter(x => x.direction === "INBOUND")[0];
+      const route = out.originCode ? `${out.originCode} → ${(segs.filter(x => x.direction !== "INBOUND").pop() || out).destinationCode}` : "Flight";
+      const token = jwt.sign({ p: "cancel", t: "flight", b: o.row.booking_id, u: o.row.user_id }, JWT_SECRET, { expiresIn: "20m" });
+      return {
+        type: "flight", selfService: true, ...s, needsCode: false,
+        action: { kind: "cancel", flight: true, token, bookingId: o.row.booking_id, hotel: `Flight ${route}${o.row.liteapi_booking_ref ? " · " + o.row.liteapi_booking_ref : ""}`,
+          checkin: (out.departureTime || "").slice(0, 10), checkout: back ? (back.departureTime || "").slice(0, 10) : (out.departureTime || "").slice(0, 10),
+          total: o.row.total_amount, currency: q.currency || o.row.currency, fee: q.penalty ?? null, refund: q.refund ?? null,
+          refundTo: q.refundGoesTo, estimate: q.confidence !== "confirmed", needsCode: false },
+        next: "A confirmation card is shown with the airline's refund quote. The customer must click Cancel booking. Mention if the refund is an airline voucher rather than money back, and that the airline may take time to confirm.",
+      };
     }
     const s = await hotelStatus(o.row);
     if (/CANCEL/i.test(s.status || "")) return { type: "hotel", alreadyCancelled: true, ...s };
@@ -201,11 +218,53 @@ function createSupport({ db, jwt, JWT_SECRET, apiKey, isSandbox, sendEmail, isAd
     return { ref, email: contact, bookingVerified: !!o };
   }
 
+  async function cancelFlight(req, res, t) {
+    const u = userOf(req);
+    let row = null;
+    try { row = db.prepare("SELECT * FROM flight_bookings WHERE booking_id = ? LIMIT 1").get(t.b); } catch {}
+    if (!row || !u || row.user_id !== u.id || t.u !== u.id) return res.status(403).json({ error: "Please sign in with the account that made this booking." });
+    const r = await fetch(`https://api.liteapi.travel/v3.0/flights/bookings/${encodeURIComponent(t.b)}/cancellations`, {
+      method: "POST", headers: { "X-API-Key": apiKey(), Accept: "application/json" }, signal: AbortSignal.timeout(60000),
+    });
+    const j = await r.json().catch(() => ({}));
+    const d = Array.isArray(j.data) ? j.data[0] : j.data || {};
+    if (r.status === 200 && /CANCEL/i.test(d.status || "")) {
+      try { db.prepare("UPDATE flight_bookings SET status = ? WHERE booking_id = ?").run(d.status, t.b); } catch {}
+      try { db.prepare("UPDATE rewards_ledger SET type = 'reverse', points = 0, note = ? WHERE booking_ref = ? AND type = 'pending'").run(`Flight ${t.b} was cancelled`, t.b); } catch {}
+      logSelfCancel(row.user_id, u.email, t.b, "flight", `Status ${d.status}; fee ${d.cancellation_fee ?? "?"}; refund ${d.refund_amount ?? "?"} ${d.currency || ""} to ${d.destination || "?"}.`);
+      mailFlightCancel(u.email, t.b, d, false);
+      return res.json({ success: true, status: d.status, refund: d.refund_amount, fee: d.cancellation_fee, currency: d.currency, refundTo: d.destination });
+    }
+    if (r.status === 202) {
+      try { db.prepare("UPDATE flight_bookings SET status = 'CANCEL_PENDING' WHERE booking_id = ?").run(t.b); } catch {}
+      logSelfCancel(row.user_id, u.email, t.b, "flight", `Cancel requested; awaiting airline confirmation. Quoted refund ${d.refund_amount ?? "?"} ${d.currency || ""}.`, "open");
+      mailFlightCancel(u.email, t.b, d, true);
+      return res.json({ success: true, pending: true, status: "PENDING", refund: d.refund_amount, fee: d.cancellation_fee, currency: d.currency, refundTo: d.destination });
+    }
+    const msg = j.error?.message || j.error?.description || (r.status === 409 ? "This booking can't be cancelled right now" : "The airline didn't accept the cancellation");
+    const tk = createTicket(req, { bookingId: t.b, email: u.email, category: "cancellation-failed", summary: `Flight self-cancellation failed (${r.status}): ${msg}` });
+    return res.status(502).json({ error: `We couldn't cancel this automatically (${msg}). Our team will handle it: reference ${tk.ref}.` });
+  }
+  function logSelfCancel(userId, email, bookingId, type, summary, status = "closed") {
+    try { db.prepare("INSERT INTO support_tickets (ref, user_id, email, booking_id, booking_type, category, summary, status) VALUES (?, ?, ?, ?, ?, 'self-cancel', ?, ?)").run("PS-" + crypto.randomBytes(3).toString("hex").toUpperCase(), userId, email, bookingId, type, `Cancelled by customer via assistant. ${summary}`, status); } catch {}
+  }
+  function mailFlightCancel(to, bookingId, d, pending) {
+    const dest = { original_payment: "your original card", voucher: "an airline travel voucher", agency_deposit: "our account (we'll refund you)", manual: "our team (we'll be in touch)" }[d.destination] || "your original payment method";
+    sendEmail({
+      to, subject: pending ? `Cancellation requested for flight booking ${bookingId}` : `Your flight booking ${bookingId} is cancelled`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px"><h2 style="margin:0 0 8px">${pending ? "Cancellation requested" : "Flight cancelled"}</h2>
+        <p>${pending ? "We've asked the airline to cancel" : "We've cancelled"} flight booking <b>${esc(bookingId)}</b>.${pending ? " The airline is confirming it; we'll email you when it's final." : ""}</p>
+        <p>Refund: <b>${esc(d.refund_amount ?? "-")} ${esc(d.currency || "")}</b>${d.cancellation_fee ? ` · Airline fee: ${esc(d.cancellation_fee)} ${esc(d.currency || "")}` : ""}<br>Refund goes to: ${esc(dest)}</p>
+        <p style="color:#667">Questions? Reply to this email.</p></div>`,
+    }).catch(() => {});
+  }
+
   function register(app) {
     app.post("/api/support/cancel", async (req, res) => {
       let t;
       try { t = jwt.verify(String(req.body?.token || ""), JWT_SECRET); } catch { return res.status(400).json({ error: "This cancellation request has expired. Ask the assistant again to get a new one." }); }
       if (t.p !== "cancel" || !t.b) return res.status(400).json({ error: "Invalid request" });
+      if (t.t === "flight") return cancelFlight(req, res, t);
       const row = db.prepare("SELECT * FROM bookings WHERE liteapi_booking_id = ? ORDER BY id LIMIT 1").get(t.b);
       if (!row || low(row.guest_email) !== t.e) return res.status(404).json({ error: "Booking not found" });
       if (t.c) {

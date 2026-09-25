@@ -164,6 +164,7 @@ async function sendEmail({ to, subject, html, replyTo }) {
 }
 const support = require("./modules/support").createSupport({ db, jwt, JWT_SECRET, apiKey: () => key, isSandbox: liveKey.isSandbox, sendEmail, isAdmin: admin.isAdmin });
 support.register(app);
+require("./modules/webhooks").createWebhooks({ db, sendEmail }).register(app);
 require("./modules/chat").createChat({ port: PORT, support }).register(app);
 // Google Search Console HTML-file verification: set GSC_HTML_FILE=google1234abcd.html on Render
 app.get(/^\/google[0-9a-z]+\.html$/, (req, res, next) => {

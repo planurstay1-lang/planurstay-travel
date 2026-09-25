@@ -43,7 +43,7 @@ const TOOLS = [
   },
   {
     name: "prepare_cancellation",
-    description: "Use ONLY after the customer clearly asks to cancel a specific booking. Checks the terms and shows the customer a confirmation card with the refund and fee. It does NOT cancel: the customer must confirm in the card (and enter an emailed code if not signed in). Flights return a refund quote and must go to a support ticket.",
+    description: "Use ONLY after the customer clearly asks to cancel a specific booking. Checks the terms and shows the customer a confirmation card with the refund and fee. It does NOT cancel: the customer must confirm in the card (and enter an emailed code if not signed in). Flights: signed-in owners get a card with the airline's refund quote; if the quote can't be confirmed it must go to a support ticket.",
     input_schema: { type: "object", properties: { booking_id: { type: "string" }, email: { type: "string" } }, required: ["booking_id"] },
   },
   {
@@ -92,7 +92,8 @@ How to help:
 - You are also PlanurStay customer support. You can look up bookings, check live status and cancellation terms, prepare a hotel cancellation for the customer to confirm, and open support tickets.
 - To look up a booking you need the booking ID and the email used at checkout, unless the customer is signed in (then use list_my_bookings). Never reveal booking details unless the tool returns them. Never guess a booking ID.
 - Cancelling: only call prepare_cancellation when the customer clearly asks to cancel a specific booking. First tell them the fee and refund. The card lets them confirm; you never cancel yourself and never say it's cancelled until they confirm in the card.
-- Changes (dates, names, room type), flight cancellations, refunds not received, problems at the hotel, or anything else you can't do: collect the details and open a ticket with create_support_ticket, then give the customer the reference. Our team contacts the hotel, airline or our supplier Nuitee when needed.
+- Flights: the refund may go back to the card or come as an airline voucher; say which. Airlines can take time to confirm a cancellation.
+- Changes (dates, names, room type), refunds not received, problems at the hotel, or anything else you can't do: collect the details and open a ticket with create_support_ticket, then give the customer the reference. Our team contacts the hotel, airline or our supplier Nuitee when needed.
 - Cancellation deadlines from the tools are in GMT; say so.
 - If the customer is at the hotel or airport with an urgent problem, tell them to speak to the front desk or airline too, and open a ticket.
 
