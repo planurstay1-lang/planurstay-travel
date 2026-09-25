@@ -17,6 +17,15 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET }) {
   };
   const guard = (req, res, next) => (adminUser(req) ? next() : res.status(403).json({ error: "Admins only" }));
 
+  // Markup settings editable from /admin; persisted so they survive restarts (with a persistent disk).
+  db.exec("CREATE TABLE IF NOT EXISTS site_settings (key TEXT PRIMARY KEY, value TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+  const loadSettings = () => {
+    const o = {};
+    for (const r of db.prepare("SELECT key, value FROM site_settings WHERE key IN ('publicMargin','memberMargin')").all()) o[r.key] = r.value === "" ? null : +r.value;
+    pricing.setOverrides(o);
+  };
+  loadSettings();
+
   async function da(path, body) {
     const r = await fetch("https://da.liteapi.travel" + path, {
       method: "POST", headers: { "X-Api-Key": apiKey(), "Content-Type": "application/json", Accept: "application/json" },
@@ -38,6 +47,23 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET }) {
   function register(app) {
     app.get("/api/admin/me", (req, res) => res.json({ admin: !!adminUser(req) }));
 
+    // Public: current member saving for marketing copy (no margins exposed)
+    app.get("/api/pricing/summary", (req, res) => res.json({ memberSavePct: pricing.memberSavePct() }));
+
+    app.post("/api/admin/pricing", guard, (req, res) => {
+      const b = req.body || {};
+      const val = (v) => (v === "" || v == null ? null : +v);
+      const pub = val(b.publicMargin), mem = val(b.memberMargin);
+      const eff = { pub: pub ?? +(process.env.PUBLIC_MARGIN || 16), mem: mem ?? +(process.env.MEMBER_MARGIN || 6) };
+      if ([pub, mem].some(v => v != null && !(Number.isFinite(v) && v >= 0 && v <= 40))) return res.status(400).json({ error: "Margins must be between 0 and 40" });
+      if (eff.mem > eff.pub) return res.status(400).json({ error: "Member margin can't be higher than the public margin" });
+      const up = db.prepare("INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP");
+      up.run("publicMargin", pub == null ? "" : String(pub));
+      up.run("memberMargin", mem == null ? "" : String(mem));
+      loadSettings();
+      res.json({ success: true, publicMargin: pricing.PUBLIC_MARGIN(), memberMargin: pricing.MEMBER_MARGIN(), memberSavePct: pricing.memberSavePct() });
+    });
+
     app.get("/api/admin/overview", guard, async (req, res) => {
       const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to) ? req.query.to : new Date().toISOString().slice(0, 10);
       const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -49,7 +75,7 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET }) {
       const pts = one("SELECT COALESCE(SUM(CASE WHEN type IN ('earn','bonus','redeem','reverse') THEN points END),0) AS avail, COALESCE(SUM(CASE WHEN type='pending' THEN points END),0) AS pending FROM rewards_ledger") || {};
       res.json({
         success: true, from, to,
-        pricing: { publicMargin: pricing.PUBLIC_MARGIN(), memberMargin: pricing.MEMBER_MARGIN(), parityGate: process.env.PARITY_GATE === "on" },
+        pricing: { publicMargin: pricing.PUBLIC_MARGIN(), memberMargin: pricing.MEMBER_MARGIN(), memberSavePct: pricing.memberSavePct(), parityGate: process.env.PARITY_GATE === "on" },
         liteapi: {
           totals: {
             sales: sumBy(report?.sales, "sales"), commission: sumBy(report?.commission, "commission"),
@@ -127,7 +153,7 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET }) {
       }
     });
   }
-  return { register };
+  return { register, isAdmin: (req) => !!adminUser(req) };
 }
 
 module.exports = { createAdmin };

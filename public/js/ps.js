@@ -94,6 +94,37 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
   };
 
+  // ─── Anonymous first-party analytics (no cookies, no personal data) ───
+  const rid = () => Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+  const vid = () => { let v = PS.local.get("ps_vid"); if (!v) { v = rid(); PS.local.set("ps_vid", v); } return v; };
+  const sid = () => { let v = PS.store.get("ps_sid"); if (!v) { v = rid(); PS.store.set("ps_sid", v); } return v; };
+  PS.track = (e, m) => {
+    try {
+      const body = JSON.stringify({ e, p: location.pathname, r: document.referrer, v: vid(), s: sid(), m });
+      const blob = new Blob([body], { type: "application/json" });
+      if (!(navigator.sendBeacon && navigator.sendBeacon("/api/t", blob))) fetch("/api/t", { method: "POST", body, headers: { "Content-Type": "application/json" }, keepalive: true }).catch(() => {});
+    } catch {}
+  };
+  function trackPage() {
+    const p = location.pathname, q = new URLSearchParams(location.search);
+    const dest = q.get("dest") || q.get("toCity") || q.get("to") || undefined;
+    const e = p === "/" ? "home" : p === "/hotels" ? "hotel_results" : p.startsWith("/hotel/") ? "hotel_view"
+      : p === "/flights" ? "flight_results" : p === "/flight-detail" ? "flight_view" : p === "/checkout" ? "checkout"
+      : p === "/guides" ? "guides" : p.startsWith("/guides/") ? "guide" : p === "/membership" ? "rewards"
+      : p === "/my-bookings" ? "trips" : p === "/login" ? "login" : /^\/(terms|privacy|cancellation-policy|contact)$/.test(p) ? "legal"
+      : p === "/confirmation" || p === "/admin" ? null : "page";
+    if (e) PS.track(e, dest && (e === "hotel_results" || e === "flight_results") ? { dest: dest.slice(0, 60) } : undefined);
+  }
+
+  // Member saving shown in copy ("Members save about 8%") follows the live pricing settings.
+  PS.savePct = () => PS.store.get("ps_save") || 8;
+  function fillSave() { document.querySelectorAll("[data-save-pct]").forEach(n => { n.textContent = PS.savePct(); }); }
+  function loadSave() {
+    fillSave();
+    if (PS.store.get("ps_save")) return;
+    fetch("/api/pricing/summary").then(r => r.json()).then(d => { if (d.memberSavePct > 0) { PS.store.set("ps_save", d.memberSavePct); fillSave(); } }).catch(() => {});
+  }
+
   PS.api = async (url, { method = "GET", body, signal } = {}) => {
     const res = await fetch(url, {
       method, signal, credentials: "same-origin",
@@ -171,6 +202,7 @@
 
   // ─── Header / footer ───
   PS.header = ({ active = "", onHero = false } = {}) => {
+    setTimeout(() => { trackPage(); loadSave(); }, 0);
     const el = document.createElement("header");
     el.className = "site-header" + (onHero ? " on-hero" : "");
     el.innerHTML = `
@@ -243,10 +275,10 @@
           <div class="foot-cols">
             <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/guides">Travel guides</a><a href="/membership">Rewards</a></div>
             <div><h4>Your account</h4><a href="/my-bookings">My trips</a><a href="/login">Sign in</a><a href="/membership">Membership</a></div>
-            <div><h4>Support</h4><a href="mailto:info@planurstay.com">Contact us</a><a href="/my-bookings">Manage a booking</a><a href="/my-bookings">Find a booking</a></div>
+            <div><h4>Support</h4><a href="/contact">Contact us</a><a href="/cancellation-policy">Cancellations &amp; refunds</a><a href="/my-bookings">Manage a booking</a><a href="/my-bookings">Find a booking</a></div>
           </div>
         </div>
-        <div class="foot-bottom"><span>© ${new Date().getFullYear()} PlanurStay. All rights reserved.</span><span class="pay-note">${PS.icon("lock", 14)}Secure payments · Prices in ${PS.cur()}</span></div>
+        <div class="foot-bottom"><span>© ${new Date().getFullYear()} PlanurStay. All rights reserved.</span><span class="foot-legal"><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/cancellation-policy">Cancellations</a></span><span class="pay-note">${PS.icon("lock", 14)}Secure payments · Prices in ${PS.cur()}</span></div>
       </div>`;
     document.body.appendChild(f);
     f.querySelector("#newsForm").onsubmit = async (e) => {

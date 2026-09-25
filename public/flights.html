@@ -74,7 +74,7 @@
     results.prepend(loader.el);
 
     // Hotel cross-sell for the destination
-    document.getElementById("xsell").innerHTML = `<div class="xsell"><div><b>Need a place to stay in ${PS.esc(q.toCity || q.to)}?</b><p>Add a hotel for ${PS.fmtDate(q.depart)}${roundTrip ? " – " + PS.fmtDate(q.return) : ""}. Members save about 8%.</p></div><button class="btn btn-white btn-sm" id="xsellBtn">${PS.icon("bed", 16)}Find hotels</button></div>`;
+    document.getElementById("xsell").innerHTML = `<div class="xsell"><div><b>Need a place to stay in ${PS.esc(q.toCity || q.to)}?</b><p>Add a hotel for ${PS.fmtDate(q.depart)}${roundTrip ? " – " + PS.fmtDate(q.return) : ""}. Members save about <span data-save-pct>${PS.savePct()}</span>%.</p></div><button class="btn btn-white btn-sm" id="xsellBtn">${PS.icon("bed", 16)}Find hotels</button></div>`;
     // Destination weather for the trip dates, shown in the banner
     (async () => {
       try {

@@ -199,7 +199,7 @@
       </div>
       <div id="memberNudge"></div>`;
       PS.auth().then(a => {
-        if (!a.loggedIn) document.getElementById("memberNudge").innerHTML = `<div class="alert info" style="margin-top:14px">${PS.icon("tag", 18)}<div><b>Members see lower prices.</b> <a class="link" href="${PS.loginUrl()}">Sign in or join free</a> to unlock member prices (about 8% off) on this hotel.</div></div>`;
+        if (!a.loggedIn) document.getElementById("memberNudge").innerHTML = `<div class="alert info" style="margin-top:14px">${PS.icon("tag", 18)}<div><b>Members see lower prices.</b> <a class="link" href="${PS.loginUrl()}">Sign in or join free</a> to unlock member prices (about <span data-save-pct>${PS.savePct()}</span>% off) on this hotel.</div></div>`;
       });
     }
     paintBookBox(null);

@@ -82,7 +82,14 @@
           <div class="ad-kpi"><small>Members</small><b>${S.users}</b><span>${S.memberBookings} member bookings</span></div>
           <div class="ad-kpi"><small>Audience</small><b>${S.newsletter}</b><span>newsletter · ${S.priceAlerts} price alerts</span></div>
         </div>
-        <div class="ad-card"><h3>Pricing now</h3><p style="font-size:13.5px">Guests: <b>${d.pricing.publicMargin}%</b> margin · Members: <b>${d.pricing.memberMargin}%</b> · Below-SSP gate: <b>${d.pricing.parityGate ? "on" : "off"}</b></p></div>
+        <div class="ad-card"><h3>Hotel markup</h3>
+          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Our commission on top of the hotel's net rate. Changes apply to new searches within a few minutes. Members currently save <b>${d.pricing.memberSavePct}%</b>. Below-SSP gate: <b>${d.pricing.parityGate ? "on" : "off"}</b>.</p>
+          <form id="mkForm" class="ad-bar" style="margin:0">
+            <div class="field"><label>Guests %</label><input id="mkPub" type="number" min="0" max="40" step="0.5" value="${d.pricing.publicMargin}" style="width:110px"></div>
+            <div class="field"><label>Members %</label><input id="mkMem" type="number" min="0" max="40" step="0.5" value="${d.pricing.memberMargin}" style="width:110px"></div>
+            <button class="btn btn-primary" type="submit">Save</button><span id="mkMsg" style="font-size:13px;align-self:center"></span>
+          </form></div>
+        <div id="traffic"></div>
         <div class="ad-grid">
           <div class="ad-card"><h3>Weekly sales</h3><div class="bars">${L.weekly.map(w => `<div style="height:${(100 * w.sales / maxW).toFixed(1)}%" title="${esc(w.weeks)}: ${money(w.sales, cur)}"><span>${esc(String(w.weeks).replace("week ", "W"))}</span></div>`).join("")}</div><div style="height:18px"></div></div>
           <div class="ad-card"><h3>Markets</h3><table class="ad-t"><tr><th>Guest country</th><th class="n">Bookings</th><th class="n">Sales</th></tr>
@@ -96,6 +103,35 @@
         </div>
         <div class="ad-card"><h3>Recent site bookings</h3><table class="ad-t"><tr><th>Hotel</th><th>Check-in</th><th>Who</th><th>Status</th><th class="n">Price</th></tr>
           ${S.recent.map(b => `<tr><td>${esc(b.name)}</td><td>${esc(b.checkin)}</td><td>${b.who}</td><td>${esc(b.status)}</td><td class="n">${money(b.price, b.currency)}</td></tr>`).join("") || `<tr><td colspan="5">No bookings yet</td></tr>`}</table></div>`;
+      traffic();
+    }
+
+    async function traffic() {
+      const el = document.getElementById("traffic"); if (!el) return;
+      const q = new URLSearchParams({ from: document.getElementById("from").value, to: document.getElementById("to").value });
+      const t = await fetch("/api/admin/traffic?" + q).then(r => r.json()).catch(() => null);
+      if (!t || !t.success) { el.innerHTML = ""; return; }
+      const top = Math.max(1, t.funnel[0].n);
+      const maxD = Math.max(1, ...t.daily.map(x => x.visitors));
+      const names = { home: "Home", hotel_results: "Hotel results", hotel_view: "Hotel page", flight_results: "Flight results", flight_view: "Flight details", checkout: "Checkout", booked: "Booked", guides: "Guides", guide: "Guide page", rewards: "Rewards", trips: "My trips", login: "Sign in", legal: "Legal pages", page: "Other" };
+      el.innerHTML = `
+        <div class="ad-kpis">
+          <div class="ad-kpi"><small>Visitors</small><b>${t.totals.visitors}</b><span>${t.totals.sessions} visits</span></div>
+          <div class="ad-kpi"><small>Page views</small><b>${t.totals.views}</b><span>${t.totals.visitors ? (t.totals.views / t.totals.visitors).toFixed(1) : 0} per visitor</span></div>
+          <div class="ad-kpi"><small>Conversion</small><b>${t.funnel[0].n ? (100 * t.funnel[4].n / t.funnel[0].n).toFixed(2) : "0.00"}%</b><span>visitors who booked</span></div>
+        </div>
+        <div class="ad-grid">
+          <div class="ad-card"><h3>Booking funnel</h3>${t.funnel.map((f, i) => `
+            <div style="margin:8px 0"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>${f.label}</span><span><b>${f.n}</b>${i ? ` <small style="color:var(--text-2)">· ${t.funnel[i - 1].n ? Math.round(100 * f.n / t.funnel[i - 1].n) : 0}% of previous</small>` : ""}</span></div>
+            <div style="height:8px;border-radius:6px;background:#eef1f6;margin-top:4px"><div style="height:100%;width:${(100 * f.n / top).toFixed(1)}%;background:var(--brand,#0b6bcb);border-radius:6px"></div></div></div>`).join("")}</div>
+          <div class="ad-card"><h3>Daily visitors</h3><div class="bars">${t.daily.map(x => `<div style="height:${(100 * x.visitors / maxD).toFixed(1)}%" title="${x.day}: ${x.visitors} visitors"><span>${x.day.slice(8)}</span></div>`).join("") || "<p>No visits yet</p>"}</div><div style="height:18px"></div></div>
+        </div>
+        <div class="ad-grid">
+          <div class="ad-card"><h3>Top searches</h3><table class="ad-t"><tr><th>Destination</th><th class="n">Searches</th></tr>${t.searches.map(x => `<tr><td>${esc(x.dest)}</td><td class="n">${x.n}</td></tr>`).join("") || `<tr><td colspan="2">No searches yet</td></tr>`}</table></div>
+          <div class="ad-card"><h3>Where visitors come from</h3><table class="ad-t"><tr><th>Site</th><th class="n">Visitors</th></tr>${t.referrers.map(x => `<tr><td>${esc(x.ref)}</td><td class="n">${x.visitors}</td></tr>`).join("") || `<tr><td colspan="2">Direct visits only so far</td></tr>`}</table>
+            <p style="font-size:12.5px;color:var(--text-2);margin-top:8px">${t.devices.map(x => `${esc(x.device)}: ${x.visitors}`).join(" · ")}</p></div>
+        </div>
+        <div class="ad-card"><h3>Pages</h3><table class="ad-t"><tr><th>Page</th><th class="n">Views</th><th class="n">Visitors</th></tr>${t.pages.map(x => `<tr><td>${names[x.event] || esc(x.event)}</td><td class="n">${x.views}</td><td class="n">${x.visitors}</td></tr>`).join("")}</table></div>`;
     }
 
     async function probe() {
@@ -112,6 +148,15 @@
         ${d.rows.map(r => `<tr><td>${esc(r.hotelId)}</td><td class="n">${money(r.net)}</td><td class="n">${money(r.sspAtMargin0)}</td><td class="n">${pct(r.sspOverNet)}</td><td class="n">${money(r.publicTotal)}</td><td class="n">${money(r.sspAtPublicMargin)}</td><td class="n ${r.publicOverSsp < 0.995 ? "bad" : "good"}">${pct(r.publicOverSsp)}</td></tr>`).join("")}</table>`;
     }
     document.getElementById("go").onclick = load;
+    document.addEventListener("submit", async (e) => {
+      if (e.target.id !== "mkForm") return;
+      e.preventDefault();
+      const msg = document.getElementById("mkMsg");
+      const pub = document.getElementById("mkPub").value, mem = document.getElementById("mkMem").value;
+      if (!confirm(`Set guest markup to ${pub}% and member markup to ${mem}%? This changes live prices.`)) return;
+      const r = await fetch("/api/admin/pricing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ publicMargin: pub, memberMargin: mem }) }).then(r => r.json()).catch(() => ({ error: "Network error" }));
+      msg.innerHTML = r.success ? `<span class="good">Saved. Members now save ${r.memberSavePct}%.</span>` : `<span class="bad">${esc(r.error)}</span>`;
+    });
     document.getElementById("pgo").onclick = probe;
     load();
   })();

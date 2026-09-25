@@ -152,6 +152,7 @@
             <button class="btn btn-ghost" onclick="window.print()">Print confirmation</button>
           </div>
         </div>`;
+      PS.track("booked", { type });
       saveTrip(b);
     }
 

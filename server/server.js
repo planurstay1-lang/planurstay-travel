@@ -151,9 +151,18 @@ app.use(express.static(path.join(__dirname, "../public"), {
 require("./modules/storefront-routes").registerStorefrontRoutes(app, { apiKey: key, jwt, JWT_SECRET, db });
 require("./modules/engagement-routes").registerEngagementRoutes(app, { db, apiKey: key, jwt, JWT_SECRET, APP_URL });
 require("./modules/guides").registerGuideRoutes(app, { APP_URL });
+require("./modules/legal").registerLegalRoutes(app);
 const rewards = require("./modules/rewards").createRewards({ db, apiKey: key, jwt, JWT_SECRET });
 rewards.register(app);
-require("./modules/admin").createAdmin({ db, apiKey: () => key, jwt, JWT_SECRET }).register(app);
+const admin = require("./modules/admin").createAdmin({ db, apiKey: () => key, jwt, JWT_SECRET });
+admin.register(app);
+require("./modules/analytics").createAnalytics({ db, isAdmin: admin.isAdmin }).register(app);
+// Google Search Console HTML-file verification: set GSC_HTML_FILE=google1234abcd.html on Render
+app.get(/^\/google[0-9a-z]+\.html$/, (req, res, next) => {
+  const f = (process.env.GSC_HTML_FILE || "").trim();
+  if (!f || req.path !== "/" + f) return next();
+  res.type("text/html").send(`google-site-verification: ${f}`);
+});
 app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "../public/admin.html")));
 app.get("/checkout", (req, res) => res.sendFile(path.join(__dirname, "../public/checkout.html")));
 app.get("/membership", (req, res) => res.sendFile(path.join(__dirname, "../public/membership.html")));

@@ -115,7 +115,7 @@ const GUIDES = [
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-function page({ title, description, canonical, image, body, script = "" }) {
+function page({ title, description, canonical, image, body, script = "", active = "guides" }) {
   return `<!DOCTYPE html>
 <html lang="en"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -130,14 +130,15 @@ function page({ title, description, canonical, image, body, script = "" }) {
 </head><body>
 ${body}
 <script src="/js/ps.js"></script>
-<script>PS.header({ active: "guides" }); PS.footer(); document.querySelectorAll("i[data-ico]").forEach(n => n.outerHTML = PS.icon(n.dataset.ico, +n.dataset.s || 18, 2.2));${script}</script>
+<script>PS.header({ active: "${active}" }); PS.footer(); document.querySelectorAll("i[data-ico]").forEach(n => n.outerHTML = PS.icon(n.dataset.ico, +n.dataset.s || 18, 2.2));${script}</script>
 </body></html>`;
 }
 
 function registerGuideRoutes(app, { APP_URL }) {
-  const base = (APP_URL || "").replace(/\/$/, "");
+  const hostBase = (req) => process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/$/, "") : `${req.headers["x-forwarded-proto"] || req.protocol}://${req.get("host")}`;
 
   app.get("/guides", (req, res) => {
+    const base = hostBase(req);
     const body = `<main class="container guides-index">
       <div class="page-head"><div class="eyebrow">Travel guides</div><h1>Plan a trip you'll love</h1><p>Where to stay, how to get in from the airport and what not to miss, plus live hotel deals.</p></div>
       <div class="guide-grid">${GUIDES.map(g => `
@@ -152,6 +153,7 @@ function registerGuideRoutes(app, { APP_URL }) {
   app.get("/guides/:slug", (req, res, next) => {
     const g = GUIDES.find(x => x.slug === req.params.slug);
     if (!g) return next();
+    const base = hostBase(req);
     const others = GUIDES.filter(x => x.slug !== g.slug).slice(0, 3);
     const body = `<main class="container guide">
       <nav class="crumbs"><a href="/">Home</a> › <a href="/guides">Travel guides</a> › <span>${esc(g.city)}</span></nav>
@@ -211,12 +213,14 @@ function registerGuideRoutes(app, { APP_URL }) {
   });
 
   app.get("/robots.txt", (req, res) => {
-    res.type("text/plain").send(`User-agent: *\nDisallow: /api/\nDisallow: /checkout\nDisallow: /confirmation\nSitemap: ${base}/sitemap.xml\n`);
+    const base = hostBase(req);
+    res.type("text/plain").send(`User-agent: *\nDisallow: /api/\nDisallow: /checkout\nDisallow: /confirmation\nDisallow: /admin\nSitemap: ${base}/sitemap.xml\n`);
   });
   app.get("/sitemap.xml", (req, res) => {
-    const urls = ["/", "/hotels", "/flights", "/guides", ...GUIDES.map(g => `/guides/${g.slug}`)];
+    const base = hostBase(req);
+    const urls = ["/", "/hotels", "/flights", "/guides", ...GUIDES.map(g => `/guides/${g.slug}`), "/membership", "/terms", "/privacy", "/cancellation-policy", "/contact"];
     res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map(u => `<url><loc>${base}${u}</loc></url>`).join("")}</urlset>`);
   });
 }
 
-module.exports = { registerGuideRoutes, GUIDES };
+module.exports = { registerGuideRoutes, GUIDES, page, esc };
