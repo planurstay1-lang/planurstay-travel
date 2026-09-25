@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/ps.css">
 </head>
-<body>
+<body class="hd-page">
   <main class="container" id="page">
     <div class="crumbs" id="crumbs"></div>
     <div id="top">
@@ -74,8 +74,7 @@
     document.getElementById("top").innerHTML = `
       <div class="hd-head">
         <div>
-          <div class="stars">${PS.stars(hotel.starRating)}</div>
-          <h1>${PS.esc(hotel.name)}</h1>
+          <div class="hd-title"><h1>${PS.esc(hotel.name)}</h1>${hotel.starRating ? `<span class="stars">${PS.stars(hotel.starRating)}</span>` : ""}</div>
           <div class="addr" style="font-size:13.5px;margin-top:6px">${PS.icon("pin", 16)}${PS.esc(addrLine)}${hotel.location?.latitude ? ` · <a class="link" href="#locPanel">View on map</a>` : ""}</div>
         </div>
         <div class="hd-head-right">

@@ -1910,3 +1910,27 @@ a.route:hover .route-go { background: var(--blue); color: #fff; }
 .search-card.sleek .trip-type .chip-check { color: var(--ink) !important; }
 .search-card.sleek .trip-type .chip-check input { accent-color: var(--ink) !important; }
 @media (max-width: 560px) { .search-card.sleek .ai-pill { order: 3; } }
+
+/* Hotel page: calmer type and more breathing room */
+.hd-page { font-size: 14px; }
+.hd-page .hd-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hd-page .hd-head h1 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; margin: 0; }
+.hd-page .hd-title .stars { font-size: 15px; letter-spacing: 2px; }
+.hd-page .hd-head .addr { font-size: 13px !important; }
+.hd-page .hd-head-right .score { min-width: 40px !important; height: 32px !important; font-size: 15px !important; }
+.hd-page .hd-tab-links a { font-size: 14px; padding: 13px 12px 11px; }
+.hd-page .hd-from b { font-size: 19px; }
+.hd-page .hd-sec { margin: 32px 0; }
+.hd-page .hd-sec h2, .hd-page .sec-head h2, .hd-page .panel h2 { font-size: 17px; font-weight: 700; }
+.hd-page .rooms-sec { margin-top: 36px; }
+.hd-page .rooms-head h2 { font-size: 18px; font-weight: 700; }
+.hd-page .fac-row { gap: 10px 22px; }
+.hd-page .fac-row .fac { font-size: 13.5px; }
+.hd-page .rv-sum .score { min-width: 42px; height: 42px; font-size: 17px; border-radius: 12px; }
+.hd-page .rv-sum b { font-size: 16px; }
+.hd-page .rv-top b { font-size: 14.5px; }
+.hd-page .rv-item h4 { font-size: 14px; }
+.hd-page .rv-item p { font-size: 13.5px; }
+.hd-page .rc-body h3 { font-size: 15px; font-weight: 700; }
+.hd-page .rc-price b { font-size: 19px; }
+.hd-page .hd-desc { font-size: 13.5px; line-height: 1.65; }
