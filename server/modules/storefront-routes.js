@@ -522,7 +522,8 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     const cc = String(req.query.country || "").trim().toUpperCase();
     if (!/^[A-Z]{2}$/.test(cc)) return res.status(400).json({ error: "2-letter country code required" });
     try {
-      const r = await cached("esim:" + cc, 60 * MIN, () => lite(`/data/esimply/destinations?countryCode=${cc}`, { timeoutMs: 12000 }));
+      // eSimply add-on (Nuitee Connect): country packages, USD only, non-refundable
+      const r = await cached("esim:" + cc, 60 * MIN, () => lite(`/addons/esimply/packages/${cc}`, { timeoutMs: 12000 }));
       if (r.status === 403 || r.json?.error?.code === 40301) return res.json({ success: true, enabled: false, data: [] });
       if (!r.ok) return res.json({ success: true, enabled: false, data: [], note: errMessage(r, "eSIM unavailable") });
       // Tolerant mapping: destinations may nest packages or be packages themselves.
@@ -537,7 +538,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           dataGb: mb != null ? Math.round((mb / 1024) * 10) / 10 : null,
           unlimited: !!(p.unlimited || /unlimited/i.test(p.name || "")),
           days: p.validity_days ?? p.validityDays ?? p.duration_days ?? null,
-          price: p.price ?? p.retail_price ?? p.retailPrice ?? null,
+          price: p.calculated_price ?? p.price ?? p.retail_price ?? p.retailPrice ?? null,
           currency: p.currency || "USD",
         };
       }).filter(p => p.packageId != null && p.price != null).sort((a, b) => a.price - b.price);

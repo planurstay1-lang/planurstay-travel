@@ -29,7 +29,9 @@
     const sel = PS.store.get(type === "hotel" ? "ps_hotel_sel" : "ps_flight_sel");
     // Optional add-ons (hotels): Uber ride credit and eSIM data plan, charged on top via LiteAPI prebook `addons`.
     const extras = { uber: null, esim: null };
-    const extrasTotal = () => (extras.uber?.value || 0) + (extras.esim?.price || 0);
+    // Add-ons are priced in USD; LiteAPI converts them into the booking currency at the hold.
+    const extrasUsd = () => (extras.uber?.value || 0) + (extras.esim?.price || 0);
+    const extrasTotal = () => ((sel?.offer?.currency || "USD") === "USD" ? extrasUsd() : 0);
     const formCol = document.getElementById("formCol");
     const sumCol = document.getElementById("sumCol");
     const back = document.getElementById("coBack");
@@ -84,6 +86,7 @@
               ${incl ? sumBox("Included taxes and fees", PS.money(incl, cur, 2), "muted") : ""}
               ${extras.uber ? sumBox("Uber ride credit", PS.money(extras.uber.value, "USD", 2)) : ""}
               ${extras.esim ? sumBox(`eSIM ${PS.esc(extras.esim.dataGb != null ? extras.esim.dataGb + " GB" : "")}${extras.esim.days ? " · " + extras.esim.days + " days" : ""}`, PS.money(extras.esim.price, extras.esim.currency, 2)) : ""}
+              ${extrasUsd() && !extrasTotal() && o.total == null ? `<div class="co-line muted"><small>Add-ons are in US$ and converted to ${PS.esc(cur)} in the total when we hold your room.</small></div>` : ""}
               ${voucher ? sumBox("Promo code", `−${PS.money(voucher, cur, 2)}`, "good") : ""}
             </div>
           </div>
@@ -289,7 +292,7 @@
         if (!r.enabled || !r.data?.length) return;
         anyAddon = true; hideIfEmpty();
         const plans = r.data.slice(0, 5);
-        const paint = () => addonRow(esimHost, "wifi", "eSIM data plan", `Mobile data in ${PS.esc(sel.hotel.city || sel.hotel.country)} from the moment you land`,
+        const paint = () => addonRow(esimHost, "wifi", "eSIM data plan", `Mobile data in ${PS.esc(sel.hotel.city || sel.hotel.country)} from the moment you land, activated by QR code · non-refundable`,
           opt("esim", "", "No thanks", "", !extras.esim) + plans.map((p, i) => opt("esim", i, PS.money(p.price, p.currency, 0), `${p.unlimited ? "Unlimited" : p.dataGb != null ? p.dataGb + " GB" : PS.esc(p.name)}${p.days ? " · " + p.days + " days" : ""}`, extras.esim?.packageId === p.packageId)).join(""),
           (h) => h.querySelectorAll("[data-esim]").forEach(b => b.onclick = () => { extras.esim = b.dataset.esim === "" ? null : plans[+b.dataset.esim]; h.dataset.chosen = extras.esim ? `${extras.esim.dataGb != null ? extras.esim.dataGb + " GB" : "Plan"} added` : ""; paint(); repaint(); }));
         paint();
@@ -435,7 +438,7 @@
       const panel = document.getElementById("payPanel");
       panel.classList.remove("hidden");
       const expected = type === "hotel" ? sel.offer.total + extrasTotal() : sel.offer.pricing?.display?.total;
-      const changed = pb.price != null && expected != null && Math.abs(pb.price - expected) > 0.5;
+      const changed = pb.price != null && expected != null && !(extrasUsd() && !extrasTotal()) && Math.abs(pb.price - expected) > 0.5;
       // Hotels: use the fees and cancellation terms confirmed by the hold (prebook), not the earlier search
       if (type === "hotel" && Array.isArray(pb.roomTypes)) {
         const rates = pb.roomTypes.flatMap(rt => rt.rates || []);
