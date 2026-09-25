@@ -33,7 +33,7 @@ function buildPaymentConfig(prebookData, returnUrl) {
     throw new Error("returnUrl is required");
   }
 
-  const isSandbox = !process.env.PROD_API_KEY;
+  const isSandbox = require("./api-key").isSandbox();
 
   return {
     publicKey:  isSandbox ? "sandbox" : "live",
@@ -57,7 +57,7 @@ function buildPaymentConfig(prebookData, returnUrl) {
  * Return whether the current environment is sandbox.
  */
 function isSandboxEnv() {
-  return !process.env.PROD_API_KEY;
+  return require("./api-key").isSandbox();
 }
 
 /**

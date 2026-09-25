@@ -3,157 +3,80 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign In — PlanurStay</title>
+  <title>Sign in — PlanurStay</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/ps.css">
 </head>
 <body>
-
-  <header>
-    <div class="container header-inner">
-      <a href="/" class="logo">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 16v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2"/>
-          <polyline points="21 12 12 8 3 12"/>
-          <polyline points="19 18 12 14 5 18"/>
-          <circle cx="12" cy="14" r="2" fill="currentColor" stroke="none"/>
-        </svg>
-        PlanurStay
-      </a>
-      <nav class="nav-tabs">
-        <a href="/hotels" class="nav-tab hotel-tab" id="navHotelsTab">🏨 Hotels</a>
-        <a href="/flights" class="nav-tab flight-tab" id="navFlightsTab">✈️ Flights</a>
-      </nav>
-      <div class="header-actions">
-        <a href="/my-bookings" class="btn-ghost" id="myBookingsBtn">My Bookings</a>
-        <a href="/login" class="btn-ghost" id="signInBtn">Sign In</a>
+  <div class="auth-wrap">
+    <div class="auth-art" style="background-image:url('https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1400&q=70')">
+      <h2>Member prices on hotels worldwide.</h2>
+      <p>Sign in to see lower rates, earn points on every stay and keep all your trips in one place.</p>
+    </div>
+    <div class="auth-form">
+      <div class="auth-card">
+        <h1 id="authTitle">Welcome back</h1>
+        <p id="authSub">Sign in to unlock member prices.</p>
+        <div class="seg" role="tablist">
+          <button type="button" data-mode="login" class="active" role="tab">Sign in</button>
+          <button type="button" data-mode="signup" role="tab">Create account</button>
+        </div>
+        <div id="authMsg"></div>
+        <form id="authForm" novalidate>
+          <div class="field" style="margin-bottom:14px"><label for="email">Email</label><input type="email" id="email" autocomplete="email" required placeholder="you@example.com"></div>
+          <div class="field" style="margin-bottom:18px"><label for="password">Password</label><input type="password" id="password" autocomplete="current-password" required minlength="6" placeholder="At least 6 characters"></div>
+          <button class="btn btn-primary btn-lg btn-block" id="submitBtn" type="submit">Sign in</button>
+        </form>
+        <p class="price-sub" style="text-align:center;margin-top:16px">By continuing you agree to PlanurStay's terms and privacy policy.</p>
       </div>
     </div>
-  </header>
+  </div>
 
-  <main style="min-height:calc(100vh - 80px);display:flex;align-items:center;justify-content:center;padding:24px">
-    <div style="width:100%;max-width:420px">
-      <!-- Sign In -->
-      <div class="auth-card" id="loginCard">
-        <h1 class="auth-title">Welcome back</h1>
-        <p class="auth-subtitle">Sign in to access exclusive rates</p>
-        <div id="authError" class="auth-error" style="display:none"></div>
-        <form id="authForm" class="auth-form">
-          <div class="form-field">
-            <label for="authEmail">Email</label>
-            <input type="email" id="authEmail" placeholder="your@email.com" required autocomplete="email">
-          </div>
-          <div class="form-field">
-            <label for="authPassword">Password</label>
-            <input type="password" id="authPassword" placeholder="Your password" required autocomplete="current-password" minlength="6">
-          </div>
-          <button type="submit" class="payment-submit" id="authSubmitBtn">Sign In</button>
-        </form>
-        <div class="auth-footer">
-          Don't have an account? <a href="#" id="showSignup" style="color:var(--primary);font-weight:600">Create one</a>
-        </div>
-      </div>
-
-      <!-- Sign Up -->
-      <div class="auth-card" id="signupCard" style="display:none">
-        <h1 class="auth-title">Create an account</h1>
-        <p class="auth-subtitle">Free to join — unlock better rates</p>
-        <div id="signupError" class="auth-error" style="display:none"></div>
-        <form id="signupForm" class="auth-form">
-          <div class="form-field">
-            <label for="signupEmail">Email</label>
-            <input type="email" id="signupEmail" placeholder="your@email.com" required autocomplete="email">
-          </div>
-          <div class="form-field">
-            <label for="signupPassword">Password (min 6 characters)</label>
-            <input type="password" id="signupPassword" placeholder="Choose a password" required autocomplete="new-password" minlength="6">
-          </div>
-          <button type="submit" class="payment-submit" id="signupSubmitBtn">Create Account</button>
-        </form>
-        <div class="auth-footer">
-          Already have an account? <a href="#" id="showLogin" style="color:var(--primary);font-weight:600">Sign in</a>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <script src="/js/app.js"></script>
+  <script src="/js/ps.js"></script>
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const authForm = document.getElementById("authForm");
-      const signupForm = document.getElementById("signupForm");
-      const authError = document.getElementById("authError");
-      const signupError = document.getElementById("signupError");
-      const authSubmitBtn = document.getElementById("authSubmitBtn");
-      const signupSubmitBtn = document.getElementById("signupSubmitBtn");
-      const showSignup = document.getElementById("showSignup");
-      const showLogin = document.getElementById("showLogin");
-      const loginCard = document.getElementById("loginCard");
-      const signupCard = document.getElementById("signupCard");
+  (function () {
+    PS.header({});
+    const q = PS.qs();
+    // Only allow same-site relative redirects.
+    const redirect = q.redirect && q.redirect.startsWith("/") && !q.redirect.startsWith("//") ? q.redirect : "/";
+    let mode = q.mode === "signup" ? "signup" : "login";
+    const form = document.getElementById("authForm"), btn = document.getElementById("submitBtn"), msg = document.getElementById("authMsg");
+    const pw = document.getElementById("password");
 
-      showSignup.addEventListener("click", (e) => {
-        e.preventDefault();
-        loginCard.style.display = "none";
-        signupCard.style.display = "block";
-      });
-      showLogin.addEventListener("click", (e) => {
-        e.preventDefault();
-        signupCard.style.display = "none";
-        loginCard.style.display = "block";
-      });
+    function setMode(m) {
+      mode = m;
+      document.querySelectorAll(".seg button").forEach(b => b.classList.toggle("active", b.dataset.mode === m));
+      document.getElementById("authTitle").textContent = m === "signup" ? "Create your account" : "Welcome back";
+      document.getElementById("authSub").textContent = m === "signup" ? "Free to join. Start saving on your next stay." : "Sign in to unlock member prices.";
+      btn.textContent = m === "signup" ? "Create account" : "Sign in";
+      pw.autocomplete = m === "signup" ? "new-password" : "current-password";
+      msg.innerHTML = "";
+    }
+    document.querySelectorAll(".seg button").forEach(b => b.onclick = () => setMode(b.dataset.mode));
+    setMode(mode);
 
-      authForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        authError.style.display = "none";
-        authSubmitBtn.textContent = "Signing in...";
-        authSubmitBtn.disabled = true;
+    PS.auth().then(a => { if (a.loggedIn) location.replace(redirect); });
 
-        const result = await login(
-          document.getElementById("authEmail").value,
-          document.getElementById("authPassword").value
-        );
-
-        if (result.error) {
-          authError.textContent = result.error;
-          authError.style.display = "block";
-          authSubmitBtn.textContent = "Sign In";
-          authSubmitBtn.disabled = false;
-          return;
-        }
-
-        window.location.href = "/";
-      });
-
-      signupForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        signupError.style.display = "none";
-        signupSubmitBtn.textContent = "Creating account...";
-        signupSubmitBtn.disabled = true;
-
-        const result = await signup(
-          document.getElementById("signupEmail").value,
-          document.getElementById("signupPassword").value
-        );
-
-        if (result.error) {
-          signupError.textContent = result.error;
-          signupError.style.display = "block";
-          signupSubmitBtn.textContent = "Create Account";
-          signupSubmitBtn.disabled = false;
-          return;
-        }
-
-        signupCard.style.display = "none";
-        loginCard.style.display = "block";
-        document.getElementById("authEmail").value = document.getElementById("signupEmail").value;
-        authError.textContent = "Account created! Please sign in.";
-        authError.style.display = "block";
-        authSubmitBtn.textContent = "Sign In";
-        authSubmitBtn.disabled = false;
-      });
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      msg.innerHTML = "";
+      const email = document.getElementById("email").value.trim(), password = pw.value;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg.innerHTML = `<div class="alert error" style="margin-bottom:14px">${PS.icon("alert", 18)}<div>Enter a valid email address.</div></div>`; return; }
+      if (password.length < 6) { msg.innerHTML = `<div class="alert error" style="margin-bottom:14px">${PS.icon("alert", 18)}<div>Password must be at least 6 characters.</div></div>`; return; }
+      btn.disabled = true; btn.textContent = mode === "signup" ? "Creating account…" : "Signing in…";
+      try {
+        await PS.api(mode === "signup" ? "/api/auth/signup" : "/api/auth/login", { method: "POST", body: { email, password } });
+        location.replace(redirect);
+      } catch (err) {
+        btn.disabled = false; btn.textContent = mode === "signup" ? "Create account" : "Sign in";
+        const already = /already registered/i.test(err.message);
+        msg.innerHTML = `<div class="alert error" style="margin-bottom:14px">${PS.icon("alert", 18)}<div>${PS.esc(err.message)}${already ? ` <button type="button" class="link" style="background:none;border:0;padding:0" id="toLogin">Sign in instead</button>` : ""}</div></div>`;
+        document.getElementById("toLogin")?.addEventListener("click", () => setMode("login"));
+      }
     });
+  })();
   </script>
-
 </body>
 </html>

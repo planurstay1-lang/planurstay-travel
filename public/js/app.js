@@ -53,7 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Check auth on load
   checkAuth().then(auth => {
     const userMenu = document.getElementById("userMenu");
-    const myBookingsLink = document.getElementById("myBookingsLink");
+    if (!userMenu) return;
     if (auth.loggedIn) {
       userMenu.textContent = auth.user.email;
       userMenu.href = "/my-bookings";

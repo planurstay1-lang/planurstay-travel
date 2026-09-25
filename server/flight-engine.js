@@ -19,11 +19,11 @@
 const Database = require("better-sqlite3");
 
 function apiKeyEnv() {
-  return process.env.PROD_API_KEY || process.env.SAND_API_KEY || null;
+  return require("./modules/api-key").liteApiKey() || null;
 }
 
 function bookBaseUrl() {
-  return process.env.PROD_API_KEY
+  return !require("./modules/api-key").isSandbox()
     ? "https://book.liteapi.travel/v3.0"
     : "https://sandbox.book.liteapi.travel/v3.0";
 }
@@ -40,7 +40,8 @@ function liteFetch(path, body, method = "POST", useApiHost = false) {
   const toApiHost = path.startsWith("/flights/prebooks") || path.startsWith("/flights/rates") || path.startsWith("/flights/bookings/");
   const url = ((useApiHost || toApiHost) && !toBookHost ? apiBaseUrl() : bookBaseUrl()) + path;
   // Flight prebook can be slow in sandbox — use 60s timeout
-  const timeoutMs = path.startsWith("/flights/prebooks") ? 60000 : 30000;
+  // Prebooks and multi-airline searches can be slow; give them longer than simple lookups
+  const timeoutMs = path.startsWith("/flights/prebooks") || path.startsWith("/flights/rates") ? 60000 : 30000;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, {

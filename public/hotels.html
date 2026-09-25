@@ -3,107 +3,402 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hotel Results — PlanurStay</title>
+  <title>Hotels — PlanurStay</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css">
-  <script src="https://payment-wrapper.liteapi.travel/dist/liteAPIPayment.js?v=a1"></script>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/ps.css">
 </head>
 <body>
+  <div class="searchbar-wrap"><div class="container"><div class="search-card" id="searchHost"></div></div></div>
 
-  <header>
-    <div class="container header-inner">
-      <a href="/" class="logo">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2"/><polyline points="21 12 12 8 3 12"/><polyline points="19 18 12 14 5 18"/><circle cx="12" cy="14" r="2" fill="currentColor" stroke="none"/></svg>
-        PlanurStay
-      </a>
-      <nav class="nav-tabs">
-        <a href="/hotels" class="nav-tab hotel-tab active" id="navHotelsTab">🏨 Hotels</a>
-        <a href="/flights" class="nav-tab flight-tab" id="navFlightsTab">✈️ Flights</a>
-      </nav>
-      <div class="header-actions">
-        <a href="/my-bookings" class="btn-ghost" id="myBookingsBtn">My Bookings</a>
-        <a href="/login" class="btn-ghost" id="signInBtn">Sign In</a>
-      </div>
-    </div>
-  </header>
-
-  <main class="results-page">
-    <div class="container">
-
-      <div class="results-top">
-        <a href="/" class="back-link">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
-          Back to home
-        </a>
-        <h1 class="results-title">
-          <span id="cityDisplay"></span>
-          <span style="font-size:14px;font-weight:400;color:var(--text-secondary);margin-left:6px" id="resultsMeta"></span>
-        </h1>
-      </div>
-
-      <!-- Filters bar -->
-      <div class="results-filters" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px;padding:12px;background:var(--card);border-radius:var(--radius);border:1px solid var(--border)">
-        <div class="filter-group" style="display:flex;gap:8px;align-items:center">
-          <label style="font-size:13px;color:var(--text-secondary);white-space:nowrap">⭐ Stars:</label>
-          <select id="filterStars" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--background);color:var(--foreground);cursor:pointer">
-            <option value="">Any stars</option>
-            <option value="3">3+ stars</option>
-            <option value="4">4+ stars</option>
-            <option value="5">5 stars only</option>
-          </select>
+  <main class="container">
+    <div class="results-layout" id="layout">
+      <aside class="filters" id="filters" aria-label="Filters">
+        <div class="filters-mobile-head"><h3>Filters</h3><button class="btn btn-sm btn-ghost" id="closeFilters">Close</button></div>
+        <div class="f-group" id="miniMapGroup" style="padding-top:14px">
+          <button type="button" class="mini-map" id="miniMapBtn" aria-label="Show hotels on a map">
+            <div id="miniMap"></div>
+            <span class="btn btn-sm btn-primary mini-map-cta">Show map</span>
+          </button>
         </div>
-
-        <div class="filter-group" style="display:flex;gap:8px;align-items:center">
-          <label style="font-size:13px;color:var(--text-secondary);white-space:nowrap">💰 Max price:</label>
-          <select id="filterMaxPrice" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--background);color:var(--foreground);cursor:pointer">
-            <option value="">Any price</option>
-            <option value="50">Under $50</option>
-            <option value="100">Under $100</option>
-            <option value="150">Under $150</option>
-            <option value="200">Under $200</option>
-            <option value="300">Under $300</option>
-            <option value="500">Under $500</option>
-          </select>
+        <div class="f-group">
+          <h4>Search by name</h4>
+          <div class="field"><input type="search" id="fName" placeholder="e.g. Hilton" aria-label="Hotel name"></div>
         </div>
-
-        <div class="filter-group" style="display:flex;gap:8px;align-items:center">
-          <label style="font-size:13px;color:var(--text-secondary);white-space:nowrap">🔄</label>
-          <input type="checkbox" id="filterRefundable" style="width:16px;height:16px;accent-color:var(--primary)">
-          <label for="filterRefundable" style="font-size:13px;color:var(--text-secondary);white-space:nowrap;cursor:pointer">Refundable only</label>
+        <div class="f-group">
+          <h4>Total price</h4>
+          <input type="range" class="range" id="fPrice" min="0" max="100" value="100" aria-label="Maximum price">
+          <div class="range-vals"><span id="fPriceMin">$0</span><span id="fPriceMax">Any</span></div>
         </div>
-
-        <div style="margin-left:auto">
-          <button id="clearFilters" style="font-size:12px;color:var(--primary);background:none;border:none;cursor:pointer;padding:4px 8px">Clear filters</button>
+        <div class="f-group">
+          <h4>Popular filters</h4>
+          <label class="f-check"><input type="checkbox" id="fRefund">Free cancellation<span class="cnt" id="cRefund"></span></label>
+          <label class="f-check"><input type="checkbox" id="fBreakfast">Breakfast included<span class="cnt" id="cBreakfast"></span></label>
+          <label class="f-check"><input type="checkbox" id="fDeal">Deals<span class="cnt" id="cDeal"></span></label>
         </div>
-      </div>
+        <div class="f-group">
+          <h4>Guest rating</h4>
+          <div class="pill-row" id="fRating">
+            <button class="pill active" data-v="0">Any</button><button class="pill" data-v="7">7+</button><button class="pill" data-v="8">8+</button><button class="pill" data-v="9">9+</button>
+          </div>
+        </div>
+        <div class="f-group">
+          <h4>Star rating</h4>
+          <div class="pill-row" id="fStars">
+            <button class="pill" data-v="2">2★</button><button class="pill" data-v="3">3★</button><button class="pill" data-v="4">4★</button><button class="pill" data-v="5">5★</button>
+          </div>
+        </div>
+        <div class="f-group"><button class="btn btn-ghost btn-sm btn-block" id="clearFilters">Clear all filters</button></div>
+        <div class="f-group show-mobile" style="display:none"><button class="btn btn-primary btn-block" id="applyFilters">Show results</button></div>
+      </aside>
 
-      <div id="loader" class="loading-text" style="display:none">
-        <span class="spinner"></span> Loading hotels...
-      </div>
+      <section id="listCol">
+        <div class="res-toolbar">
+          <div class="res-title"><h1 id="resTitle">Hotels</h1><p id="resMeta">Searching live prices…</p></div>
+          <div class="res-actions">
+            <button class="btn btn-sm btn-ghost show-mobile" id="openFilters"></button>
+            <button class="btn btn-sm btn-ghost" id="mapToggle"></button>
+          </div>
+        </div>
+        <div class="pill-row" id="quickChips" style="margin-bottom:14px"></div>
+        <div class="sort-tabs" id="sortTabs">
+          <button class="sort-tab active" data-sort="rec"><b>Recommended</b><small id="sRec">—</small></button>
+          <button class="sort-tab" data-sort="price"><b>Lowest price</b><small id="sPrice">—</small></button>
+          <button class="sort-tab" data-sort="rating"><b>Top rated</b><small id="sRating">—</small></button>
+        </div>
+        <div id="results"></div>
+        <div style="text-align:center;margin-top:8px"><button class="btn btn-ghost hidden" id="moreBtn">Show more hotels</button></div>
+      </section>
 
-      <div id="noResults" class="empty-state" style="display:none">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-        <h3>No hotels found</h3>
-        <p>Try different dates, a nearby city, or check your spelling.</p>
-        <a href="/" class="btn-primary">Search again</a>
+      <div class="map-col hidden" id="mapCol">
+        <div id="map"></div>
+        <label class="map-auto"><input type="checkbox" id="mapAuto" checked>Search as I move the map</label>
+        <div class="map-status hidden" id="mapStatus"></div>
       </div>
-
-      <div id="hotelList" class="hotel-grid"></div>
     </div>
   </main>
 
-  <footer>
-    <div class="container">
-      <div class="footer-bottom">
-        <span>© 2026 PlanurStay. All rights reserved.</span>
-        <span>Powered by LiteAPI</span>
-      </div>
-    </div>
-  </footer>
+  <script src="/js/ps.js"></script>
+  <script>
+  (async function () {
+    PS.header({ active: "stays" });
+    PS.footer();
+    const q = PS.qs();
+    PS.staysSearch(document.getElementById("searchHost"), q);
+    document.getElementById("openFilters").innerHTML = PS.icon("filter", 16) + "Filters";
+    const mapBtn = document.getElementById("mapToggle");
+    mapBtn.innerHTML = PS.icon("map", 16) + "Map";
 
-  <script src="/js/app.js"></script>
-  <script src="/js/hotel-results.js"></script>
+    const results = document.getElementById("results");
+    const meta = document.getElementById("resMeta");
+    const title = document.getElementById("resTitle");
+    const moreBtn = document.getElementById("moreBtn");
 
+    if (!q.placeId || !q.checkin || !q.checkout) {
+      document.getElementById("filters").classList.add("hidden");
+      document.getElementById("layout").style.gridTemplateColumns = "1fr";
+      document.getElementById("mapToggle").classList.add("hidden");
+      document.getElementById("openFilters").remove();
+      title.textContent = "Find your stay";
+      meta.textContent = "Choose a destination and dates above to see live prices.";
+      document.getElementById("sortTabs").classList.add("hidden");
+      results.innerHTML = empty("search", "Where would you like to stay?", "Search a city, neighborhood, landmark or hotel name to get started.",
+        `<div class="pill-row" style="justify-content:center">${PS.DESTS.slice(0, 8).map(d => `<a class="pill" href="${PS.url("/hotels", { placeId: d.placeId, dest: d.name, destDetail: d.detail, checkin: PS.iso(PS.addDays(PS.today(), 14)), checkout: PS.iso(PS.addDays(PS.today(), 17)), adults: 2, rooms: 1 })}">${PS.esc(d.name)}</a>`).join("")}</div>`);
+      return;
+    }
+
+    PS.local.set("ps_last_stays", q);
+    const nights = PS.nights(q.checkin, q.checkout);
+    const guests = (+q.adults || 2) + (q.children ? q.children.split(",").filter(Boolean).length : 0);
+    title.textContent = q.dest ? `Stays in ${q.dest}` : "Hotels";
+    document.title = `${q.dest || "Hotels"} hotels — PlanurStay`;
+    const baseMeta = `${PS.fmtDate(q.checkin)} – ${PS.fmtDate(q.checkout)} · ${PS.plural(nights, "night")} · ${PS.plural(guests, "guest")}`;
+    meta.textContent = baseMeta;
+
+    const loader = PS.searchLoader("hotels", { place: q.dest });
+    results.innerHTML = PS.skeleton.hotels(3);
+    const filtersBox = document.getElementById("filters");
+    filtersBox.classList.add("is-loading");
+    filtersBox.insertAdjacentHTML("beforeend", `<div class="sk-wrap"><div class="skel" style="height:130px;border-radius:12px;margin-bottom:18px"></div>${PS.skeleton.filters(4)}</div>`);
+    results.prepend(loader.el);
+
+    let all = [];
+    try {
+      const r = await PS.api("/api/stays/search", { method: "POST", body: {
+        placeId: q.placeId, checkin: q.checkin, checkout: q.checkout,
+        adults: +q.adults || 2, rooms: +q.rooms || 1,
+        childAges: q.children ? q.children.split(",").filter(s => s !== "").map(Number) : [],
+      }});
+      all = r.data || [];
+      loader.done();
+      filtersBox.classList.remove("is-loading");
+    } catch (e) {
+      filtersBox.classList.add("hidden"); document.getElementById("layout").style.gridTemplateColumns = "1fr";
+      results.innerHTML = empty("alert", "We couldn't load hotels", PS.esc(e.message || "Please try again in a moment."), `<button class="btn btn-primary" onclick="location.reload()">Try again</button>`);
+      meta.textContent = baseMeta;
+      return;
+    }
+
+    if (!all.length) {
+      filtersBox.classList.add("hidden"); document.getElementById("layout").style.gridTemplateColumns = "1fr";
+      results.innerHTML = empty("bed", "No rooms available", "Nothing is bookable for these dates right now. Try different dates or a nearby area.", "");
+      document.getElementById("sortTabs").classList.add("hidden");
+      return;
+    }
+
+    // ─── Derive facets ───
+    const enrich = (h) => {
+      h.deal = h.strikeTotal ? Math.round((1 - h.total / h.strikeTotal) * 100) : 0;
+      h.breakfast = /breakfast|half board|full board|all inclusive/i.test(h.board || "");
+      h.rec = (h.rating || 6) * 10 + (h.stars || 0) * 2 + Math.min(h.deal, 25) + Math.log10((h.reviews || 0) + 1) * 3 + (h.refundable ? 4 : 0);
+    };
+    all.forEach(enrich);
+    const priceEl = document.getElementById("fPrice");
+    let pMin = 0, pMax = 0;
+    // Recomputed when map searches add hotels; a slider left at max means "any price".
+    function refreshFacets() {
+      const prices = all.map(h => h.total).sort((a, b) => a - b);
+      const wasAny = !st || st.max >= pMax;
+      pMin = Math.floor(prices[0]); pMax = Math.ceil(prices[prices.length - 1]);
+      priceEl.min = pMin; priceEl.max = pMax; priceEl.step = Math.max(1, Math.round((pMax - pMin) / 100));
+      if (wasAny) { if (st) st.max = pMax; priceEl.value = pMax; }
+      document.getElementById("fPriceMin").textContent = PS.money(pMin, "USD", 0);
+      const cnt = (f) => all.filter(f).length;
+      document.getElementById("cRefund").textContent = cnt(h => h.refundable);
+      document.getElementById("cBreakfast").textContent = cnt(h => h.breakfast);
+      document.getElementById("cDeal").textContent = cnt(h => h.deal >= 5);
+    }
+    let st = null;
+    refreshFacets();
+
+    st = { sort: "rec", name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20 };
+
+    function apply() {
+      paintChips();
+      const n = st.name.toLowerCase();
+      let list = all.filter(h =>
+        (st.max >= pMax || h.total <= st.max) &&
+        (!n || (h.name || "").toLowerCase().includes(n)) &&
+        (!st.refund || h.refundable) && (!st.breakfast || h.breakfast) && (!st.deal || h.deal >= 5) &&
+        (!st.rating || h.rating >= st.rating) &&
+        (!st.stars.size || st.stars.has(Math.round(h.stars))));
+      const by = {
+        rec: (a, b) => b.rec - a.rec,
+        price: (a, b) => a.total - b.total,
+        rating: (a, b) => (b.rating - a.rating) || (b.reviews - a.reviews),
+      };
+      const top = (k) => [...list].sort(by[k])[0];
+      const lbl = (h) => h ? `${PS.money(h.perNight, h.currency, 0)} avg/night` : "—";
+      document.getElementById("sRec").textContent = lbl(top("rec"));
+      document.getElementById("sPrice").textContent = lbl(top("price"));
+      document.getElementById("sRating").textContent = lbl(top("rating"));
+      list.sort(by[st.sort]);
+      meta.textContent = `${list.length} of ${all.length} properties · ${baseMeta}`;
+      document.getElementById("fPriceMax").textContent = st.max >= pMax ? "Any" : "Up to " + PS.money(st.max, "USD", 0);
+
+      if (!list.length) {
+        results.innerHTML = empty("filter", "No stays match your filters", "Try removing a filter or widening your price range.", `<button class="btn btn-primary" id="emptyClear">Clear filters</button>`);
+        document.getElementById("emptyClear").onclick = clearAll;
+        moreBtn.classList.add("hidden");
+        drawMap([]);
+        return;
+      }
+      const shown = list.slice(0, st.shown);
+      results.innerHTML = shown.map(card).join("");
+      moreBtn.classList.toggle("hidden", list.length <= st.shown);
+      moreBtn.textContent = `Show ${Math.min(20, list.length - st.shown)} more`;
+      drawMap(list);
+    }
+
+    function hotelLink(h) {
+      return PS.url(`/hotel/${h.id}`, { checkin: q.checkin, checkout: q.checkout, adults: q.adults, rooms: q.rooms, children: q.children, dest: q.dest, placeId: q.placeId, destDetail: q.destDetail });
+    }
+
+    function card(h) {
+      const great = h.rating >= 8.5;
+      return `<a class="hcard" href="${hotelLink(h)}" data-id="${h.id}">
+        <div class="hcard-img">${h.photo ? `<img src="${PS.esc(h.photo)}" alt="" loading="lazy" onerror="this.remove()">` : ""}${h.deal >= 5 ? `<span class="hcard-badge">${h.deal}% off</span>` : ""}</div>
+        <div class="hcard-body">
+          <div style="min-width:0">
+            <div class="stars">${PS.stars(h.stars)}</div>
+            <h3>${PS.esc(h.name)}</h3>
+            <div class="addr">${PS.icon("pin", 14)}${PS.esc([h.address, h.city].filter(Boolean).join(", "))}</div>
+            ${h.rating ? `<div class="rating-row"><span class="score ${great ? "great" : ""}">${Number(h.rating).toFixed(1)}</span><b>${PS.ratingWord(h.rating)}</b><small>${h.reviews ? h.reviews.toLocaleString() + " reviews" : ""}</small></div>` : ""}
+            <div class="tags">
+              ${h.refundable ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation</span>` : `<span class="tag">Non-refundable</span>`}
+              ${h.breakfast ? `<span class="tag amber">${PS.icon("coffee", 13)}${PS.esc(h.board)}</span>` : ""}
+              ${h.roomName ? `<span class="tag">${PS.esc(h.roomName)}</span>` : ""}
+            </div>
+          </div>
+          <div class="price-col">
+            ${h.strikeTotal ? `<span class="price-strike">${PS.money(h.strikeTotal / h.nights, h.currency, 0)}</span>` : ""}
+            <span class="price-big">${PS.money(h.perNight, h.currency, 0)}</span>
+            <span class="price-sub">per night</span>
+            <span class="price-sub"><b>${PS.money(h.total, h.currency, 0)}</b> total${h.taxesExcluded ? " + taxes at property" : ""}</span>
+            <span class="btn btn-primary btn-sm">View rooms</span>
+          </div>
+        </div>
+      </a>`;
+    }
+
+    function empty(icon, h, p, extra) {
+      return `<div class="empty"><div class="ei">${PS.icon(icon, 28)}</div><h3>${h}</h3><p>${p}</p>${extra || ""}</div>`;
+    }
+
+    function clearAll() {
+      Object.assign(st, { name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20 });
+      document.getElementById("fName").value = ""; priceEl.value = pMax;
+      ["fRefund", "fBreakfast", "fDeal"].forEach(id => document.getElementById(id).checked = false);
+      document.querySelectorAll("#fRating .pill").forEach(p => p.classList.toggle("active", p.dataset.v === "0"));
+      document.querySelectorAll("#fStars .pill").forEach(p => p.classList.remove("active"));
+      apply();
+    }
+
+    // ─── Wire filters ───
+    let nameT;
+    document.getElementById("fName").oninput = (e) => { clearTimeout(nameT); nameT = setTimeout(() => { st.name = e.target.value.trim(); st.shown = 20; apply(); }, 150); };
+    priceEl.oninput = () => { st.max = +priceEl.value; st.shown = 20; apply(); };
+    document.getElementById("fRefund").onchange = (e) => { st.refund = e.target.checked; apply(); };
+    document.getElementById("fBreakfast").onchange = (e) => { st.breakfast = e.target.checked; apply(); };
+    document.getElementById("fDeal").onchange = (e) => { st.deal = e.target.checked; apply(); };
+    document.querySelectorAll("#fRating .pill").forEach(p => p.onclick = () => {
+      document.querySelectorAll("#fRating .pill").forEach(x => x.classList.remove("active")); p.classList.add("active"); st.rating = +p.dataset.v; apply();
+    });
+    document.querySelectorAll("#fStars .pill").forEach(p => p.onclick = () => {
+      const v = +p.dataset.v; st.stars.has(v) ? st.stars.delete(v) : st.stars.add(v); p.classList.toggle("active"); apply();
+    });
+    document.getElementById("clearFilters").onclick = clearAll;
+    document.querySelectorAll(".sort-tab").forEach(t => t.onclick = () => {
+      document.querySelectorAll(".sort-tab").forEach(x => x.classList.remove("active")); t.classList.add("active"); st.sort = t.dataset.sort; apply();
+    });
+    moreBtn.onclick = () => { st.shown += 20; apply(); };
+    const filtersEl = document.getElementById("filters");
+    document.getElementById("openFilters").onclick = () => filtersEl.classList.add("mobile-open");
+    document.getElementById("closeFilters").onclick = () => filtersEl.classList.remove("mobile-open");
+    document.getElementById("applyFilters").onclick = () => filtersEl.classList.remove("mobile-open");
+
+    // ─── Map (Leaflet, loaded on demand) ───
+    let map = null, markers = null, mapOn = false, lastList = [], fitted = false, moving = false;
+    function drawMap(list) {
+      lastList = list;
+      if (!mapOn || !map) return;
+      markers.clearLayers();
+      const pts = [];
+      list.slice(0, 400).forEach(h => {
+        if (!h.lat || !h.lng) return;
+        // Zoomed out: small dots instead of overlapping price pills
+        const far = fitted && map.getZoom() < 11;
+        const m = far
+          ? L.circleMarker([h.lat, h.lng], { radius: 6, color: "#fff", weight: 2, fillColor: "#1f5bff", fillOpacity: 1 }).addTo(markers)
+          : L.marker([h.lat, h.lng], { icon: L.divIcon({ className: "", html: `<span class="map-price" data-id="${h.id}">${PS.money(h.perNight, h.currency, 0)}</span>`, iconSize: null }) }).addTo(markers);
+        m.bindPopup(`<a href="${hotelLink(h)}" style="display:block;width:200px">${h.thumb ? `<img src="${PS.esc(h.thumb)}" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:6px">` : ""}<b style="color:#0b1b3f">${PS.esc(h.name)}</b><br><span style="color:#4a5572">${PS.money(h.perNight, h.currency, 0)}/night · ${PS.money(h.total, h.currency, 0)} total</span></a>`);
+        pts.push([h.lat, h.lng]);
+      });
+      // Only frame the results once; after that the user controls the view.
+      if (pts.length && !fitted) { fitted = true; moving = true; map.fitBounds(pts, { padding: [30, 30], maxZoom: 15 }); setTimeout(() => (moving = false), 400); }
+    }
+
+    // ─── "Search as I move the map": load hotels in whatever area is visible ───
+    const searchedAreas = [];
+    let areaT = null, areaSeq = 0;
+    const mapStatus = (html) => { const el = document.getElementById("mapStatus"); el.innerHTML = html; el.classList.toggle("hidden", !html); };
+    function onMapMove() {
+      if (moving || !document.getElementById("mapAuto").checked) return;
+      clearTimeout(areaT);
+      areaT = setTimeout(searchArea, 450);
+    }
+    async function searchArea() {
+      const c = map.getCenter(), b = map.getBounds();
+      const radius = Math.min(50000, Math.max(800, map.distance(c, b.getNorthEast())));
+      // Skip if this view is already covered by a previous area search
+      if (searchedAreas.some(a => map.distance(c, a.c) + radius <= a.r * 1.05)) return;
+      const my = ++areaSeq;
+      mapStatus(`<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>Searching this area…`);
+      try {
+        const r = await PS.api("/api/stays/search", { method: "POST", body: {
+          latitude: c.lat, longitude: c.lng, radius, checkin: q.checkin, checkout: q.checkout,
+          adults: +q.adults || 2, rooms: +q.rooms || 1, childAges: q.children ? q.children.split(",").filter(x => x !== "").map(Number) : [], limit: 150,
+        }});
+        if (my !== areaSeq) return;
+        searchedAreas.push({ c, r: radius });
+        const have = new Set(all.map(h => h.id));
+        const fresh = (r.data || []).filter(h => !have.has(h.id));
+        fresh.forEach(enrich);
+        all.push(...fresh);
+        if (fresh.length) { refreshFacets(); apply(); }
+        mapStatus(fresh.length ? `${PS.icon("check", 14, 3)}${fresh.length} more hotel${fresh.length === 1 ? "" : "s"} in this area` : "No other hotels available here");
+        setTimeout(() => { if (my === areaSeq) mapStatus(""); }, 2600);
+      } catch { if (my === areaSeq) mapStatus("Couldn't load this area"); }
+    }
+    mapBtn.onclick = async () => {
+      mapOn = !mapOn;
+      document.getElementById("mapCol").classList.toggle("hidden", !mapOn);
+      document.getElementById("layout").classList.toggle("with-map", mapOn);
+      mapBtn.innerHTML = mapOn ? PS.icon("list", 16) + "Hide map" : PS.icon("map", 16) + "Map";
+      if (mapOn && !map) {
+        try { await PS.leaflet(); } catch { PS.toast("Map couldn't load"); return; }
+        map = L.map("map", { scrollWheelZoom: true });
+        PS.mapTiles(map);
+        markers = L.layerGroup().addTo(map);
+        map.on("moveend", onMapMove);
+        let lastFar = null;
+        map.on("zoomend", () => { const far = map.getZoom() < 11; if (far !== lastFar) { lastFar = far; drawMap(lastList); } });
+        // The initial search area counts as already covered
+        const pts0 = all.filter(h => h.lat && h.lng);
+        if (pts0.length) { const bb = L.latLngBounds(pts0.map(h => [h.lat, h.lng])); searchedAreas.push({ c: bb.getCenter(), r: map.distance(bb.getCenter(), bb.getNorthEast()) }); }
+      }
+      if (map) { setTimeout(() => { map.invalidateSize(); drawMap(lastList); }, 50); }
+    };
+    // Warm the server cache for a hotel as soon as the user shows intent.
+    const warmed = new Set();
+    const warm = (e) => {
+      const c = e.target.closest?.(".hcard"); if (!c || warmed.has(c.dataset.id)) return;
+      warmed.add(c.dataset.id);
+      fetch(`/api/hotels/${c.dataset.id}`).catch(() => {});
+      fetch("/api/stays/rooms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hotelId: c.dataset.id, checkin: q.checkin, checkout: q.checkout, adults: +q.adults || 2, rooms: +q.rooms || 1, childAges: q.children ? q.children.split(",").filter(s => s !== "").map(Number) : [] }) }).catch(() => {});
+    };
+    results.addEventListener("mouseover", warm);
+    results.addEventListener("touchstart", warm, { passive: true });
+    results.addEventListener("mouseover", (e) => {
+      const c = e.target.closest(".hcard"); if (!c || !mapOn) return;
+      document.querySelectorAll(".map-price").forEach(m => m.classList.toggle("hl", m.dataset.id === c.dataset.id));
+    });
+
+    // ─── Quick filter chips (drive the same controls as the sidebar) ───
+    const chipsEl = document.getElementById("quickChips");
+    const starsOn = () => st.stars.has(4) && st.stars.has(5) && st.stars.size === 2;
+    const chipDefs = [
+      { label: "Free cancellation", on: () => st.refund, toggle: () => document.getElementById("fRefund").click() },
+      { label: "Breakfast included", on: () => st.breakfast, toggle: () => document.getElementById("fBreakfast").click() },
+      { label: "Deals", on: () => st.deal, toggle: () => document.getElementById("fDeal").click() },
+      { label: "Rated 8+", on: () => st.rating >= 8, toggle: () => document.querySelector(`#fRating .pill[data-v="${st.rating >= 8 ? 0 : 8}"]`).click() },
+      { label: "4★ & up", on: starsOn, toggle: () => {
+          const want = !starsOn();
+          document.querySelectorAll("#fStars .pill").forEach(p => {
+            const v = +p.dataset.v, should = want && v >= 4;
+            if (st.stars.has(v) !== should) p.click();
+          });
+        } },
+    ];
+    function paintChips() {
+      chipsEl.innerHTML = chipDefs.map((c, i) => `<button class="pill ${c.on() ? "active" : ""}" data-chip="${i}">${c.on() ? "✓ " : ""}${c.label}</button>`).join("");
+      chipsEl.querySelectorAll("[data-chip]").forEach(b => b.onclick = () => chipDefs[+b.dataset.chip].toggle());
+    }
+
+    // ─── Sidebar map preview ───
+    document.getElementById("miniMapBtn").onclick = () => mapBtn.click();
+    PS.leaflet().then(() => {
+      const pts = all.filter(h => h.lat && h.lng).map(h => [h.lat, h.lng]);
+      if (!pts.length) { document.getElementById("miniMapGroup").remove(); return; }
+      const mm = L.map("miniMap", { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false });
+      PS.mapTiles(mm);
+      pts.slice(0, 80).forEach(p => L.circleMarker(p, { radius: 4, color: "#1f5bff", weight: 2, fillColor: "#fff", fillOpacity: 1 }).addTo(mm));
+      mm.fitBounds(pts, { padding: [12, 12], maxZoom: 14 });
+    }).catch(() => document.getElementById("miniMapGroup")?.remove());
+
+    apply();
+  })();
+  </script>
 </body>
 </html>

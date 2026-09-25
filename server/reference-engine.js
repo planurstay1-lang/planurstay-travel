@@ -13,7 +13,7 @@ const liteApi = require("liteapi-node-sdk");
  * SDK method: getIataCodes(query, limit) — returns all codes, filtered by query string
  */
 async function getIataCodes(query, limit = 50) {
-  const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
+  const key = require("./modules/api-key").liteApiKey();
   if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
 
   try {
@@ -49,7 +49,7 @@ async function searchIataCodes(q) {
     return { success: false, error: { code: 400, message: "Query required" } };
   }
 
-  const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
+  const key = require("./modules/api-key").liteApiKey();
   if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
 
   try {
@@ -99,7 +99,7 @@ async function searchIataCodes(q) {
  * Docs: GET /data/flights/airlines — list all airlines
  */
 async function getAllAirlines() {
-  const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
+  const key = require("./modules/api-key").liteApiKey();
   if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
 
   try {
@@ -131,7 +131,7 @@ async function getAirlineByIata(iataCode) {
   if (!iataCode || iataCode.length !== 2) {
     return { success: false, error: { code: 400, message: "2-letter IATA code required" } };
   }
-  const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
+  const key = require("./modules/api-key").liteApiKey();
   if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
 
   try {
@@ -170,7 +170,7 @@ async function getAirlineByIata(iataCode) {
  * Docs: GET /data/countries
  */
 async function getCountries() {
-  const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
+  const key = require("./modules/api-key").liteApiKey();
   if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
 
   try {
@@ -196,7 +196,7 @@ async function getCities(countryCode) {
   if (!countryCode) {
     return { success: false, error: { code: 400, message: "countryCode required" } };
   }
-  const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
+  const key = require("./modules/api-key").liteApiKey();
   if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
 
   try {
@@ -219,7 +219,7 @@ async function getCities(countryCode) {
  * Docs: GET /data/currencies
  */
 async function getCurrencies() {
-  const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
+  const key = require("./modules/api-key").liteApiKey();
   if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
 
   try {
@@ -325,7 +325,7 @@ async function getWeather(lat, lon) {
   if (!lat || !lon) {
     return { success: false, error: { code: 400, message: "lat and lon required" } };
   }
-  const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
+  const key = require("./modules/api-key").liteApiKey();
   if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
   try {
     const today = new Date();

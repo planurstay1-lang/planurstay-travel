@@ -8,32 +8,25 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const Database = require("better-sqlite3");
 const fs = require("fs");
-const resend = require("resend");
+const { Resend } = require("resend");
 require("dotenv").config();
 
 // ─── Config ───
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
-const SAND_API_KEY = process.env.SAND_API_KEY;
-const PROD_API_KEY = process.env.PROD_API_KEY;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
-// Use prod key when it looks like a real key, otherwise fall back to sandbox
-function selectApiKey() {
-  const prod = process.env.PROD_API_KEY;
-  const sand = process.env.SAND_API_KEY;
-  // Only use prod if it starts with 'prod_' (real key prefix)
-  if (prod && prod.startsWith("prod_")) return prod;
-  if (sand && sand.startsWith("sand_")) return sand;
-  return prod || sand || "";
-}
-const key = selectApiKey();
+// Prod key wins when it looks real (prefix "prod_"); see modules/api-key.js
+const liveKey = require("./modules/api-key");
+const key = liveKey.liteApiKey();
 
 // LiteAPI SDK
 const liteApi = require("liteapi-node-sdk")(key);
 
 // ─── Database ──────────────────────────────────────────────────────────────
-const dbPath = "./data/bookings.db";
+// On Render, point DB_PATH at a persistent disk (e.g. /var/data/bookings.db);
+// the default ./data path is wiped on every deploy/restart.
+const dbPath = process.env.DB_PATH || "./data/bookings.db";
 if (!fs.existsSync(require("path").dirname(dbPath))) { fs.mkdirSync(require("path").dirname(dbPath), { recursive: true }); }
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
@@ -131,6 +124,8 @@ function requireLogin(req, res, next) {
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
 app.use(cors({ origin: "*" }));
+// Gzip API + page responses (flight results shrink ~10x on the wire)
+app.use(require("compression")());
 
 // ─── Loyalty engine (must load before auth routes) ───────────────────────────
 const loyaltyEngine = require("./modules/loyalty-engine");
@@ -144,7 +139,18 @@ membership.ensureSchema();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "../public")));
+// Pages, scripts and styles revalidate on every load (cheap 304s via ETag) so a
+// deploy is picked up immediately instead of browsers running stale JS/CSS.
+app.use(express.static(path.join(__dirname, "../public"), {
+  setHeaders: (res, file) => {
+    if (/\.(html|js|css)$/.test(file)) res.setHeader("Cache-Control", "no-cache");
+  },
+}));
+
+// ─── Storefront search routes (must precede /api/hotels/:id) ─────────────────
+require("./modules/storefront-routes").registerStorefrontRoutes(app, { apiKey: key, jwt, JWT_SECRET, db });
+app.get("/checkout", (req, res) => res.sendFile(path.join(__dirname, "../public/checkout.html")));
+app.get("/membership", (req, res) => res.sendFile(path.join(__dirname, "../public/membership.html")));
 
 // ─── Auth Routes ───
 app.post("/api/auth/signup", async (req, res) => {
@@ -379,13 +385,7 @@ app.get("/api/hotels/:id", async (req, res) => {
 app.post("/api/hotels/prebook", async (req, res) => {
   try {
     const { offerId, voucherCode, addons, usePaymentSdk } = req.body;
-    const isLoggedIn = req.cookies.token ? true : false;
-
-    // Require login for booking
-    if (!isLoggedIn) {
-      return res.status(401).json({ error: "Please sign in to book", code: 401, key: "auth.required" });
-    }
-
+    // Guests can book without an account; signed-in members get member pricing upstream.
     const userId = req.cookies.token ? (() => { try { return jwt.verify(req.cookies.token, JWT_SECRET).id; } catch { return null; } })() : null;
 
     const prebookData = {
@@ -399,7 +399,7 @@ app.post("/api/hotels/prebook", async (req, res) => {
 
     const result = await liteApi.preBook(prebookData);
     if (result.status === "failed") {
-      return res.status(400).json({ error: result.error || "Prebook failed" });
+      return res.status(400).json({ error: result.error?.message || result.error?.description || (typeof result.error === "string" ? result.error : "Prebook failed"), code: result.error?.code });
     }
 
     res.json({ success: true, data: result.data });
@@ -433,34 +433,27 @@ app.post("/api/hotels/book", async (req, res) => {
       }]
     };
 
-    // Use hotel engine's completeBooking which uses liteFetch (working)
-    const result = await hotelEngine.completeBooking(bookData, null, db);
+    const user = (() => {
+      try { return req.cookies.token ? jwt.verify(req.cookies.token, JWT_SECRET) : null; } catch { return null; }
+    })();
+
+    // completeBooking stores the booking row (with prebook_id) and is idempotent per prebookId
+    const result = await hotelEngine.completeBooking(bookData, user ? user.id : null, db);
     if (!result.success) {
       return res.status(400).json({ error: result.error?.message || "Booking failed" });
+    }
+    if (result.alreadyBooked) {
+      return res.json({ success: true, data: result.data, alreadyBooked: true });
     }
 
     const booking = result.data;
 
-    // Store in our DB
-    const user = req.cookies.token ? jwt.verify(req.cookies.token, JWT_SECRET) : null;
-    let bookingId = null;
+    sendConfirmationEmail(booking, "hotel", { email: guestEmail, name: `${guestFirstName} ${guestLastName}` })
+      .catch(err => console.error("Email error:", err.message));
+
+    const row = db.prepare("SELECT id FROM bookings WHERE liteapi_booking_id = ? ORDER BY id DESC LIMIT 1").get(booking.bookingId);
+    const bookingId = row ? row.id : null;
     if (user) {
-      db.prepare(`
-        INSERT INTO bookings (user_id, liteapi_booking_id, liteapi_type, status, hotel_name, checkin, checkout, price, currency, guest_name, guest_email)
-        VALUES (?, ?, 'hotel', ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        user.id,
-        booking.bookingId,
-        booking.status,
-        booking.hotel?.name || "Unknown",
-        booking.checkin,
-        booking.checkout,
-        booking.price,
-        booking.currency,
-        `${guestFirstName} ${guestLastName}`,
-        guestEmail
-      );
-      bookingId = db.prepare("SELECT last_insert_rowid() AS id").get().id;
 
       // Award loyalty points (only to logged-in members, not guests)
       try {
@@ -518,10 +511,7 @@ const paymentSdk = require("./modules/payment-sdk");
 // ─── Flight Prebook ───
 app.post("/api/flights/prebook", async (req, res) => {
   try {
-    const isLoggedIn = req.cookies.token ? true : false;
-    if (!isLoggedIn) {
-      return res.status(401).json({ error: "Please sign in to book", code: 401, key: "auth.required" });
-    }
+    // Guest checkout allowed — signing in is optional.
 
     const userId = req.cookies.token ? (() => {
       try { return jwt.verify(req.cookies.token, JWT_SECRET).id; } catch { return null; }
@@ -575,8 +565,10 @@ app.post("/api/flights/book", async (req, res) => {
       const booking = result.data;
       const holder  = booking.holder || (result.data.passengers && result.data.passengers[0]) || {};
       const email   = holder.email || (req.body?.holder?.email) || "";
-      if (email) {
-        sendConfirmationEmail(booking, "flight").catch(err => console.error("Email error:", err.message));
+      if (email && !result.alreadyBooked) {
+        const h = req.body?.holder || holder;
+        sendConfirmationEmail(booking, "flight", { email, name: [h.firstName, h.lastName].filter(Boolean).join(" ") })
+          .catch(err => console.error("Email error:", err.message));
       }
     }
 
@@ -625,10 +617,10 @@ app.get("/api/payment-sdk/config", (req, res) => {
   try {
     const returnUrl = req.query.returnUrl || APP_URL + "/confirmation";
     res.json({
-      isSandbox: process.env.PROD_API_KEY ? false : true,
+      isSandbox: liveKey.isSandbox(),
       testCard: { number: "4242424242424242", cvv: "any 3 digits", expiry: "any future date" },
       configTemplate: {
-        publicKey: process.env.PROD_API_KEY ? "live" : "sandbox",
+        publicKey: liveKey.isSandbox() ? "sandbox" : "live",
         returnUrl: returnUrl,
         targetElement: "#payment-target",
         appearance: { theme: "flat" },
@@ -1307,60 +1299,56 @@ app.get("/api/vouchers", async (req, res) => {
 });
 
 // ─── Email ───
-async function sendConfirmationEmail(booking, type) {
-  if (!RESEND_API_KEY) {
-    console.log("No Resend key — skipping email");
-    return;
-  }
+// ─── Confirmation email (Resend) ─────────────────────────────────────────────
+// EMAIL_FROM must use a domain verified in Resend (e.g. "PlanurStay <bookings@planurstay.com>").
+// The resend.dev fallback only delivers to the Resend account owner's own inbox.
+const resendClient = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+const EMAIL_FROM = process.env.EMAIL_FROM || "PlanurStay <onboarding@resend.dev>";
+const escHtml = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  try {
-    const price = booking.price ? `$${booking.price}` : "N/A";
-    const dates = booking.checkin ? `${booking.checkin} → ${booking.checkout || "N/A"}` : "N/A";
+async function sendConfirmationEmail(booking, type, to = {}) {
+  const email = to.email || booking.holder?.email || booking.guest_email;
+  if (!resendClient) { console.log("No Resend key — skipping email"); return; }
+  if (!email) { console.warn("Confirmation email skipped: no recipient"); return; }
 
-    await resend.emails.send({
-      from: "PlanurStay <onboarding@resend.dev>",
-      to: booking.guest_email || booking.holder?.email,
-      subject: `${type === "hotel" ? "Hotel" : "Flight"} Booking Confirmed — PlanurStay`,
-      html: `
-        <div style="font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 8px;">
-          <h1 style="color: #059669; font-size: 24px; margin-bottom: 8px;">Booking Confirmed ✓
+  const isHotel = type === "hotel";
+  const money = booking.price != null ? `${Number(booking.price).toFixed(2)} ${booking.currency || "USD"}` : "";
+  const rows = isHotel ? [
+    ["Hotel", booking.hotel?.name],
+    ["Check-in", booking.checkin],
+    ["Check-out", booking.checkout],
+    ["Room", booking.bookedRooms?.[0]?.roomType?.name],
+    ["Hotel confirmation", booking.hotelConfirmationCode],
+  ] : [
+    ["Airline reference (PNR)", booking.bookingRef || booking.pnr],
+  ];
+  rows.unshift(["Booking ID", booking.bookingId]);
+  // Uber ride credit bought as an add-on: LiteAPI includes the voucher link in the booking
+  const uberUrl = (JSON.stringify(booking).match(/https?:\/\/[^"\s]*uber[^"\s]*/i) || [])[0];
+  if (money) rows.push(["Total paid", money]);
+  const table = rows.filter(r => r[1]).map(([k, v]) =>
+    `<tr><td style="padding:8px 0;color:#4a5572">${k}</td><td style="padding:8px 0;text-align:right;font-weight:700;color:#0b1b3f">${escHtml(v)}</td></tr>`).join("");
 
-          <p style="color: #374151; font-size: 16px;">
-            Hi there,
-          </p>
-          <p style="color: #374151; font-size: 16px;">
-  Your ${type} booking is confirmed. Here are the details:
-          </p>
-
-          <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 16px 0;">
-            <p style="margin: 4px 0; color: #374151;"><strong>Status:</strong> ${booking.status || "CONFIRMED"}</p>
-            <p style="margin: 4px 0; color: #374151;"><strong>Booking Ref:</strong> ${booking.bookingId || booking.hotelConfirmationCode || "N/A"}</p>
-            ${type === "hotel" ? `
-              <p style="margin: 4px 0; color: #374151;"><strong>Hotel:</strong> ${booking.hotel?.name || "N/A"}</p>
-              <p style="margin: 4px 0; color: #374151;"><strong>Check-in:</strong> ${booking.checkin}</p>
-              <p style="margin: 4px 0; color: #374151;"><strong>Check-out:</strong> ${booking.checkout}</p>
-              <p style="margin: 4px 0; color: #374151;"><strong>Room:</strong> ${booking.bookedRooms?.[0]?.roomType?.name || "N/A"}</p>
-            ` : `
-              <p style="margin: 4px 0; color: #374151;"><strong>Flight:</strong> ${booking.flightInfo?.operatingCarrier?.marketingName || booking.airline || "N/A"}</p>
-              <p style="margin: 4px 0; color: #374151;"><strong>Depart:</strong> ${booking.departureDate || "N/A"}</p>
-              <p style="margin: 4px 0; color: #374151;"><strong>Return:</strong> ${booking.returnDate || "N/A"}</p>
-            `}
-            <p style="margin: 4px 0; color: #374151;"><strong>Price:</strong> ${price} ${booking.currency || "USD"}</p>
-          </div>
-
-          <p style="color: #6b7280; font-size: 14px; margin-top: 24px;">
-            A copy of this confirmation has been saved in your PlanurStay account.
-          </p>
-          <p style="color: #6b7280; font-size: 14px;">
-            Need help? Reply to this email or visit PlanurStay.
-          </p>
-        </div>
-      `
-    });
-    console.log("Confirmation email sent");
-  } catch (err) {
-    console.error("Email error:", err.message);
-  }
+  const { error } = await resendClient.emails.send({
+    from: EMAIL_FROM,
+    to: email,
+    replyTo: process.env.EMAIL_REPLY_TO || "info@planurstay.com",
+    subject: isHotel
+      ? `Your stay at ${booking.hotel?.name || "your hotel"} is confirmed`
+      : "Your flight booking is confirmed",
+    html: `<div style="font-family:Arial,Helvetica,sans-serif;background:#f6f8fc;padding:24px">
+      <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:28px;border:1px solid #e4e8f1">
+        <div style="font-size:20px;font-weight:800;color:#0b1b3f">PlanurStay</div>
+        <h1 style="font-size:24px;color:#0b1b3f;margin:20px 0 6px">You're all set${to.name ? ", " + escHtml(to.name.split(" ")[0]) : ""}!</h1>
+        <p style="color:#4a5572;margin:0 0 18px">Your ${isHotel ? "hotel stay" : "flight"} is confirmed. Keep this email for your records.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:15px">${table}</table>
+        ${uberUrl ? `<p style="margin:20px 0 0;padding:14px;border-radius:12px;background:#0b1b3f;color:#fff">Your Uber ride credit is ready. <a href="${escHtml(uberUrl)}" style="color:#ffd3a8;font-weight:700">Claim it in Uber</a></p>` : ""}
+        <p style="margin:24px 0 0"><a href="${APP_URL}/my-bookings" style="background:#1f5bff;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700;display:inline-block">View my trips</a></p>
+        <p style="color:#7a849c;font-size:13px;margin-top:24px">Need to change or cancel? Reply to this email with your booking ID.</p>
+      </div></div>`,
+  });
+  if (error) throw new Error(error.message || "Resend rejected the email");
+  console.log(`Confirmation email sent (${type}) for booking ${booking.bookingId}`);
 }
 
 // ─── Serve pages ───
@@ -1502,5 +1490,5 @@ app.post("/api/confirmation/flight", async (req, res) => {
 // ─── Start ───
 app.listen(PORT, () => {
   console.log(`PlanurStay server running on http://localhost:${PORT}`);
-  console.log(`Using sandbox key: ${key ? "yes" : "NO KEY SET"}`);
+  console.log(`LiteAPI mode: ${!key ? "NO KEY SET" : liveKey.isSandbox() ? "SANDBOX" : "LIVE (prod key)"}`);
 });

@@ -19,7 +19,7 @@ const BASE = "https://api.liteapi.travel/v3.0";
 async function apiCall(path, method = "GET", body = null) {
   const url = `${BASE}${path}`;
   const headers = {
-    "X-API-Key": process.env.SAND_API_KEY || process.env.PROD_API_KEY || "",
+    "X-API-Key": require("./api-key").liteApiKey(),
     "Content-Type": "application/json",
     Accept: "application/json",
   };

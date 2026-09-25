@@ -12,9 +12,7 @@
  */
 
 const VOUCHER_BASE = "https://da.liteapi.travel";
-const DEFAULT_API_KEY = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
-
-function apiKey() { return DEFAULT_API_KEY; }
+function apiKey() { return require("./modules/api-key").liteApiKey(); }
 
 function daFetch(path, method = "GET", body = null) {
   const url = VOUCHER_BASE + path;

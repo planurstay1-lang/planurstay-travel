@@ -74,7 +74,7 @@ async function getEsimPackages(countryCode) {
     return { success: false, error: { code: 400, message: "2-letter country code required" } };
   }
 
-  const key = process.env.SAND_API_KEY || process.env.PROD_API_KEY;
+  const key = require("./modules/api-key").liteApiKey();
   if (!key) return { success: false, error: { code: 500, message: "No API key configured" } };
 
   try {

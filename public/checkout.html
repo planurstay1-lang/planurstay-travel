@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secure checkout — PlanurStay</title>
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/ps.css">
+  <script src="https://payment-wrapper.liteapi.travel/dist/liteAPIPayment.js?v=a1"></script>
+</head>
+<body>
+  <main class="container">
+    <div class="steps-bar" id="stepsBar"></div>
+    <div class="co-layout">
+      <div id="formCol"></div>
+      <aside class="sticky-book" id="sumCol"></aside>
+    </div>
+  </main>
+
+  <script src="/js/ps.js"></script>
+  <script>
+  (async function () {
+    PS.header({});
+    const q = PS.qs();
+    const type = q.type === "flight" ? "flight" : "hotel";
+    const sel = PS.store.get(type === "hotel" ? "ps_hotel_sel" : "ps_flight_sel");
+    // Optional add-ons (hotels): Uber ride credit and eSIM data plan, charged on top via LiteAPI prebook `addons`.
+    const extras = { uber: null, esim: null };
+    const extrasTotal = () => (extras.uber?.value || 0) + (extras.esim?.price || 0);
+    const formCol = document.getElementById("formCol");
+    const sumCol = document.getElementById("sumCol");
+
+    const steps = (n) => document.getElementById("stepsBar").innerHTML =
+      ["Your details", "Payment", "Confirmation"].map((t, i) =>
+        `${i ? '<span class="sep"></span>' : ""}<span class="s ${i + 1 === n ? "on" : i + 1 < n ? "done" : ""}"><i>${i + 1 < n ? "✓" : i + 1}</i>${t}</span>`).join("");
+    steps(1);
+
+    const selOk = sel && (type === "hotel" ? sel.offer?.offerId === q.offerId : !!sel.offer?.offerId);
+    if (!selOk) {
+      formCol.innerHTML = `<div class="empty"><div class="ei">${PS.icon("alert", 28)}</div><h3>Your selection has expired</h3><p>Prices change quickly, so please pick your ${type === "hotel" ? "room" : "flight"} again to get the latest price.</p><a class="btn btn-primary" href="${type === "hotel" ? "/hotels" : "/flights"}">Search again</a></div>`;
+      return;
+    }
+
+    // ─── Summary column ───
+    function summaryHTML(priceOverride) {
+      if (type === "hotel") {
+        const { hotel, offer, stay } = sel;
+        const n = PS.nights(stay.checkin, stay.checkout);
+        const total = priceOverride?.total ?? (offer.total + extrasTotal());
+        const cur = priceOverride?.currency || offer.currency;
+        const roomPart = total - extrasTotal();
+        const tax = (offer.taxesExcluded || []).reduce((s, t) => s + (t.amount || 0), 0);
+        return `<div class="panel">
+          <div class="sum-hotel">${hotel.photo ? `<img src="${PS.esc(hotel.photo)}" alt="">` : ""}<div><div class="stars">${PS.stars(hotel.stars)}</div><h3>${PS.esc(hotel.name)}</h3><div class="addr">${PS.esc(hotel.address || "")}</div></div></div>
+          <div class="divider"></div>
+          <div class="sum-lines">
+            <div><span>Room</span><b style="text-align:right">${PS.esc(offer.roomName || offer.name)}</b></div>
+            <div><span>Board</span><b>${PS.esc(offer.board || "Room only")}</b></div>
+            <div><span>Check-in</span><b>${PS.fmtDay(stay.checkin)}</b></div>
+            <div><span>Check-out</span><b>${PS.fmtDay(stay.checkout)}</b></div>
+            <div><span>Guests</span><b>${PS.plural(stay.adults + (stay.childAges || []).length, "guest")}, ${PS.plural(stay.rooms, "room")}</b></div>
+            <div><span>Cancellation</span><b style="color:${offer.refundable ? "var(--green)" : "var(--text-2)"}">${offer.refundable ? "Free cancellation" + (offer.cancelBy ? " before " + PS.fmtDate(new Date(offer.cancelBy)) : "") : "Non-refundable"}</b></div>
+          </div>
+          <div class="divider"></div>
+          <div class="sum-lines">
+            <div><span>${PS.plural(n, "night")}</span><span>${PS.money(roomPart, cur, 2)}</span></div>
+            ${extras.uber ? `<div><span>Uber ride credit</span><span>${PS.money(extras.uber.value, "USD", 2)}</span></div>` : ""}
+            ${extras.esim ? `<div><span>eSIM ${PS.esc(extras.esim.dataGb != null ? extras.esim.dataGb + " GB" : "")}${extras.esim.days ? " · " + extras.esim.days + " days" : ""}</span><span>${PS.money(extras.esim.price, extras.esim.currency, 2)}</span></div>` : ""}
+            ${priceOverride?.voucher ? `<div><span>Voucher</span><span style="color:var(--green)">−${PS.money(priceOverride.voucher, cur, 2)}</span></div>` : ""}
+          </div>
+          <div class="divider"></div>
+          <div class="sum-total"><span>Total due now</span><b>${PS.money(total, cur, 2)}</b></div>
+          ${tax ? `<div class="price-sub" style="margin-top:6px">Plus ${PS.money(tax, cur, 2)} in local taxes, paid at the property.</div>` : `<div class="price-sub" style="margin-top:6px">Taxes and fees included.</div>`}
+        </div>
+        <div class="secure-note">${PS.icon("lock", 14)}Secure, encrypted payment</div>`;
+      }
+      const { journey, offer, search } = sel;
+      const byDir = groupLegs(journey);
+      const total = priceOverride?.total ?? offer.pricing?.display?.total;
+      const cur = priceOverride?.currency || offer.pricing?.display?.currency || "USD";
+      return `<div class="panel">
+        <h3 style="font-size:17px;margin-bottom:12px">${PS.esc(search.fromCity || search.from)} → ${PS.esc(search.toCity || search.to)}</h3>
+        ${byDir.map(l => `<div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+          ${l.segs[0].carrier?.marketingLogo ? `<img src="${PS.esc(l.segs[0].carrier.marketingLogo)}" alt="" style="width:30px;height:30px;object-fit:contain">` : ""}
+          <div><b style="color:var(--ink)">${PS.time(l.segs[0].departureTime)} ${l.segs[0].originCode} → ${PS.time(l.segs[l.segs.length - 1].arrivalTime)} ${l.segs[l.segs.length - 1].destinationCode}</b>
+          <div class="price-sub">${PS.fmtDay(l.segs[0].departureTime.slice(0, 10))} · ${l.segs.length === 1 ? "Nonstop" : PS.plural(l.segs.length - 1, "stop")} · ${PS.dur(l.minutes)}</div>
+          ${l.segs.map(s => `<div class="price-sub">${PS.esc(s.carrier?.marketingCode || "")}${PS.esc(s.flight?.marketingNumber || "")} ${s.originCode}→${s.destinationCode}</div>`).join("")}
+          ${(l.conns || []).map(c => `<div class="price-sub" style="color:${c.changeAirport ? "var(--red)" : "#a66a00"}">${PS.dur(c.duration?.minutes || 0)} layover in ${c.arrivalAirportCode}${c.changeAirport ? " · change to " + c.departureAirportCode : ""}${c.overnight ? " · overnight" : ""}</div>`).join("")}</div></div>`).join("")}
+        <div class="divider"></div>
+        <div class="sum-lines">
+          <div><span>Fare</span><b>${PS.esc(offer.fare?.family || "Economy")}</b></div>
+          <div><span>Travelers</span><b>${PS.plural(+search.adults || 1, "adult")}</b></div>
+          <div><span>Changes</span><b>${offer.terms?.changeable ? "Allowed" : "Not allowed"}</b></div>
+          <div><span>Refunds</span><b>${offer.terms?.refundable ? "Refundable" : "Non-refundable"}</b></div>
+        </div>
+        <div class="divider"></div>
+        <div class="sum-total"><span>Total</span><b>${PS.money(total, cur, 2)}</b></div>
+        <div class="price-sub" style="margin-top:6px">Includes taxes and carrier fees for all travelers.</div>
+      </div>
+      <div class="secure-note">${PS.icon("lock", 14)}Secure, encrypted payment</div>`;
+    }
+    function groupLegs(j) {
+      const out = [];
+      const dirs = [...new Set((j.segments || []).map(s => s.direction || "OUTBOUND"))];
+      dirs.forEach((d, i) => {
+        const segs = j.segments.filter(s => (s.direction || "OUTBOUND") === d);
+        out.push({ dir: d, segs, conns: (j.connections || []).filter(c => (c.direction || "OUTBOUND") === d), minutes: j.legDurations?.[i]?.duration?.minutes || segs.reduce((a, s) => a + (s.duration?.minutes || 0), 0) });
+      });
+      return out;
+    }
+    sumCol.innerHTML = summaryHTML();
+
+    // Signing in is optional: guests can book and save the trip to an account later.
+    const auth = await PS.auth();
+    const me = auth.loggedIn ? (auth.user || {}) : {};
+    const here = encodeURIComponent(location.pathname + location.search);
+    const memberBanner = auth.loggedIn
+      ? `<div class="alert success" style="margin-bottom:18px">${PS.icon("check", 18)}<div>Signed in as <b>${PS.esc(me.email)}</b>. This trip will be saved to your account${type === "hotel" ? " and earn points" : ""}.</div></div>`
+      : `<div class="panel" style="display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:18px">
+          <div><b style="color:var(--ink)">Checking out as a guest</b><div style="color:var(--text-2);font-size:14px">Sign in${type === "hotel" ? " for member prices and" : " to"} earn points, or just continue. You can save this trip to an account anytime.</div></div>
+          <div style="display:flex;gap:8px"><a class="btn btn-sm btn-ghost" href="/login?redirect=${here}">Sign in</a><a class="btn btn-sm btn-primary" href="/login?mode=signup&redirect=${here}">Join free</a></div>
+        </div>`;
+
+    // ─── Details form ───
+    const f = (id, label, attrs = "", hint = "") => `<div class="field ${attrs.includes("full") ? "full" : ""}" data-f="${id}"><label for="${id}">${label}</label><input id="${id}" ${attrs.replace("full", "")}>${hint ? `<div class="hint">${hint}</div>` : ""}</div>`;
+    const countries = ["US", "CA", "GB", "IN", "AU", "FR", "DE", "IT", "ES", "MX", "BR", "AE", "SG", "JP", "CN", "PH", "PK", "NG", "IE", "NL", "NZ", "ZA"];
+    const regionName = (c) => { try { return new Intl.DisplayNames(["en"], { type: "region" }).of(c); } catch { return c; } };
+    const countrySelect = (id, label, def = "CA") => `<div class="field" data-f="${id}"><label for="${id}">${label}</label><select id="${id}">${countries.map(c => `<option value="${c}" ${c === def ? "selected" : ""}>${regionName(c)}</option>`).join("")}</select></div>`;
+
+    let html = "";
+    if (type === "hotel") {
+      html = `<div class="panel">
+        <h2>Who's checking in?</h2>
+        <p style="color:var(--text-2);margin:-6px 0 18px">Use the name on the ID the lead guest will show at check-in.</p>
+        <div class="form-grid">
+          ${f("firstName", "First name", 'autocomplete="given-name" required')}
+          ${f("lastName", "Last name", 'autocomplete="family-name" required')}
+          ${f("email", "Email", `full type="email" autocomplete="email" required value="${PS.esc(me.email || "")}"`, "We'll send your confirmation here.")}
+          ${f("phone", "Mobile number", 'full type="tel" autocomplete="tel" placeholder="+1 416 555 0100"', "The hotel may contact you about your stay.")}
+        </div>
+      </div>`;
+    } else {
+      const n = +sel.search.adults || 1;
+      html = `<div class="panel">
+        <h2>Traveler details</h2>
+        <div class="alert info" style="margin:-4px 0 18px">${PS.icon("info", 18)}<div>Enter names exactly as they appear on each passport. Airlines may refuse boarding if they don't match.</div></div>
+        ${Array.from({ length: n }, (_, i) => `<div class="pax-card"><h3>${PS.icon("user", 18)}Adult ${i + 1}${i === 0 ? " (lead traveler)" : ""}</h3>
+          <div class="form-grid">
+            ${f(`p${i}_first`, "First & middle names", 'autocomplete="given-name" required')}
+            ${f(`p${i}_last`, "Last name", 'autocomplete="family-name" required')}
+            <div class="field" data-f="p${i}_gender"><label for="p${i}_gender">Gender (as on passport)</label><select id="p${i}_gender"><option value="">Select</option><option value="M">Male</option><option value="F">Female</option></select></div>
+            ${f(`p${i}_dob`, "Date of birth", `type="date" max="${PS.iso(PS.addDays(PS.today(), -365 * 12))}" required`)}
+            ${countrySelect(`p${i}_nat`, "Nationality")}
+            ${f(`p${i}_doc`, "Passport number", 'required autocomplete="off"')}
+            ${f(`p${i}_exp`, "Passport expiry", `type="date" min="${PS.iso(PS.today())}" required`)}
+            ${countrySelect(`p${i}_iss`, "Passport issued by")}
+          </div></div>`).join("")}
+      </div>
+      <div class="panel"><h2>Contact details</h2>
+        <div class="form-grid">
+          ${f("email", "Email", `type="email" autocomplete="email" required value="${PS.esc(me.email || "")}"`, "Tickets and updates go here.")}
+          ${f("phone", "Mobile number", 'type="tel" autocomplete="tel" placeholder="+1 416 555 0100" required', "Include your country code.")}
+        </div>
+      </div>`;
+    }
+    if (type === "hotel") html += `<div class="panel" id="extrasPanel">
+        <h2>Add extras</h2>
+        <p style="color:var(--text-2);margin:-6px 0 16px">Optional. Added to this booking and paid in the same checkout.</p>
+        <div class="extra">
+          <div class="extra-head"><span class="extra-ico">${PS.icon("car", 22)}</span><div><b>Uber ride credit</b><p>Airport to your hotel and rides around ${PS.esc(sel.hotel.city || "town")}. Your voucher link arrives with your confirmation.</p></div></div>
+          <div class="extra-opts" id="uberOpts"></div>
+        </div>
+        <div id="esimBox"></div>
+      </div>`;
+    html += `<div class="panel">
+        <h2>Promo code</h2>
+        <div style="display:flex;gap:10px"><div class="field" style="flex:1"><input id="voucher" placeholder="Enter a voucher code (optional)" aria-label="Voucher code"></div></div>
+      </div>
+      <div id="formMsg"></div>
+      <button class="btn btn-coral btn-lg btn-block" id="continueBtn" style="margin-top:18px">Continue to payment ${PS.icon("arrow", 18)}</button>
+      <p class="price-sub" style="text-align:center;margin-top:10px">We'll hold your ${type === "hotel" ? "room" : "seats"} and confirm the final price before you pay.</p>`;
+    formCol.innerHTML = memberBanner + html;
+
+    if (type === "hotel") {
+      const repaint = () => { sumCol.innerHTML = summaryHTML(); };
+      const opt = (key, v, label, sub, active) => `<button type="button" class="extra-opt ${active ? "active" : ""}" data-${key}="${v}">${label}${sub ? `<small>${sub}</small>` : ""}</button>`;
+      const uberBox = document.getElementById("uberOpts");
+      const paintUber = (vals) => {
+        uberBox.innerHTML = opt("uber", "", "No thanks", "", !extras.uber) + vals.map(u => opt("uber", u.value, PS.money(u.value, "USD", 0), "ride credit", extras.uber?.value === u.value)).join("");
+        uberBox.querySelectorAll("[data-uber]").forEach(b => b.onclick = () => { extras.uber = b.dataset.uber ? { value: +b.dataset.uber, currency: "USD" } : null; paintUber(vals); repaint(); });
+      };
+      PS.api("/api/extras/uber").then(r => paintUber(r.data || [])).catch(() => document.querySelector("#uberOpts").closest(".extra").remove());
+
+      // eSIM for the hotel's country — only shown when the eSIM service is enabled on the account
+      if (sel.hotel.country) PS.api(`/api/extras/esim?country=${encodeURIComponent(sel.hotel.country)}`).then(r => {
+        if (!r.enabled || !r.data?.length) return;
+        const box = document.getElementById("esimBox");
+        const plans = r.data.slice(0, 5);
+        const paint = () => {
+          box.innerHTML = `<div class="extra">
+            <div class="extra-head"><span class="extra-ico esim">${PS.icon("wifi", 22)}</span><div><b>Stay connected with an eSIM</b><p>Mobile data in ${PS.esc(sel.hotel.city || sel.hotel.country)} from the moment you land. No SIM swap; install by QR code.</p></div></div>
+            <div class="extra-opts">${opt("esim", "", "No thanks", "", !extras.esim)}${plans.map((p, i) => opt("esim", i, PS.money(p.price, p.currency, 0), `${p.unlimited ? "Unlimited" : p.dataGb != null ? p.dataGb + " GB" : PS.esc(p.name)}${p.days ? " · " + p.days + " days" : ""}`, extras.esim?.packageId === p.packageId)).join("")}</div>
+          </div>`;
+          box.querySelectorAll("[data-esim]").forEach(b => b.onclick = () => { extras.esim = b.dataset.esim === "" ? null : plans[+b.dataset.esim]; paint(); repaint(); });
+        };
+        paint();
+      }).catch(() => {});
+    }
+
+    const val = (id) => (document.getElementById(id)?.value || "").trim();
+    function setErr(id, msg) {
+      const w = document.querySelector(`[data-f="${id}"]`); if (!w) return;
+      w.classList.toggle("err", !!msg); w.querySelector(".err-msg")?.remove();
+      if (msg) w.insertAdjacentHTML("beforeend", `<div class="err-msg">${msg}</div>`);
+    }
+    function validate() {
+      let ok = true;
+      const need = (id, msg, test = (v) => !!v) => { const good = test(val(id)); setErr(id, good ? "" : msg); if (!good) ok = false; };
+      const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+      const phoneOk = (v) => v.replace(/\D/g, "").length >= 8;
+      if (type === "hotel") {
+        need("firstName", "Enter a first name"); need("lastName", "Enter a last name"); need("email", "Enter a valid email", emailOk);
+        if (val("phone")) need("phone", "Enter a valid phone number", phoneOk);
+      } else {
+        for (let i = 0; i < (+sel.search.adults || 1); i++) {
+          need(`p${i}_first`, "Required"); need(`p${i}_last`, "Required"); need(`p${i}_gender`, "Required");
+          need(`p${i}_dob`, "Required"); need(`p${i}_doc`, "Required", v => v.length >= 5);
+          need(`p${i}_exp`, "Required");
+        }
+        need("email", "Enter a valid email", emailOk); need("phone", "Enter a valid phone number", phoneOk);
+      }
+      if (!ok) document.querySelector(".field.err input, .field.err select")?.focus();
+      return ok;
+    }
+    function splitPhone(raw) {
+      const digits = raw.replace(/[^\d+]/g, "");
+      if (digits.startsWith("+")) {
+        const d = digits.slice(1);
+        const cc = d.startsWith("1") ? "1" : d.slice(0, 2);
+        return { phoneCountryCode: cc, phoneNumber: "+" + d, local: d.slice(cc.length) };
+      }
+      return { phoneCountryCode: "1", phoneNumber: "+1" + digits, local: digits };
+    }
+
+    const btn = document.getElementById("continueBtn");
+    const msg = document.getElementById("formMsg");
+    btn.onclick = async () => {
+      msg.innerHTML = "";
+      if (!validate()) return;
+      btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Holding your ${type === "hotel" ? "room" : "seats"}…`;
+      const voucherCode = val("voucher") || undefined;
+      let pb, holder, passengers;
+      try {
+        if (type === "hotel") {
+          holder = { firstName: val("firstName"), lastName: val("lastName"), email: val("email"), phone: val("phone") };
+          const adults = sel.stay.adults || 1;
+          const addons = [];
+          if (extras.uber) addons.push({ addon: "uber", value: extras.uber.value, currency: "USD", adults });
+          if (extras.esim) addons.push({ addon: "esimply", value: extras.esim.price, currency: extras.esim.currency, adults,
+            addonDetails: { package_id: extras.esim.packageId, destination_code: extras.esim.destinationCode, start_date: sel.stay.checkin, end_date: sel.stay.checkout } });
+          const r = await PS.api("/api/hotels/prebook", { method: "POST", body: { offerId: sel.offer.offerId, voucherCode, usePaymentSdk: true, ...(addons.length ? { addons } : {}) } });
+          pb = r.data;
+        } else {
+          const ph = splitPhone(val("phone"));
+          passengers = Array.from({ length: +sel.search.adults || 1 }, (_, i) => ({
+            type: "ADT", firstName: val(`p${i}_first`), lastName: val(`p${i}_last`), gender: val(`p${i}_gender`),
+            birthday: val(`p${i}_dob`), nationality: val(`p${i}_nat`), documentType: "passport",
+            documentNumber: val(`p${i}_doc`), documentExpiry: val(`p${i}_exp`), documentIssueCountry: val(`p${i}_iss`),
+            email: i === 0 ? val("email") : undefined,
+          }));
+          holder = { firstName: passengers[0].firstName, lastName: passengers[0].lastName, email: val("email"), phone: ph.phoneNumber };
+          const r = await PS.api("/api/flights/prebook", { method: "POST", body: {
+            offerId: sel.offer.offerId, usePaymentSdk: true, voucherCode,
+            contact: { firstName: holder.firstName, lastName: holder.lastName, email: holder.email, phoneNumber: ph.phoneNumber, phoneCountryCode: ph.phoneCountryCode },
+            passengers,
+          }});
+          pb = r.data;
+        }
+        if (!pb?.prebookId || !pb?.secretKey) throw new Error("We couldn't hold this option. Please pick another one.");
+      } catch (e) {
+        btn.disabled = false; btn.innerHTML = `Continue to payment ${PS.icon("arrow", 18)}`;
+        msg.innerHTML = `<div class="alert error" style="margin-top:14px">${PS.icon("alert", 18)}<div><b>That ${type === "hotel" ? "room" : "fare"} is no longer available at this price.</b><br>${PS.esc(e.message)}<br><a class="link" href="${type === "hotel" ? (sel.back || "/hotels") : PS.url("/flights", sel.search)}">Choose another ${type === "hotel" ? "room" : "flight"}</a></div></div>`;
+        return;
+      }
+
+      // Save everything the confirmation page needs to finalize the booking after payment.
+      const pending = { type, prebookId: pb.prebookId, transactionId: pb.transactionId, holder, sel, extras: { ...extras }, price: pb.price, currency: pb.currency, createdAt: Date.now() };
+      PS.local.set("ps_pending_" + pb.prebookId, pending);
+      PS.store.set("ps_pending_" + pb.prebookId, pending);
+
+      showPayment(pb);
+    };
+
+    async function showPayment(pb) {
+      steps(2);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      const expected = type === "hotel" ? sel.offer.total + extrasTotal() : sel.offer.pricing?.display?.total;
+      const changed = pb.price != null && expected != null && Math.abs(pb.price - expected) > 0.5;
+      sumCol.innerHTML = summaryHTML({ total: pb.price ?? expected, currency: pb.currency, voucher: pb.voucherTotalAmount });
+      formCol.innerHTML = `
+        ${changed ? `<div class="alert warn" style="margin-bottom:16px">${PS.icon("alert", 18)}<div><b>The price changed</b> from ${PS.money(expected, pb.currency, 2)} to <b>${PS.money(pb.price, pb.currency, 2)}</b> while we held your ${type === "hotel" ? "room" : "seats"}. The new total is shown on the right.</div></div>` : ""}
+        ${pb.cancellationChanged ? `<div class="alert warn" style="margin-bottom:16px">${PS.icon("alert", 18)}<div>The cancellation policy was updated by the ${type === "hotel" ? "hotel" : "airline"}. Please review it before paying.</div></div>` : ""}
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px"><h2 style="margin:0">Payment</h2><span class="tag green">${PS.icon("lock", 13)}Held for you</span></div>
+          <div id="sandboxNote"></div>
+          <div id="paymentPortal" class="pay-box"><div class="loading-note" style="border:0;padding:0"><span class="spinner"></span>Loading secure payment…</div></div>
+        </div>
+        <p class="price-sub" style="text-align:center;margin-top:12px">By paying you agree to the ${type === "hotel" ? "hotel's" : "airline's"} booking terms and the cancellation policy shown.</p>`;
+
+      let cfg = { publicKey: "sandbox" };
+      try { const c = await PS.api("/api/payment-sdk/config"); cfg = c.configTemplate || cfg; if (c.isSandbox) document.getElementById("sandboxNote").innerHTML = `<div class="alert info" style="margin-bottom:14px">${PS.icon("info", 18)}<div><b>Test mode.</b> Use card 4242 4242 4242 4242, any future expiry and any CVC. No real charge is made.</div></div>`; } catch {}
+
+      if (typeof LiteAPIPayment !== "function") {
+        document.getElementById("paymentPortal").innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>The payment form didn't load. Check your connection or disable ad blockers, then <a class="link" href="javascript:location.reload()">reload</a>.</div></div>`;
+        return;
+      }
+      document.getElementById("paymentPortal").innerHTML = "";
+      window.liteAPIPayment = new LiteAPIPayment({
+        publicKey: cfg.publicKey || "sandbox",
+        appearance: { theme: "flat" },
+        options: { business: { name: "PlanurStay" } },
+        targetElement: "#paymentPortal",
+        secretKey: pb.secretKey,
+        returnUrl: `${location.origin}${PS.url("/confirmation", { type, prebookId: pb.prebookId, transactionId: pb.transactionId })}`,
+      });
+      window.liteAPIPayment.handlePayment();
+    }
+  })();
+  </script>
+</body>
+</html>

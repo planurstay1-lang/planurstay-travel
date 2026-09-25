@@ -20,9 +20,7 @@ const Database = require("better-sqlite3");
 const BASE_URL = "https://api.liteapi.travel/v3.0";
 const PREBOOK_URL = "https://book.liteapi.travel/v3.0";
 
-function apiKey() {
-  return process.env.SAND_API_KEY || process.env.PROD_API_KEY || "";
-}
+const { liteApiKey: apiKey } = require("./api-key");
 
 function liteFetch(path, body, method = "POST", usePrebookHost = false) {
   const url = (usePrebookHost ? PREBOOK_URL : BASE_URL) + path;
@@ -300,10 +298,11 @@ async function completeBooking(body, userId = null, db) {
   if (db) {
     try {
       db.prepare(`
-        INSERT OR REPLACE INTO bookings (liteapi_booking_id, user_id, liteapi_type, status, hotel_name, checkin, checkout, price, currency, guest_name, guest_email)
-        VALUES (?, ?, 'hotel', ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO bookings (liteapi_booking_id, prebook_id, user_id, liteapi_type, status, hotel_name, checkin, checkout, price, currency, guest_name, guest_email)
+        VALUES (?, ?, ?, 'hotel', ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         data.bookingId,
+        body.prebookId,
         userId || null,
         data.status || "CONFIRMED",
         data.hotel?.name || data.hotelName || "Unknown",
