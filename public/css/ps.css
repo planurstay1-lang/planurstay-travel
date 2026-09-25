@@ -1974,3 +1974,14 @@ a.route:hover .route-go { background: var(--blue); color: #fff; }
 #results.grid .hcard h3 { font-size: 16px; }
 #results.grid .save-btn.card { left: auto; right: 12px; }
 @media (max-width: 760px) { .view-sw { display: none; } }
+
+/* Rooms: extra rate options behind a toggle; compact property highlights */
+.rc-opt[hidden] { display: none; }
+.rc-moreopts { justify-self: start; display: inline-flex; gap: 4px; align-items: center; padding: 2px 0; border: 0; background: none; color: var(--blue); font-weight: 700; font-size: 13px; }
+.prop-hl { gap: 9px; padding: 14px 16px; }
+.ph-row { align-items: center; font-size: 13px; }
+.ph-row svg { margin-top: 0; }
+.ph-row b { display: inline; }
+.prop-hl .prop-save { padding: 7px; font-size: 13px; }
+#hlSec .hl-grid { margin-top: 12px; }
+.hd-page .rc-img { aspect-ratio: 2 / 1; }
