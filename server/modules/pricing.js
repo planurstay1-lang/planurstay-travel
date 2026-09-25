@@ -14,7 +14,34 @@ const overrides = {};
 const PUBLIC_MARGIN = () => num(overrides.publicMargin, num(process.env.PUBLIC_MARGIN, 16));
 const MEMBER_MARGIN = () => num(overrides.memberMargin, num(process.env.MEMBER_MARGIN, 6));
 
+// ─── SSP-aware public pricing ───
+// Rates are fetched at margin 0: we get our net cost and the hotel's own public price (SSP at margin 0).
+// Guests pay the higher of net + PUBLIC_MARGIN and the hotel's price (rate parity), with the extra
+// margin rounded UP to a 2.5% band so we stay at/above SSP and need few extra rate requests.
+// (SSP returned at margin > 0 is recomputed from our own price for most hotels, so it can't be a floor.)
+// Members (a closed user group) pay the guest price less the member saving (net + MEMBER_MARGIN on normal hotels).
+const SSP_BAND = 2.5;
+const MAX_MARGIN = () => num(process.env.MAX_SSP_MARGIN, 100);
+const round2 = (x) => Math.round(x * 100) / 100;
+function publicMargin(net, ssp0) {
+  const P = PUBLIC_MARGIN();
+  if (!(net > 0) || !(ssp0 > 0)) return P;
+  const need = (ssp0 / net - 1) * 100;
+  if (need <= P) return P;
+  return Math.min(Math.ceil(need / SSP_BAND - 1e-9) * SSP_BAND, Math.max(P, MAX_MARGIN()));
+}
+/** Price a net rate for this visitor. total = what they pay; publicTotal = the guest price (member strike-through). */
+function priceFor(net, ssp0, member) {
+  const pub = publicMargin(net, ssp0);
+  // Members always save the same share off the guest price (about 8% at 16%/6%), also on hotels
+  // priced up to their SSP, so the member saving matches the "Members save about X%" promise.
+  const memberMargin = round2(((1 + pub / 100) * (1 + MEMBER_MARGIN() / 100) / (1 + PUBLIC_MARGIN() / 100) - 1) * 100);
+  const margin = member ? Math.min(memberMargin, pub) : pub;
+  return { margin, total: round2(net * (1 + margin / 100)), publicTotal: round2(net * (1 + pub / 100)) };
+}
+
 module.exports = {
+  publicMargin, priceFor,
   marginFor: (isMember) => (isMember ? MEMBER_MARGIN() : PUBLIC_MARGIN()),
   // Estimated member price for a public price (same net rate, different margin)
   memberFactor: () => (1 + MEMBER_MARGIN() / 100) / (1 + PUBLIC_MARGIN() / 100),

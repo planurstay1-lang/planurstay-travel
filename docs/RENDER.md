@@ -31,6 +31,7 @@ Never commit the values. Set them in Render → Environment.
 | `LEGAL_NAME`, `LEGAL_ADDRESS`, `SUPPORT_PHONE`, `LEGAL_COUNTRY` | optional | Shown on /terms, /privacy, /contact. |
 | `GSC_HTML_FILE` | optional | Google Search Console verification file name, e.g. `google1a2b3c.html`. |
 | `PUBLIC_MARGIN`, `MEMBER_MARGIN` | optional | Defaults only; the markup is normally set in `/admin` (saved in the database). |
+| `MAX_SSP_MARGIN` | optional | Highest margin used when pricing up to a hotel's own price (default `100`). Guards against bogus SSPs. |
 | `PARITY_GATE` | optional | `on` hides below-SSP prices from guests. Leave off. |
 
 ## Nuitee Connect webhook events

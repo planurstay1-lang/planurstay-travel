@@ -164,9 +164,10 @@
       el.innerHTML = `
         <p style="font-size:13.5px;margin-bottom:10px">${d.hotels} hotels · ${d.checkin} → ${d.checkout}<br>
           Median SSP over net: <b>${pct(s.medianSspOverNet)}</b> · Our public price vs SSP (median): <b>${pct(s.medianPublicOverSsp)}</b> at ${d.publicMargin}% margin<br>
-          Hotels where SSP changes with our margin: <b>${s.sspMovesWithMargin}/${d.hotels}</b> · Below SSP at public margin: <b>${s.belowSspAtPublicMargin}/${d.hotels}</b></p>
-        <table class="ad-t"><tr><th>Hotel</th><th class="n">Net</th><th class="n">SSP</th><th class="n">SSP/net</th><th class="n">Public</th><th class="n">SSP @ public</th><th class="n">Public vs SSP</th></tr>
-        ${d.rows.map(r => `<tr><td>${esc(r.hotelId)}</td><td class="n">${money(r.net)}</td><td class="n">${money(r.sspAtMargin0)}</td><td class="n">${pct(r.sspOverNet)}</td><td class="n">${money(r.publicTotal)}</td><td class="n">${money(r.sspAtPublicMargin)}</td><td class="n ${r.publicOverSsp < 0.995 ? "bad" : "good"}">${pct(r.publicOverSsp)}</td></tr>`).join("")}</table>`;
+          Hotels where SSP changes with our margin: <b>${s.sspMovesWithMargin}/${d.hotels}</b> (so SSP at our margin isn't a real floor)<br>
+          <b>Guest prices now:</b> ${s.pricedAtHotelPrice}/${d.hotels} hotels priced up to the hotel's own price · below the hotel's price: <b class="${s.guestBelowHotelPrice ? "bad" : "good"}">${s.guestBelowHotelPrice}</b> · average guest margin <b>${s.avgGuestMargin}%</b></p>
+        <table class="ad-t"><tr><th>Hotel</th><th class="n">Net</th><th class="n">SSP</th><th class="n">SSP/net</th><th class="n">Public</th><th class="n">SSP @ public</th><th class="n">Public vs SSP</th><th class="n">Guest price now</th><th class="n">Margin</th></tr>
+        ${d.rows.map(r => `<tr><td>${esc(r.hotelId)}</td><td class="n">${money(r.net)}</td><td class="n">${money(r.sspAtMargin0)}</td><td class="n">${pct(r.sspOverNet)}</td><td class="n">${money(r.publicTotal)}</td><td class="n">${money(r.sspAtPublicMargin)}</td><td class="n ${r.publicOverSsp < 0.995 ? "bad" : "good"}">${pct(r.publicOverSsp)}</td><td class="n"><b>${money(r.guestPrice)}</b></td><td class="n">${r.guestMargin}%</td></tr>`).join("")}</table>`;
     }
     document.getElementById("go").onclick = load;
     document.addEventListener("submit", async (e) => {

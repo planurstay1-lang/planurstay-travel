@@ -80,7 +80,7 @@ function registerEngagementRoutes(app, { db, apiKey, jwt, JWT_SECRET, APP_URL })
         body: JSON.stringify({
           placeId: a.place_id, checkin: a.checkin, checkout: a.checkout,
           occupancies: Array.from({ length: a.rooms || 1 }, (_, i) => ({ adults: i === 0 ? Math.max(1, (a.adults || 2) - ((a.rooms || 1) - 1)) : 1 })),
-          currency: a.currency || "USD", guestNationality: "US", margin: a.margin ?? 10, maxRatesPerHotel: 1, limit: 100, timeout: 12,
+          currency: a.currency || "USD", guestNationality: "US", margin: 0, maxRatesPerHotel: 1, limit: 100, timeout: 12,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -88,7 +88,10 @@ function registerEngagementRoutes(app, { db, apiKey, jwt, JWT_SECRET, APP_URL })
       const nights = Math.max(1, Math.round((new Date(a.checkout) - new Date(a.checkin)) / 86400000));
       let min = Infinity;
       for (const h of json.data || []) for (const rt of h.roomTypes || []) {
-        const t = rt.offerRetailRate?.amount; if (t != null && t / nights < min) min = t / nights;
+        // Same pricing the site shows: net + margin, never below the hotel's price for guests
+        const net = rt.offerRetailRate?.amount; if (net == null) continue;
+        const t = require("./pricing").priceFor(net, rt.suggestedSellingPrice?.amount, !!a.user_id).total;
+        if (t / nights < min) min = t / nights;
       }
       return Number.isFinite(min) ? min : null;
     } catch { return null; } finally { clearTimeout(timer); }

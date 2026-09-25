@@ -140,6 +140,7 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
           if (!n || !p) return null;
           return {
             hotelId: e.hotelId, room: n.room, net: n.total, sspAtMargin0: n.ssp, publicTotal: p.total, sspAtPublicMargin: p.ssp,
+            guestPrice: pricing.priceFor(n.total, n.ssp, false).total, guestMargin: pricing.priceFor(n.total, n.ssp, false).margin,
             sspOverNet: n.ssp ? +(n.ssp / n.total).toFixed(3) : null,
             publicOverSsp: p.ssp ? +(p.total / p.ssp).toFixed(3) : null,
           };
@@ -152,6 +153,9 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
             medianPublicOverSsp: med(rows.map(r => r.publicOverSsp)),
             sspMovesWithMargin: rows.filter(r => r.sspAtMargin0 && r.sspAtPublicMargin && Math.abs(r.sspAtPublicMargin / r.sspAtMargin0 - 1) > 0.01).length,
             belowSspAtPublicMargin: rows.filter(r => r.publicOverSsp != null && r.publicOverSsp < 0.995).length,
+            guestBelowHotelPrice: rows.filter(r => r.sspAtMargin0 && r.guestPrice < r.sspAtMargin0 - 0.01).length,
+            pricedAtHotelPrice: rows.filter(r => r.guestMargin > pricing.PUBLIC_MARGIN()).length,
+            avgGuestMargin: rows.length ? +(rows.reduce((t, r) => t + r.guestMargin, 0) / rows.length).toFixed(1) : null,
           },
           rows,
         });

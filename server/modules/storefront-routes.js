@@ -83,13 +83,11 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
   const isMember = (req) => { try { return !!jwt.verify(req.cookies?.token || "", JWT_SECRET); } catch { return false; } };
   function marginFor(req) { return pricing.marginFor(isMember(req)); }
   // Public prices must not be below the hotel's SSP (rate parity). Members are a closed user group.
-  const BELOW_SSP_TOLERANCE = 0.995;
   function applyParity(o, member) {
-    const ssp = o.ssp;
-    const below = ssp && o.total < ssp * BELOW_SSP_TOLERANCE;
-    if (member) { o.memberPrice = true; o.strikeTotal = ssp && ssp > o.total ? ssp : null; }
-    else { o.memberOnly = process.env.PARITY_GATE === "on" && !!below; o.strikeTotal = null; }
-    delete o.ssp;
+    // Prices come from pricing.priceFor, so guests are never below the hotel's price.
+    if (member) { o.memberPrice = true; o.strikeTotal = o.publicTotal > o.total ? o.publicTotal : null; }
+    else { o.memberOnly = false; o.strikeTotal = null; }
+    delete o.ssp; delete o.publicTotal;
     return o;
   }
 
@@ -215,7 +213,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           occupancies: occupancies(b),
           currency: b.currency || "USD",
           guestNationality: b.guestNationality || "US",
-          margin: marginFor(req),
+          margin: 0, // net + hotel SSP; the visitor's price is computed below (pricing.priceFor)
           maxRatesPerHotel: 1,
           includeHotelData: true,
           limit: Math.min(parseInt(b.limit) || 100, 200),
@@ -269,7 +267,11 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         };
       }).filter(Boolean);
       const member = isMember(req);
-      data.forEach(h => applyParity(h, member));
+      data.forEach(h => {
+        const p = pricing.priceFor(h.total, h.ssp, member);
+        h.total = p.total; h.publicTotal = p.publicTotal; h.perNight = p.total / h.nights;
+        applyParity(h, member);
+      });
       res.json({ success: true, data, pricing: { member, memberFactor: pricing.memberFactor() } });
     } catch (err) {
       console.error("Stays search error:", err.message);
@@ -495,17 +497,49 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           occupancies: occupancies(b),
           currency: b.currency || "USD",
           guestNationality: b.guestNationality || "US",
-          margin: marginFor(req),
+          margin: 0,
           roomMapping: true,
           timeout: 12,
       };
-      const r = await cached("rooms:" + JSON.stringify(roomsBody), 3 * MIN, () => lite("/hotels/rates", { method: "POST", body: roomsBody }));
+      const fetchAt = (margin) => {
+        const body = { ...roomsBody, margin };
+        return cached("rooms:" + JSON.stringify(body), 3 * MIN, () => lite("/hotels/rates", { method: "POST", body }));
+      };
+      // 1) Net rates + the hotel's own price (SSP at margin 0) for every offer.
+      const r = await fetchAt(0);
       if (!r.ok) {
         if (r.status === 404 || r.json?.error?.code === 2001) return res.json({ success: true, data: [] });
         return res.status(502).json({ error: errMessage(r, "Could not load rooms") });
       }
-      const entry = (r.json.data || [])[0];
-      const offers = (entry?.roomTypes || []).map(rt => {
+      // Offer IDs change with the margin; the room type + rate name/board/refundability (+ occurrence) don't.
+      const keysOf = (roomTypes) => {
+        const seen = new Map();
+        return (roomTypes || []).map(rt => {
+          const rate = rt.rates?.[0] || {};
+          const k = [rt.roomTypeId, rate.name, rate.boardType, rate.cancellationPolicies?.refundableTag, (rt.rates || []).length].join("|");
+          const n = (seen.get(k) || 0) + 1; seen.set(k, n);
+          return k + "#" + n;
+        });
+      };
+      const member = isMember(req);
+      const base = (r.json.data || [])[0]?.roomTypes || [];
+      const baseKeys = keysOf(base);
+      const plan = new Map(); // key → { margin, publicTotal }
+      base.forEach((rt, i) => {
+        const net = rt.offerRetailRate?.amount;
+        if (net == null) return;
+        const p = pricing.priceFor(net, rt.suggestedSellingPrice?.amount, member);
+        plan.set(baseKeys[i], { margin: p.margin, publicTotal: p.publicTotal });
+      });
+      // 2) One bookable request per distinct margin (usually 1-2); offers at a margin we didn't fetch are left out.
+      const margins = [...new Set([...plan.values()].map(v => v.margin))].sort((x, y) => x - y).slice(0, 6);
+      const results = await Promise.all(margins.map(m => fetchAt(m)));
+      const chosen = [];
+      margins.forEach((m, mi) => {
+        const rts = results[mi].ok ? (results[mi].json.data || [])[0]?.roomTypes || [] : [];
+        keysOf(rts).forEach((k, i) => { const pl = plan.get(k); if (pl && pl.margin === m) chosen.push({ rt: rts[i], publicTotal: pl.publicTotal }); });
+      });
+      const offers = chosen.map(({ rt, publicTotal }) => {
         const rate = rt.rates?.[0] || {};
         const cp = rate.cancellationPolicies || {};
         return {
@@ -528,9 +562,9 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           nameFees: feesFromText((rt.rates || []).map(r => r.name).join(" ")),
           remarks: rate.remarks || "",
           perks: (rate.perks || []).map(p => p.name || p).filter(Boolean),
+          publicTotal,
         };
       }).filter(o => o.total != null).sort((a, b2) => a.total - b2.total);
-      const member = isMember(req);
       offers.forEach(o => applyParity(o, member));
       res.json({ success: true, data: offers, pricing: { member, memberFactor: pricing.memberFactor() } });
     } catch (err) {
