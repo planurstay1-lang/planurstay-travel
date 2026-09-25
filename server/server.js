@@ -196,6 +196,7 @@ app.post("/api/auth/signup", async (req, res) => {
   try {
     const { password } = req.body;
     const email = String(req.body.email || "").trim().toLowerCase(); // emails are case-insensitive
+    if (!/^[a-z0-9._%+'-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(email)) return res.status(400).json({ error: "Please enter a valid email address, like name@example.com" });
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
     if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
 
