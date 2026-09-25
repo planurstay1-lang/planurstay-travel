@@ -41,6 +41,45 @@
     </div>
   </section>
 
+  <section class="section-sm">
+    <div class="container">
+      <div class="rewards">
+        <div class="rewards-photo"><img src="https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1400&q=80" alt="" loading="lazy">
+          <div class="mcard" aria-hidden="true">
+            <div class="mcard-top"><span class="brand-mark"><i data-ico="plane" data-s="14"></i></span><span>PlanurStay Rewards</span></div>
+            <div class="mcard-pts"><small>Points</small><b id="mcardPts">500</b></div>
+            <div class="mcard-foot"><span id="mcardTier">Explorer</span><span>Member</span></div>
+          </div>
+        </div>
+        <div class="rewards-copy">
+          <div class="eyebrow">PlanurStay Rewards</div>
+          <h2>Travel more. <span>Pay less.</span></h2>
+          <p class="lead">Free to join. Members book hotels at our lowest prices and earn points on every stay.</p>
+          <ul class="perks2">
+            <li><span class="p-ico"><i data-ico="tag" data-s="20"></i></span><div><b>Member prices</b><small>Save up to 10% compared with guest prices on hotels.</small></div></li>
+            <li><span class="p-ico"><i data-ico="star" data-s="20"></i></span><div><b>Earn on every booking</b><small>Collect points and move up tiers as you travel.</small></div></li>
+            <li><span class="p-ico"><i data-ico="bolt" data-s="20"></i></span><div><b>Faster checkout</b><small>Your trips and details stay in one place.</small></div></li>
+          </ul>
+          <div class="rewards-cta">
+            <a href="/login?mode=signup" class="btn btn-coral btn-lg" id="joinBtn">Join for free</a>
+            <a href="/membership" class="btn btn-ghost btn-lg">See the perks</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section-sm">
+    <div class="container">
+      <div class="how-head"><div class="eyebrow">How it works</div><h2>Booked in three steps</h2></div>
+      <ol class="how">
+        <li><span class="how-ico"><i data-ico="search" data-s="24"></i><em>1</em></span><h3>Search live prices</h3><p>We check rooms and fares in real time, so the price you see is available right now.</p></li>
+        <li><span class="how-ico"><i data-ico="filter" data-s="24"></i><em>2</em></span><h3>Pick with confidence</h3><p>Filter by price, rating and free cancellation. Clear totals, with taxes shown up front.</p></li>
+        <li><span class="how-ico"><i data-ico="lock" data-s="24"></i><em>3</em></span><h3>Pay securely</h3><p>Your room or seat is held while you pay, and your confirmation arrives right away.</p></li>
+      </ol>
+    </div>
+  </section>
+
   <section class="trust-line">
     <div class="container">
       <span><i data-ico="shield" data-s="18"></i>Secure checkout</span>
@@ -105,6 +144,12 @@
     }
     tabs.forEach(b => b.onclick = () => setTab(b.dataset.tab));
     setTab(location.hash === "#flights" ? "flights" : location.hash === "#stays" ? "stays" : PS.local.get("ps_tab") || "stays");
+
+    PS.auth().then(a => {
+      if (!a.loggedIn) return;
+      const j = document.getElementById("joinBtn"); j.textContent = "View your rewards"; j.href = "/membership";
+      const l = a.user?.loyalty; if (l) { document.getElementById("mcardPts").textContent = (l.points || 0).toLocaleString(); document.getElementById("mcardTier").textContent = l.tierLabel || "Explorer"; }
+    });
 
     // ─── Deals for top destinations: photo cards with live "from" prices (loaded when scrolled into view) ───
     const ci = PS.addDays(PS.today(), 21), co = PS.addDays(ci, 3);

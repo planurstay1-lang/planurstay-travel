@@ -172,12 +172,22 @@
 
   PS.footer = () => {
     const f = document.createElement("footer");
-    f.className = "site-footer slim";
+    f.className = "site-footer dark";
     f.innerHTML = `
-      <div class="container foot-slim">
-        <a href="/" class="brand"><span class="brand-mark">${PS.icon("plane", 16, 2.2)}</span>PlanurStay</a>
-        <nav><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/my-bookings">My trips</a><a href="/membership">Rewards</a><a href="mailto:info@planurstay.com">Help</a></nav>
-        <span class="copy">© ${new Date().getFullYear()} PlanurStay</span>
+      <div class="container">
+        <div class="foot-top">
+          <div class="foot-brand">
+            <a href="/" class="brand"><span class="brand-mark">${PS.icon("plane", 18, 2.2)}</span>PlanurStay</a>
+            <p>Hotels and flights worldwide at member prices, with secure checkout and real people ready to help.</p>
+            <a class="foot-mail" href="mailto:info@planurstay.com">${PS.icon("mail", 16)}info@planurstay.com</a>
+          </div>
+          <div class="foot-cols">
+            <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/membership">Rewards</a></div>
+            <div><h4>Your account</h4><a href="/my-bookings">My trips</a><a href="/login">Sign in</a><a href="/membership">Membership</a></div>
+            <div><h4>Support</h4><a href="mailto:info@planurstay.com">Contact us</a><a href="/my-bookings">Manage a booking</a><a href="/my-bookings">Find a booking</a></div>
+          </div>
+        </div>
+        <div class="foot-bottom"><span>© ${new Date().getFullYear()} PlanurStay. All rights reserved.</span><span class="pay-note">${PS.icon("lock", 14)}Secure payments · Prices in USD</span></div>
       </div>`;
     document.body.appendChild(f);
   };
