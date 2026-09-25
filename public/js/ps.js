@@ -113,13 +113,100 @@
   PS.local = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
   };
 
   // ─── Anonymous first-party analytics (no cookies, no personal data) ───
   const rid = () => Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
   const vid = () => { let v = PS.local.get("ps_vid"); if (!v) { v = rid(); PS.local.set("ps_vid", v); } return v; };
   const sid = () => { let v = PS.store.get("ps_sid"); if (!v) { v = rid(); PS.store.set("ps_sid", v); } return v; };
+  // ─── Site settings (GA4, Meta Pixel, WhatsApp, phone, reviews) — all optional, set in Render ───
+  let siteCfgP = null;
+  PS.siteConfig = () => (siteCfgP ||= (async () => {
+    let c = PS.store.get("ps_site_cfg");
+    if (!c) { try { c = await (await fetch("/api/site-config")).json(); } catch { c = {}; } PS.store.set("ps_site_cfg", c); }
+    return c || {};
+  })());
+  // Funnel events → GA4 / Meta names. Queued until the tags are loaded.
+  const AD_EVENTS = { hotel_results: ["search", "Search"], flight_results: ["search", "Search"], hotel_view: ["view_item", "ViewContent"], flight_view: ["view_item", "ViewContent"],
+    checkout: ["begin_checkout", "InitiateCheckout"], payment: ["add_payment_info", "AddPaymentInfo"], booked: ["purchase", "Purchase"], lead: ["generate_lead", "Lead"], signup: ["sign_up", "CompleteRegistration"] };
+  const adQueue = []; let adReady = false;
+  function adSend(e, m = {}) {
+    const k = AD_EVENTS[e]; if (!k) return;
+    if (!adReady) { adQueue.push([e, m]); return; }
+    const v = m.value ? { value: +m.value, currency: m.currency || "USD" } : {};
+    try { if (window.gtag) gtag("event", k[0], { ...v, ...(m.id ? { transaction_id: String(m.id) } : {}), ...(m.dest ? { search_term: m.dest } : {}), ...(m.type ? { item_category: m.type } : {}) }); } catch {}
+    try { if (window.fbq) fbq("track", k[1], { ...v, ...(m.type ? { content_category: m.type } : {}) }); } catch {}
+  }
+  PS.siteConfig().then(c => {
+    if (c.ga4) {
+      window.dataLayer = window.dataLayer || []; window.gtag = function () { dataLayer.push(arguments); };
+      gtag("js", new Date()); gtag("config", c.ga4);
+      const s = document.createElement("script"); s.async = true; s.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(c.ga4); document.head.appendChild(s);
+    }
+    if (c.metaPixel) {
+      !function (f, b, e, v, n, t, s) { if (f.fbq) return; n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); }; if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = "2.0"; n.queue = []; t = b.createElement(e); t.async = !0; t.src = v; s = b.getElementsByTagName(e)[0]; s.parentNode.insertBefore(t, s); }(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
+      fbq("init", c.metaPixel); fbq("track", "PageView");
+    }
+    adReady = true; adQueue.splice(0).forEach(([e, m]) => adSend(e, m));
+  });
+
+  // ─── WhatsApp chat link (floating button + inline links) ───
+  PS.waLink = (num, text) => `https://wa.me/${num}?text=${encodeURIComponent(text || "Hi PlanurStay, I have a question.")}`;
+  PS.whatsapp = async (text) => {
+    const c = await PS.siteConfig(); if (!c.whatsapp || document.querySelector(".wa-float")) return;
+    const a = document.createElement("a");
+    a.className = "wa-float"; a.href = PS.waLink(c.whatsapp, text); a.target = "_blank"; a.rel = "noopener";
+    a.setAttribute("aria-label", "Chat with us on WhatsApp");
+    a.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.1 5.1 0 0 0 1.1 2.7 11.7 11.7 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3Z"/></svg><span>WhatsApp</span>`;
+    a.onclick = () => PS.track("page", { whatsapp: 1 });
+    document.body.appendChild(a);
+  };
+  // Trust line: secure payment + (when configured) phone, WhatsApp and reviews badge
+  PS.trustHTML = async (kind) => {
+    const c = await PS.siteConfig();
+    const items = [`${PS.icon("lock", 14)}Secure, encrypted payment`, kind === "flight" ? `${PS.icon("check", 14, 2.6)}Tickets issued by the airline` : `${PS.icon("check", 14, 2.6)}Confirmed directly with the hotel`];
+    if (c.reviewsUrl) items.push(`<a href="${PS.esc(c.reviewsUrl)}" target="_blank" rel="noopener">${PS.icon("star", 14)}${PS.esc(c.reviewsLabel || "Read our reviews")}</a>`);
+    if (c.whatsapp) items.push(`<a href="${PS.esc(PS.waLink(c.whatsapp))}" target="_blank" rel="noopener">${PS.icon("send", 14)}WhatsApp us</a>`);
+    if (c.phone) items.push(`<a href="tel:${PS.esc(c.phone.replace(/[^\d+]/g, ""))}">${PS.icon("headset", 14)}${PS.esc(c.phone)}</a>`);
+    return `<div class="trust-row">${items.map(i => `<span>${i}</span>`).join("")}</div>`;
+  };
+
+  // ─── Leaving the results page? Offer price/fare alerts (once per session) ───
+  PS.exitOffer = ({ key, title, text, submit }) => {
+    try { if (PS.store.get("ps_exit_" + key) || PS.local.get("ps_exit_done")) return; } catch {}
+    const t0 = Date.now();
+    let shown = false;
+    const show = () => {
+      if (shown || Date.now() - t0 < 12000 || document.querySelector(".modal-back")) return;
+      shown = true; PS.store.set("ps_exit_" + key, 1);
+      const back = document.createElement("div"); back.className = "modal-back";
+      back.innerHTML = `<div class="modal exit-offer" role="dialog" aria-modal="true" aria-label="${PS.esc(title)}">
+        <button class="modal-close" aria-label="Close">${PS.icon("x", 18)}</button>
+        <div class="eo-ic">${PS.icon("bolt", 22)}</div><h2>${PS.esc(title)}</h2><p>${PS.esc(text)}</p>
+        <form><input type="email" required autocomplete="email" placeholder="Your email" aria-label="Email"><button class="btn btn-primary" type="submit">Email me</button></form>
+        <small>One email when prices drop. Unsubscribe anytime.</small><div class="eo-msg"></div></div>`;
+      const close = () => back.remove();
+      back.addEventListener("click", (e) => { if (e.target === back) close(); });
+      back.querySelector(".modal-close").onclick = close;
+      PS.auth().then(a => { if (a.loggedIn && a.user?.email) back.querySelector("input").value = a.user.email; });
+      back.querySelector("form").onsubmit = async (e) => {
+        e.preventDefault();
+        const email = back.querySelector("input").value.trim(), b = back.querySelector("button[type=submit]");
+        b.disabled = true;
+        try { await submit(email); PS.local.set("ps_exit_done", 1); PS.track("lead", {}); back.querySelector(".modal").innerHTML = `<div class="eo-ic ok">${PS.icon("check", 22, 2.6)}</div><h2>You're all set</h2><p>We'll email ${PS.esc(email)} when prices drop.</p><button class="btn btn-primary" data-x>Keep browsing</button>`; back.querySelector("[data-x]").onclick = close; }
+        catch (err) { b.disabled = false; back.querySelector(".eo-msg").textContent = err.message; }
+      };
+      document.body.appendChild(back);
+    };
+    // Desktop: pointer leaves through the top of the window. Phones: after 40s, when scrolling back up fast.
+    document.addEventListener("mouseout", (e) => { if (!e.relatedTarget && e.clientY <= 0) show(); });
+    let lastY = scrollY, lastT = Date.now();
+    addEventListener("scroll", () => { const now = Date.now(), dy = scrollY - lastY; if (matchMedia("(pointer:coarse)").matches && Date.now() - t0 > 40000 && dy < -600 && now - lastT < 400) show(); lastY = scrollY; lastT = now; }, { passive: true });
+  };
+
   PS.track = (e, m) => {
+    adSend(e, m);
     try {
       const body = JSON.stringify({ e, p: location.pathname, r: document.referrer, v: vid(), s: sid(), m });
       const blob = new Blob([body], { type: "application/json" });
@@ -1041,8 +1128,21 @@
       input.addEventListener("input", () => { set(null); codeTag(field, null); });
     };
     const fromField = form.querySelector(".route-half.from"), toField = form.querySelector(".route-half.to");
-    airportAC(fromField, (a) => (from = a));
-    airportAC(toField, (a) => (to = a));
+    // Start the flight search on the server as soon as the form is complete: the results page then joins
+    // the search already in progress (server de-duplicates identical searches) instead of starting cold.
+    let warmed = "", warmTimer = null;
+    const prewarm = () => { clearTimeout(warmTimer); warmTimer = setTimeout(() => {
+      if (!from?.code || !to?.code || from.code === to.code || !depart || (trip === "round" && !ret)) return;
+      const legs = [{ origin: from.code, destination: to.code, date: PS.iso(depart) }];
+      if (trip === "round") legs.push({ origin: to.code, destination: from.code, date: PS.iso(ret) });
+      const body = JSON.stringify({ legs, adults: typeof guests !== "undefined" ? guests.adults : 1, currency: PS.cur(), country: from.countryCode || "US" });
+      if (body === warmed) return; warmed = body;
+      const ac = new AbortController(); // we only need the server to start; don't download the result here
+      fetch("/api/flights/offers", { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: ac.signal }).catch(() => {});
+      setTimeout(() => ac.abort(), 1500);
+    }, 500); };
+    airportAC(fromField, (a) => { from = a; prewarm(); });
+    airportAC(toField, (a) => { to = a; prewarm(); });
     codeTag(fromField, from); codeTag(toField, to);
     form.querySelector(".swap-btn").onclick = () => {
       [from, to] = [to, from];
@@ -1052,7 +1152,7 @@
     };
     const dp = PS.rangePicker({ startField: form.querySelector(".din"), endField: form.querySelector(".dout"), start: depart, end: ret, single: trip === "oneway",
       startLabel: "departure", endLabel: "return", unit: "day",
-      onChange: (s, e) => { depart = s; ret = e; },
+      onChange: (s, e) => { depart = s; ret = e; prewarm(); },
       onWantReturn: () => { setTrip("round"); setTimeout(() => dp.open("end"), 0); } });
     // One way / round trip lives inside the Return box: ✕ removes the return, tapping the box adds it back.
     const retBox = form.querySelector(".dout");
@@ -1065,6 +1165,7 @@
       retBox.classList.toggle("muted", t === "oneway");
       dp.setSingle(t === "oneway");
       if (t === "oneway") ret = null;
+      if (typeof prewarm === "function") prewarm();
     }
     tripButtons().forEach(b => b.onclick = () => {
       PS.closeCalendars();

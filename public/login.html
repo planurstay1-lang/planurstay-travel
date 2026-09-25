@@ -68,6 +68,7 @@
       btn.disabled = true; btn.textContent = mode === "signup" ? "Creating account…" : "Signing in…";
       try {
         await PS.api(mode === "signup" ? "/api/auth/signup" : "/api/auth/login", { method: "POST", body: { email, password } });
+        if (mode === "signup") PS.track("signup", {});
         location.replace(redirect);
       } catch (err) {
         btn.disabled = false; btn.textContent = mode === "signup" ? "Create account" : "Sign in";

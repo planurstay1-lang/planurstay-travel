@@ -161,7 +161,7 @@
             <button class="btn btn-ghost" onclick="window.print()">Print confirmation</button>
           </div>
         </div>`;
-      PS.track("booked", { type });
+      PS.track("booked", { type, value: Number(price) || undefined, currency: cur, id: b.bookingId || b.booking_id || prebookId });
       saveTrip(b);
       partners(p);
     }

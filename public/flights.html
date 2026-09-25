@@ -528,6 +528,9 @@
 
     document.querySelectorAll(".sort-tab").forEach(t => t.onclick = () => { document.querySelectorAll(".sort-tab").forEach(x => x.classList.remove("active")); t.classList.add("active"); st.sort = t.dataset.sort; renderResults(); });
     moreBtn.onclick = () => { st.shown += 15; renderResults(); };
+    PS.exitOffer({ key: "f" + q.from + q.to + q.depart, title: `Get fare drops for ${q.fromCity || q.from} → ${q.toCity || q.to}`,
+      text: `We'll check fares for ${PS.fmtDate(q.depart)}${roundTrip ? " – " + PS.fmtDate(q.return) : ""} every day and email you when they get cheaper.`,
+      submit: (email) => PS.api("/api/flight-alerts", { method: "POST", body: { email, from: q.from, to: q.to, fromCity: q.fromCity, toCity: q.toCity, fromCountry: q.fromCountry, depart: q.depart, return: roundTrip ? q.return : undefined, adults, currency: PS.cur(), price: J.length ? Math.min(...J.map(j => j.price)) : undefined } }) });
     update();
   })();
   </script>

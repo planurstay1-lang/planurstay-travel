@@ -281,6 +281,7 @@
       <div id="formMsg"></div>
       <section class="co-panel hidden" id="payPanel">
         <div class="co-head"><h2>Payment information</h2><span class="tag green">${PS.icon("lock", 13)}${type === "hotel" ? "Room" : "Seats"} held for you</span></div>
+        <div id="trustRow"></div>
         <div id="sandboxNote"></div>
         <div id="priceNote"></div>
         <div id="svcBox"></div>
@@ -309,6 +310,34 @@
       };
     }
     paintFlex();
+    PS.trustHTML(type).then(h => { const el = document.getElementById("trustRow"); if (el) el.innerHTML = h; });
+    PS.whatsapp(type === "hotel" ? `Hi PlanurStay, I have a question about booking ${sel.hotel?.name || "a hotel"} (${sel.stay?.checkin} to ${sel.stay?.checkout}).`
+      : `Hi PlanurStay, I have a question about a flight ${sel.search?.from} → ${sel.search?.to} on ${sel.search?.depart}.`);
+
+    // ─── Signed-in members: fill in traveler details from their last booking on this device ───
+    // Names, date of birth, gender, nationality and contact only; passport numbers are never saved.
+    const travKey = me.email ? "ps_trav_" + me.email.toLowerCase() : null;
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el && v && !el.value) { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); } };
+    const setDate = (id, iso) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || "")) return; const [y, m, d] = iso.split("-"); setVal(`${id}_y`, y); setVal(`${id}_m`, m); setVal(`${id}_d`, d); const h = document.getElementById(id); if (h && !h.value) h.value = iso; };
+    (function prefill() {
+      const saved = travKey && PS.local.get(travKey);
+      if (!saved) return;
+      if (type === "hotel") { setVal("firstName", saved.first); setVal("lastName", saved.last); }
+      else (saved.pax || []).slice(0, +sel.search.adults || 1).forEach((p, i) => {
+        setVal(`p${i}_first`, p.first); setVal(`p${i}_mid`, p.mid); setVal(`p${i}_last`, p.last); setVal(`p${i}_gender`, p.gender); setDate(`p${i}_dob`, p.dob); setVal(`p${i}_nat`, p.nat);
+      });
+      if (saved.dial) { const d = document.getElementById("dial"); if (d) d.value = saved.dial; }
+      setVal("phone", saved.phone);
+      document.getElementById("detailsPanel")?.insertAdjacentHTML("afterbegin", `<div class="co-prefill">${PS.icon("check", 14, 2.6)}Filled in from your last booking on this device. Please check everything, and add passport details. <button type="button" class="link-btn" id="clearPrefill">Clear</button></div>`);
+      document.getElementById("clearPrefill").onclick = () => { PS.local.del ? PS.local.del(travKey) : PS.local.set(travKey, null); location.reload(); };
+    })();
+    const rememberTravelers = () => {
+      if (!travKey) return;
+      const v = (id) => document.getElementById(id)?.value || "";
+      PS.local.set(travKey, type === "hotel"
+        ? { first: v("firstName"), last: v("lastName"), phone: v("phone"), dial: v("dial") }
+        : { pax: Array.from({ length: +sel.search.adults || 1 }, (_, i) => ({ first: v(`p${i}_first`), mid: v(`p${i}_mid`), last: v(`p${i}_last`), gender: v(`p${i}_gender`), dob: v(`p${i}_dob`), nat: v(`p${i}_nat`) })), phone: v("phone"), dial: v("dial") });
+    };
     document.querySelectorAll("[data-date]").forEach(w => {
       const id = w.dataset.date, sync = () => {
         const d = w.querySelector(`#${id}_d`).value, m = w.querySelector(`#${id}_m`).value, y = w.querySelector(`#${id}_y`).value;
@@ -573,6 +602,8 @@
         price: pb.price, currency: pb.currency, createdAt: Date.now(),
       };
       PS.local.set("ps_pending_" + pb.prebookId, pending);
+      rememberTravelers();
+      PS.track("payment", { type, value: pb.price, currency: pb.currency });
       PS.store.set("ps_pending_" + pb.prebookId, pending);
       lockForm(true);
       btn.disabled = false; btn.dataset.mode = "edit"; btn.classList.remove("btn-primary"); btn.classList.add("btn-ghost");

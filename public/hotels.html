@@ -578,6 +578,9 @@
     let alertEmail = "";
     PS.auth().then(a => { if (a.loggedIn) { alertEmail = a.user.email; document.querySelectorAll(".track-card input[type=email]").forEach(i => { if (!i.value) i.value = alertEmail; }); } });
     const lowNight = () => Math.min(...all.filter(h => !h.memberOnly).map(h => h.perNight));
+    PS.exitOffer({ key: "h" + q.placeId + q.checkin, title: `Get price drops for ${q.dest || "this trip"}`,
+      text: `We'll check hotel prices for ${PS.fmtDate(q.checkin)} – ${PS.fmtDate(q.checkout)} every day and email you when they drop.`,
+      submit: (email) => PS.api("/api/alerts", { method: "POST", body: { email, placeId: q.placeId, dest: q.dest, destDetail: q.destDetail, checkin: q.checkin, checkout: q.checkout, adults: +q.adults || 2, rooms: +q.rooms || 1, currency: PS.cur(), price: Number.isFinite(lowNight()) ? Math.round(lowNight()) : undefined } }) });
     function trackerHTML() {
       if (PS.local.get(alertKey)) return `<div class="track-card done">${PS.icon("check", 20, 2.6)}<div><b>You're tracking prices for this search</b><span>We'll email you when hotels in ${PS.esc(q.dest || "this area")} get cheaper for ${PS.fmtDate(q.checkin)} – ${PS.fmtDate(q.checkout)}.</span></div></div>`;
       const low = lowNight();
