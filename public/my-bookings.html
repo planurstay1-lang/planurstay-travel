@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/ps.css">
+  <script src="https://payment-wrapper.liteapi.travel/dist/liteAPIPayment.js?v=a1"></script>
 </head>
 <body>
   <main class="container" style="padding-bottom:40px">
@@ -17,6 +18,7 @@
   </main>
 
   <script src="/js/ps.js"></script>
+  <script src="/js/flight-extras.js"></script>
   <script>
   (async function () {
     PS.header({ active: "trips" });
@@ -71,6 +73,7 @@
     const tripHTML = (t) => {
       const s = String(t.status || "").toUpperCase();
       const cls = ["CONFIRMED", "BOOKED", "TICKETED"].includes(s) ? "ok" : /CANCEL|FAIL/.test(s) ? "bad" : "pend";
+      const extras = t.type === "flight" && t.bookingId && cls !== "bad" && (t.checkin || "") >= today;
       return `<div class="trip">
         <div class="trip-ico">${PS.icon(t.type === "flight" ? "plane" : "bed", 24)}</div>
         <div class="trip-main">
@@ -81,10 +84,12 @@
         <div class="trip-right">
           <div style="font-weight:800;color:var(--ink)">${t.price ? PS.money(Number(t.price), t.currency || "USD", 0) : ""}</div>
           <span class="status ${cls}">${PS.esc(s || "PENDING")}</span>
+          ${extras ? `<div class="trip-actions"><button class="btn btn-ghost btn-sm" type="button" data-fx="${PS.esc(t.bookingId)}">${PS.icon("plane", 16)}Seats &amp; bags</button></div>` : ""}
         </div>
-      </div>`;
+      </div>${extras ? `<div class="fx" data-fx-box="${PS.esc(t.bookingId)}" hidden></div>` : ""}`;
     };
 
+    const fxNotice = await FX.handleReturn();
     let rw = null;
     try { rw = (await PS.api("/api/rewards")).data; } catch {}
     rw = rw || { points: 0, pending: 0, lifetime: 0, valueUsd: 0, tier: { label: "Explorer", multiplier: 1 }, nextTier: null, redeem: { min: 1000, step: 500, pointValueUsd: 0.01 }, vouchers: [] };
@@ -110,6 +115,14 @@
       ${past.length ? `<h2 style="font-size:21px;margin:28px 0 12px">Past trips</h2>${past.map(tripHTML).join("")}` : ""}
       <div style="margin-top:28px">${findForm("Add a guest booking", "Booked without signing in? Add it to this account with your booking ID and checkout email.", "Add to my trips")}</div>
       <p class="price-sub" style="margin-top:22px">Need to change or cancel? Email <a class="link" href="mailto:info@planurstay.com">info@planurstay.com</a> with your booking ID.</p>`;
+
+    if (fxNotice) root.insertAdjacentHTML("afterbegin", fxNotice);
+    root.querySelectorAll("[data-fx]").forEach(btn => btn.onclick = () => {
+      const box = [...root.querySelectorAll("[data-fx-box]")].find(b => b.dataset.fxBox === btn.dataset.fx);
+      if (!box) return;
+      if (!box.hidden) { box.hidden = true; return; }
+      FX.open(box, btn.dataset.fx);
+    });
 
     document.getElementById("findForm").onsubmit = async (e) => {
       e.preventDefault();

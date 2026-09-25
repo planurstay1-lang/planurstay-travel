@@ -7,6 +7,11 @@
  *   3. POST /api/flights/prebook/services → attach seats/baggage (optional)
  *   4. POST /api/flights/book       → complete booking
  *
+ * After booking (signed-in owner only):
+ *   GET  /api/flights/bookings/:id/services        → booked + still-bookable seats/bags
+ *   POST /api/flights/bookings/:id/extras/precharge → price a batch, get a payment intent
+ *   POST /api/flights/bookings/:id/extras/confirm   → capture payment, record the charges
+ *
  * Features:
  *   - Uber Vouchers via addons field in prebook
  *   - Idempotency guard (check DB before booking)
@@ -123,6 +128,24 @@ function ensureFlightSchema(db) {
       addons_json      TEXT,
       created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    -- Post-booking extra-charge batches (seats/bags added after booking).
+    -- LiteAPI does not attach services to an existing booking yet, so a paid
+    -- batch is fulfilled by a person (status 'paid' → 'fulfilled').
+    CREATE TABLE IF NOT EXISTS flight_extra_charges (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      charges_id     TEXT UNIQUE NOT NULL,
+      booking_id     TEXT NOT NULL,
+      user_id        INTEGER,
+      currency       TEXT,
+      total_amount   REAL,
+      lines_json     TEXT,
+      payment_method TEXT,
+      transaction_id TEXT,
+      status         TEXT DEFAULT 'pending',
+      created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+      confirmed_at   DATETIME
     );
   `);
 }
@@ -442,6 +465,61 @@ async function getBooking(bookingId) {
   return { success: true, data };
 }
 
+// ─── Post-booking services & extra charges ───────────────────────────────────
+
+async function getBookingServices(bookingId) {
+  if (!bookingId) return { success: false, error: { code: 400, message: "bookingId required", key: "bookingId" } };
+  const result = await liteFetch(`/flights/bookings/${encodeURIComponent(bookingId)}/services`, null, "GET");
+  if (!result.ok) {
+    const err = firstError(result.json) || { code: result.status, message: "Failed to fetch booking services", detail: result.json };
+    return { success: false, error: err, status: result.status };
+  }
+  const data = Array.isArray(result.json.data) ? (result.json.data[0] || {}) : (result.json.data || {});
+  return { success: true, data: { expiresAt: data.expiresAt || null, groups: data.groups || [], bookedServices: data.bookedServices || [] } };
+}
+
+// charges: [{ description, currency, amount }] — all in the booking's selling currency.
+async function prechargeExtras(bookingId, charges, usePaymentSdk = true) {
+  if (!bookingId) return { success: false, error: { code: 400, message: "bookingId required", key: "bookingId" } };
+  if (!Array.isArray(charges) || charges.length === 0) {
+    return { success: false, error: { code: 400, message: "At least one charge line", key: "charges" } };
+  }
+  const currencies = new Set(charges.map(c => c.currency));
+  if (currencies.size !== 1) return { success: false, error: { code: 400, message: "All charges must use the same currency", key: "charges" } };
+  if (charges.some(c => !c.description || !(+c.amount > 0))) {
+    return { success: false, error: { code: 400, message: "Each charge needs a description and a positive amount", key: "charges" } };
+  }
+  const result = await liteFetch(`/flights/bookings/${encodeURIComponent(bookingId)}/extra-charges/precharges`, {
+    charges: charges.map(c => ({ description: String(c.description), currency: c.currency, amount: Math.round(+c.amount * 100) / 100 })),
+    usePaymentSdk: usePaymentSdk !== false,
+  });
+  if (!result.ok) {
+    const err = firstError(result.json) || { code: result.status, message: "Could not prepare the extra charge", detail: result.json };
+    return { success: false, error: { ...err, code: err.code || result.status }, status: result.status };
+  }
+  return { success: true, data: result.json.data || result.json };
+}
+
+// Idempotent on chargesId (LiteAPI replays an already-confirmed batch with data.message).
+async function confirmExtras(bookingId, chargesId, payment) {
+  if (!bookingId) return { success: false, error: { code: 400, message: "bookingId required", key: "bookingId" } };
+  if (!chargesId) return { success: false, error: { code: 400, message: "chargesId required", key: "chargesId" } };
+  if (!payment || !["TRANSACTION_ID", "CREDIT"].includes(payment.method)) {
+    return { success: false, error: { code: 400, message: "payment.method must be TRANSACTION_ID or CREDIT", key: "payment.method" } };
+  }
+  if (payment.method === "TRANSACTION_ID" && !payment.transactionId) {
+    return { success: false, error: { code: 400, message: "transactionId required for TRANSACTION_ID payment", key: "payment.transactionId" } };
+  }
+  const body = { chargesId, payment: { method: payment.method } };
+  if (payment.transactionId) body.payment.transactionId = payment.transactionId;
+  const result = await liteFetch(`/flights/bookings/${encodeURIComponent(bookingId)}/extra-charges/charges`, body);
+  if (!result.ok) {
+    const err = firstError(result.json) || { code: result.status, message: "Could not confirm the extra charge", detail: result.json };
+    return { success: false, error: { ...err, code: err.code || result.status }, status: result.status };
+  }
+  return { success: true, data: result.json.data || result.json };
+}
+
 // ─── Build Flight Confirmation Response ──────────────────────────────────────
 
 // ─── Baggage & Transfer Notes ────────────────────────────────────────
@@ -720,6 +798,9 @@ module.exports = {
   completeBooking,
   getPrebook,
   getBooking,
+  getBookingServices,
+  prechargeExtras,
+  confirmExtras,
   ensureFlightSchema,
   _rawFetch: liteFetch,
   _baseUrl: bookBaseUrl,

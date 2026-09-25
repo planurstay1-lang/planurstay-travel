@@ -563,6 +563,9 @@ app.post("/api/flights/book", async (req, res) => {
 
 
 
+// ─── Seats & bags after booking ───
+require("./modules/flight-extras").createFlightExtras({ db, jwt, JWT_SECRET, flightEngine, support }).register(app);
+
 // ─── Payment SDK config ────────────────────────────────────────────────────
 app.get("/api/payment-sdk/config", (req, res) => {
   try {

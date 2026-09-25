@@ -1862,3 +1862,18 @@ a.route:hover .route-go { background: var(--blue); color: #fff; }
   .co-timer.mob { display: flex; position: sticky; top: 72px; z-index: 20; box-shadow: var(--sh-2); }
   #sumCol .co-timer { display: none; }
 }
+
+/* Seats & bags after booking (My trips) */
+.trip-actions { margin-top: 8px; }
+.fx { background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px; margin: -6px 0 16px; }
+.fx h4 { font-size: 15px; margin: 16px 0 8px; }
+.fx h4:first-child { margin-top: 0; }
+.fx-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.fx-item { display: flex; gap: 10px; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 14px; background: #fff; text-align: left; }
+.fx-item.on { border-color: var(--blue); background: var(--blue-50); }
+.fx-item b { color: var(--ink); white-space: nowrap; }
+.fx-item small { display: block; color: var(--muted); font-size: 12px; }
+.fx-item select { max-width: 130px; font-size: 13px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); }
+.fx-done { color: var(--text-2); font-size: 14px; margin: 0 0 4px; }
+.fx-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-2); }
+@media (max-width: 560px) { .fx-list { grid-template-columns: 1fr; } }
