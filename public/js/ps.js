@@ -178,7 +178,7 @@
         <div class="foot-top">
           <div class="foot-brand">
             <a href="/" class="brand"><span class="brand-mark">${PS.icon("plane", 18, 2.2)}</span>PlanurStay</a>
-            <p>Hotels and flights worldwide at member prices, with secure checkout and real people ready to help.</p>
+            <p>Your trip, simplified. Hotels and flights worldwide at member prices, backed by real people who help before, during and after you travel.</p>
             <a class="foot-mail" href="mailto:info@planurstay.com">${PS.icon("mail", 16)}info@planurstay.com</a>
           </div>
           <div class="foot-cols">

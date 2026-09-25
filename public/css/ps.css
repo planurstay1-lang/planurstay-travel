@@ -1099,3 +1099,48 @@ p { margin: 0; }
   .how h3 { align-self: end; margin: 6px 0 2px; }
 }
 @media (max-width: 560px) { .sfield.din > svg.ico, .sfield.dout > svg.ico { display: none; } }
+
+/* ─── Homepage: resume, themes, routes, FAQ ───────────────────────────── */
+.mini-h { font-size: 20px; font-weight: 800; margin-bottom: 12px; }
+.resume { padding: 34px 0 0; }
+.resume-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.resume-card { display: flex; align-items: center; gap: 14px; background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; transition: box-shadow .2s, border-color .2s; }
+.resume-card:hover { box-shadow: var(--sh-2); border-color: #c9d1e3; }
+.resume-card > div { flex: 1; min-width: 0; }
+.resume-card b { display: block; color: var(--ink); }
+.resume-card small { color: var(--text-2); }
+.resume-card > svg { color: var(--muted); }
+.r-ico { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--blue-50); color: var(--blue); }
+.themes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.theme { position: relative; aspect-ratio: 3 / 4; border-radius: 20px; overflow: hidden; color: #fff; isolation: isolate; box-shadow: var(--sh-2); }
+.theme img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; transition: transform .6s var(--ease); }
+.theme::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, transparent 35%, rgba(8,18,45,.85)); }
+.theme:hover img { transform: scale(1.06); }
+.theme-txt { position: absolute; left: 18px; right: 18px; bottom: 18px; display: grid; gap: 4px; }
+.theme-txt b { font-size: 20px; }
+.theme-txt small { opacity: .85; font-size: 13.5px; }
+.theme-txt span { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-weight: 700; font-size: 13.5px; color: #ffd3a8; }
+@media (max-width: 900px) { .themes { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 520px) { .themes { gap: 10px; } .theme { aspect-ratio: 4 / 5; } .theme-txt b { font-size: 17px; } .theme-txt small { display: none; } }
+.routes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.route { display: flex; align-items: center; gap: 14px; background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 10px; transition: box-shadow .2s, border-color .2s; }
+.route:hover { box-shadow: var(--sh-2); border-color: #c9d1e3; }
+.route img { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; flex: none; }
+.route > div { flex: 1; min-width: 0; }
+.route b { display: block; color: var(--ink); font-size: 15px; }
+.route small { color: var(--text-2); font-size: 13px; }
+.route-go { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--line-2); color: var(--ink); margin-right: 6px; transition: background .2s, color .2s; }
+.route:hover .route-go { background: var(--blue); color: #fff; }
+@media (max-width: 900px) { .routes { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .routes { grid-template-columns: 1fr; } }
+.faq-wrap { display: grid; grid-template-columns: .9fr 1.4fr; gap: 40px; align-items: start; margin-top: 20px; }
+.faq-wrap h2 { font-size: clamp(24px, 2.8vw, 32px); font-weight: 800; }
+.faq-sub { color: var(--text-2); margin-top: 10px; }
+.faq details { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 0 18px; }
+.faq details + details { margin-top: 10px; }
+.faq summary { list-style: none; cursor: pointer; padding: 16px 30px 16px 0; font-weight: 700; color: var(--ink); position: relative; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; position: absolute; right: 0; top: 50%; transform: translateY(-50%); font-size: 22px; font-weight: 500; color: var(--blue); transition: transform .2s; }
+.faq details[open] summary::after { transform: translateY(-50%) rotate(45deg); }
+.faq details p { color: var(--text-2); padding: 0 0 16px; }
+@media (max-width: 900px) { .faq-wrap { grid-template-columns: 1fr; gap: 18px; } }
