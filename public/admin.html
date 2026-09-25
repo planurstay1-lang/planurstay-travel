@@ -89,6 +89,7 @@
             <div class="field"><label>Members %</label><input id="mkMem" type="number" min="0" max="40" step="0.5" value="${d.pricing.memberMargin}" style="width:110px"></div>
             <button class="btn btn-primary" type="submit">Save</button><span id="mkMsg" style="font-size:13px;align-self:center"></span>
           </form></div>
+        <div id="tickets"></div>
         <div id="traffic"></div>
         <div class="ad-grid">
           <div class="ad-card"><h3>Weekly sales</h3><div class="bars">${L.weekly.map(w => `<div style="height:${(100 * w.sales / maxW).toFixed(1)}%" title="${esc(w.weeks)}: ${money(w.sales, cur)}"><span>${esc(String(w.weeks).replace("week ", "W"))}</span></div>`).join("")}</div><div style="height:18px"></div></div>
@@ -104,6 +105,22 @@
         <div class="ad-card"><h3>Recent site bookings</h3><table class="ad-t"><tr><th>Hotel</th><th>Check-in</th><th>Who</th><th>Status</th><th class="n">Price</th></tr>
           ${S.recent.map(b => `<tr><td>${esc(b.name)}</td><td>${esc(b.checkin)}</td><td>${b.who}</td><td>${esc(b.status)}</td><td class="n">${money(b.price, b.currency)}</td></tr>`).join("") || `<tr><td colspan="5">No bookings yet</td></tr>`}</table></div>`;
       traffic();
+      tickets();
+    }
+
+    async function tickets() {
+      const el = document.getElementById("tickets"); if (!el) return;
+      const t = await fetch("/api/admin/tickets").then(r => r.json()).catch(() => null);
+      if (!t || !t.success) return;
+      const open = t.data.filter(x => x.status === "open");
+      el.innerHTML = `<div class="ad-card"><h3>Support tickets <small style="color:var(--text-2);font-weight:600">${open.length} open</small></h3>
+        <table class="ad-t"><tr><th>Ref</th><th>When</th><th>Customer</th><th>Booking</th><th>Type</th><th>Request</th><th></th></tr>
+        ${t.data.slice(0, 40).map(x => `<tr style="${x.status === "closed" ? "opacity:.55" : ""}"><td><b>${esc(x.ref)}</b></td><td>${esc(String(x.created_at).slice(0, 16))}</td><td><a href="mailto:${esc(x.email)}?subject=${encodeURIComponent("Re: " + x.ref)}">${esc(x.email)}</a></td><td>${esc(x.booking_id || "–")}</td><td>${esc(x.category)}</td>
+          <td style="white-space:normal;min-width:260px">${esc(x.summary)}</td><td>${x.status === "open" ? `<button class="btn btn-sm" data-close="${esc(x.ref)}">Close</button>` : "closed"}</td></tr>`).join("") || `<tr><td colspan="7">No tickets yet</td></tr>`}</table></div>`;
+      el.querySelectorAll("[data-close]").forEach(b => b.onclick = async () => {
+        await fetch("/api/admin/tickets/" + encodeURIComponent(b.dataset.close), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "closed" }) });
+        tickets();
+      });
     }
 
     async function traffic() {

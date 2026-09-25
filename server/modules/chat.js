@@ -32,6 +32,35 @@ const TOOLS = [
     },
   },
   {
+    name: "list_my_bookings",
+    description: "List the signed-in customer's hotel and flight bookings. Returns an error if they aren't signed in.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "booking_status",
+    description: "Look up one booking's live status, dates, total paid and cancellation terms (free-cancellation deadline, fee if cancelled now). For hotels: needs the booking ID and the email used at checkout, unless the customer is signed in and owns it. For flights: also returns the airline's live refund quote (signed-in owner only).",
+    input_schema: { type: "object", properties: { booking_id: { type: "string" }, email: { type: "string" } }, required: ["booking_id"] },
+  },
+  {
+    name: "prepare_cancellation",
+    description: "Use ONLY after the customer clearly asks to cancel a specific booking. Checks the terms and shows the customer a confirmation card with the refund and fee. It does NOT cancel: the customer must confirm in the card (and enter an emailed code if not signed in). Flights return a refund quote and must go to a support ticket.",
+    input_schema: { type: "object", properties: { booking_id: { type: "string" }, email: { type: "string" } }, required: ["booking_id"] },
+  },
+  {
+    name: "create_support_ticket",
+    description: "Hand a request to the PlanurStay support team (who can contact the hotel, airline or our supplier Nuitee). Use for changes, name corrections, special requests, flight cancellations, problems at the hotel, refunds not received, or anything you can't resolve. Confirm the summary with the customer first.",
+    input_schema: {
+      type: "object",
+      properties: {
+        category: { type: "string", enum: ["change", "cancellation", "refund", "problem-at-hotel", "flight", "payment", "special-request", "other"] },
+        summary: { type: "string", description: "Clear summary for the support agent: what the customer needs, key details and what was already tried." },
+        booking_id: { type: "string" },
+        email: { type: "string", description: "Customer's email for the reply" },
+      },
+      required: ["category", "summary"],
+    },
+  },
+  {
     name: "search_flights",
     description: "Search live flight prices. Use airport or city names; they are resolved to airports. Omit return_date for one way.",
     input_schema: {
@@ -60,7 +89,12 @@ How to help:
 - If dates or the destination are missing, ask one short question. If the user says something like "next weekend", work out the dates from today and say which dates you used.
 - Results appear as clickable cards under your message, so don't repeat every detail. Summarise the best 2-3 options and why (price, rating, location, stops).
 - Guests see public prices. Signed-in members see lower member prices; you may mention that signing in (free) unlocks member prices.
-- You can't make, change or cancel bookings, and you can't see anyone's bookings. For that, point people to My trips (/my-bookings) or Contact (/contact, info@planurstay.com).
+- You are also PlanurStay customer support. You can look up bookings, check live status and cancellation terms, prepare a hotel cancellation for the customer to confirm, and open support tickets.
+- To look up a booking you need the booking ID and the email used at checkout, unless the customer is signed in (then use list_my_bookings). Never reveal booking details unless the tool returns them. Never guess a booking ID.
+- Cancelling: only call prepare_cancellation when the customer clearly asks to cancel a specific booking. First tell them the fee and refund. The card lets them confirm; you never cancel yourself and never say it's cancelled until they confirm in the card.
+- Changes (dates, names, room type), flight cancellations, refunds not received, problems at the hotel, or anything else you can't do: collect the details and open a ticket with create_support_ticket, then give the customer the reference. Our team contacts the hotel, airline or our supplier Nuitee when needed.
+- Cancellation deadlines from the tools are in GMT; say so.
+- If the customer is at the hotel or airport with an urgent problem, tell them to speak to the front desk or airline too, and open a ticket.
 
 Policies you can explain (details: /cancellation-policy, /terms):
 - Free-cancellation rates can be cancelled for a full refund until the deadline shown on the booking; non-refundable rates can't be refunded.
@@ -69,10 +103,10 @@ Policies you can explain (details: /cancellation-policy, /terms):
 - PlanurStay Rewards: members earn points on bookings (100 points = $1), released after the stay, redeemable as vouchers at checkout.
 - Flight changes and baggage follow the airline's fare rules. Travellers are responsible for passports and visas.
 
-Stay on travel topics. Politely decline unrelated requests. Never ask for card numbers, passwords or passport numbers in chat.`;
+Stay on travel and booking topics. Politely decline unrelated requests. Never ask for card numbers, passwords, passport numbers or verification codes in chat (codes go in the confirmation card only).`;
 }
 
-function createChat({ port }) {
+function createChat({ port, support }) {
   const key = () => (process.env.ANTHROPIC_API_KEY || "").trim();
   const model = () => process.env.CHAT_MODEL || "claude-sonnet-5";
   const base = `http://127.0.0.1:${port}`;
@@ -178,14 +212,14 @@ function createChat({ port }) {
   }
 
   function register(app) {
-    // Which assistant the site shows. CHATBOT=nuitee (default) embeds Nuitee's whitelabel chatbot
-    // using the PUBLIC key; CHATBOT=own uses our Claude assistant; CHATBOT=off hides both.
+    // Nuitee's whitelabel chatbot powers "Ask AI" in the homepage search (public key only);
+    // our own assistant (Claude) is the support bubble. NUITEE_CHATBOT=off / CHATBOT=off hide them.
     app.get("/api/chat/status", (req, res) => {
-      const mode = (process.env.CHATBOT || "nuitee").toLowerCase();
       const pub = (process.env.NUITEE_CHATBOT_KEY || "prod_public_fa93b970-5991-4c77-a7a1-b8640d0ca04d").trim();
-      if (mode === "nuitee" && /^(prod|sand)_public_[0-9a-f-]+$/i.test(pub)) return res.json({ enabled: true, provider: "nuitee", src: `https://components.liteapi.travel/chatbot/v1.js?liteApiKey=${encodeURIComponent(pub)}` });
-      if (mode === "own" && key()) return res.json({ enabled: true, provider: "own" });
-      res.json({ enabled: false });
+      const nuitee = (process.env.NUITEE_CHATBOT || "on").toLowerCase() !== "off" && /^(prod|sand)_public_[0-9a-f-]+$/i.test(pub)
+        ? { src: `https://components.liteapi.travel/chatbot/v1.js?liteApiKey=${encodeURIComponent(pub)}` } : null;
+      const off = (process.env.CHATBOT || "").toLowerCase() === "off";
+      res.json({ nuitee, assistant: !off && !!key(), help: !off });
     });
 
     app.post("/api/chat", async (req, res) => {
@@ -203,7 +237,7 @@ function createChat({ port }) {
       while (history.length && history[0].role !== "user") history.shift();
       if (!history.length || history[history.length - 1].role !== "user") return res.status(400).json({ error: "Say something to get started." });
 
-      const ctx = { cookie: req.headers.cookie || "", currency, cards: [], links: [] };
+      const ctx = { req, cookie: req.headers.cookie || "", currency, cards: [], links: [], actions: [] };
       try {
         let msgs = history, reply = "";
         for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
@@ -215,15 +249,23 @@ function createChat({ port }) {
           const results = await Promise.all(calls.map(async (c) => {
             let result;
             try {
-              result = c.name === "search_hotels" ? await searchHotels(c.input || {}, ctx)
-                : c.name === "search_flights" ? await searchFlights(c.input || {}, ctx)
-                : { error: "Unknown tool" };
+              const i = c.input || {};
+              if (c.name === "search_hotels") result = await searchHotels(i, ctx);
+              else if (c.name === "search_flights") result = await searchFlights(i, ctx);
+              else if (c.name === "list_my_bookings") result = support.listMine(req) || { error: "The customer isn't signed in. Ask for the booking ID and the email used at checkout, or suggest signing in." };
+              else if (c.name === "booking_status") result = await support.status(req, i.booking_id, i.email);
+              else if (c.name === "prepare_cancellation") {
+                result = await support.prepareCancellation(req, i.booking_id, i.email);
+                if (result.action) { ctx.actions = [result.action]; result = { ...result, action: undefined, confirmationCardShown: true }; }
+              }
+              else if (c.name === "create_support_ticket") result = support.createTicket(req, { bookingId: i.booking_id, email: i.email, category: i.category, summary: i.summary });
+              else result = { error: "Unknown tool" };
             } catch (e) { result = { error: "Search is taking too long. Try again in a moment." }; }
             return { type: "tool_result", tool_use_id: c.id, content: JSON.stringify(result).slice(0, 12000) };
           }));
           msgs = [...msgs, { role: "assistant", content: out.content }, { role: "user", content: results }];
         }
-        res.json({ success: true, reply: reply || "Sorry, I couldn't find an answer to that. Try rephrasing, or use the search above.", cards: ctx.cards.slice(0, 8), links: ctx.links.slice(0, 2) });
+        res.json({ success: true, reply: reply || "Sorry, I couldn't find an answer to that. Try rephrasing, or use the search above.", cards: ctx.cards.slice(0, 8), links: ctx.links.slice(0, 2), actions: ctx.actions });
       } catch (err) {
         console.error("Chat error:", err.message);
         res.status(502).json({ error: "The assistant is busy right now. Please try again in a moment." });

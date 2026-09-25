@@ -22,6 +22,8 @@
           <div class="tabs" role="tablist">
             <button class="tab active" data-tab="stays" role="tab" aria-selected="true"><i data-ico="bed"></i>Stays</button>
             <button class="tab" data-tab="flights" role="tab" aria-selected="false"><i data-ico="plane"></i>Flights</button>
+            <button class="tab tab-ai hidden" data-tab="ai" role="tab" aria-selected="false"><i data-ico="sparkle"></i>Ask AI</button>
+            <span class="tab-break" aria-hidden="true"></span>
             <div class="trip-type tab-trip" id="tripToggle" aria-label="Trip type"><button type="button" class="chip-toggle" data-trip="round">Round trip</button><button type="button" class="chip-toggle" data-trip="oneway">One way</button></div>
           </div>
           <div id="searchHost"></div>
@@ -162,7 +164,17 @@
 
     // Both forms are built once; switching tabs only shows/hides them, so nothing redraws or jumps.
     const host = document.getElementById("searchHost");
-    host.innerHTML = `<div data-form="stays"></div><div data-form="flights" class="hidden"></div>`;
+    host.innerHTML = `<div data-form="stays"></div><div data-form="flights" class="hidden"></div>
+      <div data-form="ai" class="hidden"><form class="sfields ai-form" novalidate>
+        <div class="sfield wide">${PS.icon("sparkle", 20)}<div class="sfield-body"><span class="lbl">Describe your trip</span><input type="text" autocomplete="off" aria-label="Describe your trip" placeholder="e.g. Beach hotel in Cancun, Dec 20–27, 2 adults, under $250 a night"></div></div>
+        <button class="btn btn-primary search-go" type="submit">${PS.icon("sparkle", 20, 2.2)}<span>Ask AI</span></button>
+      </form></div>`;
+    host.querySelector(".ai-form").onsubmit = (e) => {
+      e.preventDefault();
+      const q = e.target.querySelector("input").value.trim();
+      PS.track("page", { askAI: 1 });
+      PS.askNuitee(q);
+    };
     PS.staysSearch(host.querySelector('[data-form="stays"]'), PS.local.get("ps_last_stays") || {});
     PS.flightsSearch(host.querySelector('[data-form="flights"]'), { ...(PS.local.get("ps_last_flights") || {}), tripToggle: document.getElementById("tripToggle") });
     const tabs = document.querySelectorAll(".tab");
@@ -174,7 +186,14 @@
       PS.local.set("ps_tab", t);
     }
     tabs.forEach(b => b.onclick = () => setTab(b.dataset.tab));
-    setTab(location.hash === "#flights" ? "flights" : location.hash === "#stays" ? "stays" : PS.local.get("ps_tab") || "stays");
+    const savedTab = PS.local.get("ps_tab");
+    setTab(location.hash === "#flights" ? "flights" : location.hash === "#stays" ? "stays" : savedTab === "ai" ? "stays" : savedTab || "stays");
+    // "Ask AI" appears once we know an assistant is available
+    PS.chatConfig().then(c => {
+      if (!c.nuitee && !c.assistant) return;
+      document.querySelector(".tab-ai").classList.remove("hidden");
+      if (location.hash === "#ai" || savedTab === "ai") setTab("ai");
+    });
 
     PS.auth().then(a => {
       if (!a.loggedIn) return;

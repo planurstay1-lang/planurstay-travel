@@ -155,7 +155,16 @@ rewards.register(app);
 const admin = require("./modules/admin").createAdmin({ db, apiKey: () => key, jwt, JWT_SECRET });
 admin.register(app);
 require("./modules/analytics").createAnalytics({ db, isAdmin: admin.isAdmin }).register(app);
-require("./modules/chat").createChat({ port: PORT }).register(app);
+// Plain email helper for modules (verification codes, support tickets). Returns true when sent.
+async function sendEmail({ to, subject, html, replyTo }) {
+  if (!resendClient || !to) return false;
+  const { error } = await resendClient.emails.send({ from: EMAIL_FROM, to, subject, html, replyTo: replyTo || process.env.EMAIL_REPLY_TO || "info@planurstay.com" });
+  if (error) { console.error("Email error:", error.message || error); return false; }
+  return true;
+}
+const support = require("./modules/support").createSupport({ db, jwt, JWT_SECRET, apiKey: () => key, isSandbox: liveKey.isSandbox, sendEmail, isAdmin: admin.isAdmin });
+support.register(app);
+require("./modules/chat").createChat({ port: PORT, support }).register(app);
 // Google Search Console HTML-file verification: set GSC_HTML_FILE=google1234abcd.html on Render
 app.get(/^\/google[0-9a-z]+\.html$/, (req, res, next) => {
   const f = (process.env.GSC_HTML_FILE || "").trim();

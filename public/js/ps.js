@@ -295,49 +295,92 @@
     };
   };
 
-  // ─── AI travel assistant (floating chat) ───
+  // ─── Assistants ───
+  // "Ask AI" in the homepage search opens Nuitee's hotel chatbot (its own corner bubble is hidden).
+  // The corner bubble is PlanurStay support: our assistant (bookings, status, cancellations, tickets),
+  // or a simple help menu when the AI assistant isn't configured.
+  PS.chatConfig = async () => {
+    let cfg = PS.store.get("ps_chat_cfg2");
+    if (!cfg) {
+      try { cfg = await (await fetch("/api/chat/status")).json(); } catch { cfg = {}; }
+      PS.store.set("ps_chat_cfg2", cfg);
+    }
+    return cfg;
+  };
+  let nuiteeReady = null;
+  function loadNuitee(src) {
+    if (nuiteeReady) return nuiteeReady;
+    nuiteeReady = new Promise((resolve) => {
+      if (!/^https:\/\/components\.liteapi\.travel\//.test(src || "")) return resolve(null);
+      const sc = document.createElement("script"); sc.src = src; sc.async = true; document.body.appendChild(sc);
+      const t0 = Date.now();
+      (function wait() {
+        const sr = document.getElementById("liteapi-chatbot-host")?.shadowRoot;
+        const btn = sr && (sr.querySelector(".la-fixed button") || sr.querySelector("button"));
+        if (btn) {
+          // Hide Nuitee's floating launcher; we open it from "Ask AI" instead
+          const box = btn.closest(".la-fixed") || btn.parentElement;
+          if (box) box.style.display = "none";
+          return resolve({ sr, btn });
+        }
+        if (Date.now() - t0 > 15000) return resolve(null);
+        setTimeout(wait, 150);
+      })();
+    });
+    return nuiteeReady;
+  }
+  PS.askNuitee = async (text) => {
+    const cfg = await PS.chatConfig();
+    const n = cfg.nuitee ? await loadNuitee(cfg.nuitee.src) : null;
+    if (!n) { if (PS.openAssistant) PS.openAssistant(text); return false; }
+    const findInput = () => n.sr.querySelector("textarea, input[type=text], input:not([type])");
+    if (!findInput()) n.btn.click();
+    let input = null;
+    for (let i = 0; i < 40 && !(input = findInput()); i++) await new Promise(r => setTimeout(r, 100));
+    if (!input || !text) return !!input;
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value").set;
+    setter.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus();
+    await new Promise(r => setTimeout(r, 120));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+    await new Promise(r => setTimeout(r, 300));
+    if (input.value) { const send = [...n.sr.querySelectorAll("button")].filter(b => b.closest("form") === input.closest("form") || b.parentElement === input.parentElement).pop(); send && send.click(); }
+    return true;
+  };
+
   PS.chat = async () => {
     if (PS._chatInit || /^\/(checkout|confirmation|admin)/.test(location.pathname)) return;
     PS._chatInit = true;
-    let cfg = PS.store.get("ps_chat_cfg");
-    if (!cfg) {
-      try { cfg = await (await fetch("/api/chat/status")).json(); } catch { cfg = { enabled: false }; }
-      PS.store.set("ps_chat_cfg", cfg);
-    }
-    if (!cfg.enabled) return;
-    if (cfg.provider === "nuitee") {
-      // Nuitee's whitelabel chatbot (branding, personality and guardrails are set in the Nuitee dashboard)
-      if (/^https:\/\/components\.liteapi\.travel\//.test(cfg.src || "")) {
-        const sc = document.createElement("script"); sc.src = cfg.src; sc.async = true; document.body.appendChild(sc);
-      }
-      return;
-    }
+    const cfg = await PS.chatConfig();
+    if (cfg.nuitee && location.pathname === "/") loadNuitee(cfg.nuitee.src); // preload so Ask AI opens instantly
+    if (!cfg.help) return;
+    const AI = !!cfg.assistant;
     const KEY = "ps_chat";
     let state = PS.store.get(KEY) || { open: false, msgs: [] };
     const save = () => PS.store.set(KEY, { open: state.open, msgs: state.msgs.slice(-30) });
     const root = document.createElement("div");
     root.className = "chat-root";
     root.innerHTML = `
-      <button class="chat-fab" type="button" aria-label="Open the PlanurStay travel assistant">${PS.icon("sparkle", 20, 2)}<span>Ask AI</span></button>
-      <section class="chat-panel" role="dialog" aria-label="PlanurStay travel assistant" hidden>
+      <button class="chat-fab" type="button" aria-label="Help and bookings">${PS.icon(AI ? "sparkle" : "headset", 20, 2)}<span>${AI ? "Help" : "Help"}</span></button>
+      <section class="chat-panel" role="dialog" aria-label="PlanurStay help" hidden>
         <header class="chat-head">
-          <span class="chat-av">${PS.icon("sparkle", 18, 2)}</span>
-          <div><b>PlanurStay assistant</b><small>Live hotel and flight prices</small></div>
-          <button type="button" class="chat-reset" title="New chat" aria-label="Start a new chat">${PS.icon("refresh", 16)}</button>
+          <span class="chat-av">${PS.icon(AI ? "sparkle" : "headset", 18, 2)}</span>
+          <div><b>PlanurStay help</b><small>${AI ? "Bookings, cancellations and trip questions" : "We're here to help"}</small></div>
+          ${AI ? `<button type="button" class="chat-reset" title="New chat" aria-label="Start a new chat">${PS.icon("refresh", 16)}</button>` : ""}
           <button type="button" class="chat-close" aria-label="Close">${PS.icon("x", 18, 2.4)}</button>
         </header>
         <div class="chat-log" aria-live="polite"></div>
-        <form class="chat-form" novalidate>
-          <textarea rows="1" maxlength="1200" placeholder="Ask about hotels, flights or your trip…" aria-label="Message"></textarea>
+        ${AI ? `<form class="chat-form" novalidate>
+          <textarea rows="1" maxlength="1200" placeholder="Ask about a booking, a cancellation or a trip…" aria-label="Message"></textarea>
           <button type="submit" aria-label="Send">${PS.icon("send", 18, 2.2)}</button>
         </form>
-        <p class="chat-foot">AI can make mistakes. Prices are checked again before you pay.</p>
+        <p class="chat-foot">AI can make mistakes. Nothing is cancelled unless you confirm.</p>` : ""}
       </section>`;
     document.body.appendChild(root);
     const fab = root.querySelector(".chat-fab"), panel = root.querySelector(".chat-panel"), log = root.querySelector(".chat-log");
-    const form = root.querySelector(".chat-form"), ta = form.querySelector("textarea"), sendBtn = form.querySelector("button");
+    const form = root.querySelector(".chat-form"), ta = form?.querySelector("textarea"), sendBtn = form?.querySelector("button");
 
-    // Minimal, safe formatting: escape first, then **bold**, [text](/local-link), bullets and line breaks.
     const fmt = (t) => PS.esc(t)
       .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
       .replace(/\[([^\]]+)\]\((\/[^)\s]*)\)/g, '<a href="$2">$1</a>')
@@ -351,23 +394,83 @@
       : `<a class="cc flight" href="${PS.esc(c.url)}">${c.logo ? `<img class="cc-logo" src="${PS.esc(c.logo)}" alt="">` : ""}<div><b>${PS.esc((c.airlines || []).join(", "))}</b>
           ${[c.outbound && ["Out", c.outbound], c.inbound && ["Back", c.inbound]].filter(Boolean).map(([l, x]) => `<small>${l}: ${time(x.depart)} → ${time(x.arrive)} · ${x.stops ? x.stops + " stop" + (x.stops > 1 ? "s" : "") + (x.via?.length ? " (" + PS.esc(x.via.join(", ")) + ")" : "") : "Nonstop"}</small>`).join("")}
           <span class="cc-price"><b>${PS.money(c.price, c.currency, 0)}</b> ${c.inbound ? "round trip" : "one way"}</span></div></a>`;
-    const SUGGEST = ["Hotels in Paris next weekend under $200 a night", "Cheapest flight from Toronto to Cancun in December", "What's your cancellation policy?", "Best area to stay in New York?"];
+    const actionHTML = (a, i) => a.done ? "" : `<div class="cx-card" data-act="${i}">
+        <b>Cancel your booking?</b>
+        <div class="cx-rows">
+          <span>${PS.esc(a.hotel || "Hotel")}</span><span>${PS.esc(PS.fmtDate(a.checkin))} – ${PS.esc(PS.fmtDate(a.checkout))}</span>
+          <span>Booking ID</span><span>${PS.esc(a.bookingId)}</span>
+          <span>Paid</span><span>${a.total != null ? PS.money(+a.total, a.currency, 2) : "–"}</span>
+          <span>Cancellation fee</span><span class="${a.fee ? "bad" : "good"}">${a.fee != null ? (a.fee ? PS.money(+a.fee, a.currency, 2) : "Free") : "Shown by the hotel"}</span>
+          <span>Estimated refund</span><span><b>${a.refund != null ? PS.money(+a.refund, a.currency, 2) : "–"}</b></span>
+        </div>
+        ${a.needsCode ? `<label class="cx-code">Code from your email<input inputmode="numeric" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code"></label><button type="button" class="cx-resend">Send a new code</button>` : ""}
+        <p class="cx-note">The hotel confirms the final amount. Refunds go back to your card in 5–10 business days.</p>
+        <div class="cx-btns"><button type="button" class="btn btn-ghost btn-sm cx-keep">Keep booking</button><button type="button" class="btn btn-sm cx-go">Cancel booking</button></div>
+        <div class="cx-msg"></div>
+      </div>`;
+    const SUGGEST = AI
+      ? ["Check the status of my booking", "I need to cancel a booking", "What's your cancellation policy?", "Change the name on my booking"]
+      : [];
+    function helpMenu() {
+      return `<div class="chat-hi"><b>How can we help?</b><p>Find a booking, cancel, or get in touch with our team.</p>
+        <div class="chat-sugg links">
+          <a href="/my-bookings">${PS.icon("trips", 18)}Find or manage a booking</a>
+          <a href="/cancellation-policy">${PS.icon("refresh", 18)}Cancellations &amp; refunds</a>
+          <a href="/contact">${PS.icon("mail", 18)}Contact our team</a>
+          ${cfg.nuitee ? `<button type="button" class="ask-ai">${PS.icon("sparkle", 18)}Plan a trip with AI</button>` : ""}
+        </div></div>`;
+    }
     function render() {
+      if (!AI) {
+        log.innerHTML = helpMenu();
+        const b = log.querySelector(".ask-ai"); if (b) b.onclick = () => { setOpen(false); PS.askNuitee(""); };
+        return;
+      }
       if (!state.msgs.length) {
-        log.innerHTML = `<div class="chat-hi"><b>Hi! Where are you headed?</b><p>I can search live hotel and flight prices and answer questions about booking.</p>
+        log.innerHTML = `<div class="chat-hi"><b>Hi! How can we help?</b><p>I can check a booking, explain the cancellation terms, cancel a hotel booking for you, or pass a request to our team.</p>
           <div class="chat-sugg">${SUGGEST.map(q => `<button type="button">${PS.esc(q)}</button>`).join("")}</div></div>`;
         log.querySelectorAll(".chat-sugg button").forEach(b => b.onclick = () => send(b.textContent));
         return;
       }
-      log.innerHTML = state.msgs.map(m => m.role === "user"
+      log.innerHTML = state.msgs.map((m, mi) => m.role === "user"
         ? `<div class="cm me">${PS.esc(m.content)}</div>`
-        : `<div class="cm ai${m.error ? " err" : ""}">${fmt(m.content)}</div>${(m.cards || []).length ? `<div class="cc-list">${m.cards.map(cardHTML).join("")}</div>` : ""}${(m.links || []).map(l => `<a class="cc-more" href="${PS.esc(l.url)}">${PS.esc(l.label)} ${PS.icon("arrow", 14)}</a>`).join("")}`).join("");
+        : `<div class="cm ai${m.error ? " err" : ""}">${fmt(m.content)}</div>${(m.cards || []).length ? `<div class="cc-list">${m.cards.map(cardHTML).join("")}</div>` : ""}${(m.links || []).map(l => `<a class="cc-more" href="${PS.esc(l.url)}">${PS.esc(l.label)} ${PS.icon("arrow", 14)}</a>`).join("")}${(m.actions || []).map((a, ai) => actionHTML(a, mi + ":" + ai)).join("")}`).join("");
+      log.querySelectorAll(".cx-card").forEach(bindAction);
       log.scrollTop = log.scrollHeight;
+    }
+    function bindAction(card) {
+      const [mi, ai] = card.dataset.act.split(":").map(Number);
+      const a = state.msgs[mi].actions[ai], msg = card.querySelector(".cx-msg");
+      card.querySelector(".cx-keep").onclick = () => { a.done = true; state.msgs.push({ role: "assistant", content: "No problem, your booking stays as it is." }); save(); render(); };
+      const rs = card.querySelector(".cx-resend");
+      if (rs) rs.onclick = async () => {
+        rs.disabled = true;
+        try { await PS.api("/api/support/resend-code", { method: "POST", body: { token: a.token } }); msg.innerHTML = `<span class="good">New code sent. Check your email.</span>`; }
+        catch (e) { msg.innerHTML = `<span class="bad">${PS.esc(e.message)}</span>`; }
+        setTimeout(() => (rs.disabled = false), 20000);
+      };
+      card.querySelector(".cx-go").onclick = async (e) => {
+        const code = card.querySelector(".cx-code input")?.value.trim();
+        if (a.needsCode && !/^\d{6}$/.test(code || "")) { msg.innerHTML = `<span class="bad">Enter the 6-digit code from your email.</span>`; return; }
+        if (!confirm(`Cancel booking ${a.bookingId}? This can't be undone.`)) return;
+        e.target.disabled = true; e.target.textContent = "Cancelling…";
+        try {
+          const r = await PS.api("/api/support/cancel", { method: "POST", body: { token: a.token, code } });
+          a.done = true;
+          state.msgs.push({ role: "assistant", content: `Done. Booking **${a.bookingId}** is cancelled.${r.refund != null ? ` Refund: **${PS.money(+r.refund, r.currency || a.currency, 2)}**${r.fee ? ` (fee ${PS.money(+r.fee, r.currency || a.currency, 2)})` : ""}.` : ""} We've emailed a confirmation. Refunds usually reach your card in 5–10 business days.` });
+          PS.track("page", { cancelled: 1 });
+        } catch (err) {
+          e.target.disabled = false; e.target.textContent = "Cancel booking";
+          msg.innerHTML = `<span class="bad">${PS.esc(err.message)}</span>`;
+          return;
+        }
+        save(); render();
+      };
     }
     function setOpen(o) {
       state.open = o; save();
       panel.hidden = !o; fab.classList.toggle("hidden", o); root.classList.toggle("open", o);
-      if (o) { render(); setTimeout(() => ta.focus(), 50); }
+      if (o) { render(); if (ta) setTimeout(() => ta.focus(), 50); }
     }
     let busy = false;
     async function send(text) {
@@ -380,19 +483,22 @@
       log.scrollTop = log.scrollHeight;
       try {
         const r = await PS.api("/api/chat", { method: "POST", body: { currency: PS.cur(), messages: state.msgs.filter(m => !m.error).map(m => ({ role: m.role, content: m.content })) } });
-        state.msgs.push({ role: "assistant", content: r.reply, cards: r.cards, links: r.links });
-        PS.track("page", { chat: 1 });
+        state.msgs.push({ role: "assistant", content: r.reply, cards: r.cards, links: r.links, actions: r.actions || [] });
       } catch (err) {
         state.msgs.push({ role: "assistant", content: err.message || "Something went wrong. Please try again.", error: true });
       }
       busy = false; sendBtn.disabled = false; save(); render();
     }
+    PS.openAssistant = (text) => { setOpen(true); if (AI && text) send(text); };
     fab.onclick = () => setOpen(true);
     root.querySelector(".chat-close").onclick = () => setOpen(false);
-    root.querySelector(".chat-reset").onclick = () => { state.msgs = []; save(); render(); ta.focus(); };
-    form.onsubmit = (e) => { e.preventDefault(); send(ta.value); };
-    ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(ta.value); } });
-    ta.addEventListener("input", () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; });
+    const reset = root.querySelector(".chat-reset");
+    if (reset) reset.onclick = () => { state.msgs = []; save(); render(); ta.focus(); };
+    if (form) {
+      form.onsubmit = (e) => { e.preventDefault(); send(ta.value); };
+      ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(ta.value); } });
+      ta.addEventListener("input", () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; });
+    }
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.open) setOpen(false); });
     setOpen(!!state.open);
   };
