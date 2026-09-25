@@ -251,6 +251,10 @@
         btn.onclick = (e) => { e.stopPropagation(); menu.classList.toggle("hidden"); };
         document.addEventListener("click", () => menu.classList.add("hidden"));
         right.querySelector("#logoutBtn").onclick = PS.logout;
+        // Admins get a dashboard link in the account menu
+        fetch("/api/admin/me").then(r => r.json()).then(m => {
+          if (m.admin) menu.querySelector(".menu-email").insertAdjacentHTML("afterend", `<a href="/admin"><b>Admin dashboard</b></a>`);
+        }).catch(() => {});
       } else {
         right.insertAdjacentHTML("beforeend", `<a href="${PS.loginUrl()}" class="btn btn-sm ${onHero ? "btn-white" : "btn-primary"}">Sign in</a>`);
       }
