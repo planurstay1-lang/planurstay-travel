@@ -23,8 +23,15 @@
           </button>
         </div>
         <div class="f-group">
-          <h4>Search by name</h4>
-          <div class="field"><input type="search" id="fName" placeholder="e.g. Hilton" aria-label="Hotel name"></div>
+          <h4>Search by hotel name</h4>
+          <div class="field f-search"><span class="f-search-ic" aria-hidden="true"></span><input type="search" id="fName" placeholder="e.g. Hilton, Marriott, Ritz" aria-label="Hotel name"></div>
+        </div>
+        <div class="f-group f-landmark">
+          <h4>Distance from</h4>
+          <div class="field f-search lm-field"><span class="f-search-ic" aria-hidden="true"></span><input type="search" id="fLandmark" placeholder="Landmark, address or station" aria-label="Distance from a landmark" autocomplete="off"></div>
+          <div class="pill-row lm-sugg" id="lmSugg"></div>
+          <div class="lm-active hidden" id="lmActive"></div>
+          <div class="pill-row hidden" id="fDist"></div>
         </div>
         <div class="f-group">
           <h4>Total price</h4>
@@ -49,6 +56,11 @@
             <button class="pill" data-v="2">2★</button><button class="pill" data-v="3">3★</button><button class="pill" data-v="4">4★</button><button class="pill" data-v="5">5★</button>
           </div>
         </div>
+        <div class="f-group hidden" id="brandGroup">
+          <h4>Brands</h4>
+          <div id="fBrands"></div>
+          <button type="button" class="link-btn hidden" id="brandMore"></button>
+        </div>
         <div class="f-group"><button class="btn btn-ghost btn-sm btn-block" id="clearFilters">Clear all filters</button></div>
         <div class="f-group show-mobile" style="display:none"><button class="btn btn-primary btn-block" id="applyFilters">Show results</button></div>
       </aside>
@@ -67,6 +79,7 @@
           <button class="sort-tab active" data-sort="rec"><b>Recommended</b><small id="sRec">—</small></button>
           <button class="sort-tab" data-sort="price"><b>Lowest price</b><small id="sPrice">—</small></button>
           <button class="sort-tab" data-sort="rating"><b>Top rated</b><small id="sRating">—</small></button>
+          <button class="sort-tab hidden" data-sort="dist" id="distTab"><b>Distance</b><small id="sDist">—</small></button>
         </div>
         <div id="results"></div>
         <div style="text-align:center;margin-top:8px"><button class="btn btn-ghost hidden" id="moreBtn">Show more hotels</button></div>
@@ -172,11 +185,30 @@
       document.getElementById("cRefund").textContent = cnt(h => h.refundable);
       document.getElementById("cBreakfast").textContent = cnt(h => h.breakfast);
       document.getElementById("cDeal").textContent = cnt(h => h.deal >= 5);
+      paintBrands();
+    }
+    // ─── Brands facet ───
+    let brandsOpen = false;
+    function paintBrands() {
+      const counts = {};
+      all.forEach(h => { if (h.brand) counts[h.brand] = (counts[h.brand] || 0) + 1; });
+      const list = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const grp = document.getElementById("brandGroup");
+      grp.classList.toggle("hidden", !list.length);
+      if (!list.length) return;
+      const shown = brandsOpen ? list : list.slice(0, 8);
+      const sel = st ? st.brands : new Set();
+      document.getElementById("fBrands").innerHTML = shown.map(([b, n]) => `<label class="f-check"><input type="checkbox" data-brand="${PS.esc(b)}" ${sel.has(b) ? "checked" : ""}>${PS.esc(b)}<span class="cnt">${n}</span></label>`).join("");
+      document.querySelectorAll("#fBrands input").forEach(i => i.onchange = () => { i.checked ? st.brands.add(i.dataset.brand) : st.brands.delete(i.dataset.brand); st.shown = 20; apply(); });
+      const more = document.getElementById("brandMore");
+      more.classList.toggle("hidden", list.length <= 8);
+      more.textContent = brandsOpen ? "Show fewer" : `Show all ${list.length} brands`;
+      more.onclick = () => { brandsOpen = !brandsOpen; paintBrands(); };
     }
     let st = null;
     refreshFacets();
 
-    st = { sort: "rec", name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20 };
+    st = { sort: "rec", name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20, landmark: null, maxDist: 0, brands: new Set() };
 
     function apply() {
       paintChips();
@@ -186,8 +218,11 @@
         (!n || (h.name || "").toLowerCase().includes(n)) &&
         (!st.refund || h.refundable) && (!st.breakfast || h.breakfast) && (!st.deal || h.deal >= 5) &&
         (!st.rating || h.rating >= st.rating) &&
-        (!st.stars.size || st.stars.has(Math.round(h.stars))));
+        (!st.stars.size || st.stars.has(Math.round(h.stars))) &&
+        (!st.maxDist || (h.dist != null && h.dist <= st.maxDist)) &&
+        (!st.brands.size || st.brands.has(h.brand || "")));
       const by = {
+        dist: (a, b) => (a.dist ?? 1e9) - (b.dist ?? 1e9),
         rec: (a, b) => b.rec - a.rec,
         price: (a, b) => a.total - b.total,
         rating: (a, b) => (b.rating - a.rating) || (b.reviews - a.reviews),
@@ -197,6 +232,7 @@
       document.getElementById("sRec").textContent = lbl(top("rec"));
       document.getElementById("sPrice").textContent = lbl(top("price"));
       document.getElementById("sRating").textContent = lbl(top("rating"));
+      if (st.landmark) { const n = [...list].sort(by.dist)[0]; document.getElementById("sDist").textContent = n && n.dist != null ? `Nearest ${fmtDist(n.dist)}` : "—"; }
       list.sort(by[st.sort]);
       meta.textContent = `${list.length} of ${all.length} properties · ${baseMeta}`;
       document.getElementById("fPriceMax").textContent = st.max >= pMax ? "Any" : "Up to " + PS.money(st.max, PS.cur(), 0);
@@ -225,13 +261,15 @@
 
     function card(h) {
       const great = h.rating >= 8.5;
-      return `<a class="hcard" href="${hotelLink(h)}" data-id="${h.id}">
+      return `<a class="hcard" href="${hotelLink(h)}" data-id="${h.id}" target="_blank" rel="noopener">
         <div class="hcard-img">${h.photo ? `<img src="${PS.esc(h.photo)}" alt="" loading="lazy" onerror="this.remove()">` : ""}${h.deal >= 5 ? `<span class="hcard-badge">${h.deal}% off</span>` : ""}</div>
         <div class="hcard-body">
           <div style="min-width:0">
             <div class="stars">${PS.stars(h.stars)}</div>
             <h3>${PS.esc(h.name)}</h3>
             <div class="addr">${PS.icon("pin", 14)}${PS.esc([h.address, h.city].filter(Boolean).join(", "))}</div>
+            ${st.landmark && h.dist != null ? `<div class="dist-line">${PS.icon("map", 14)}<b>${fmtDist(h.dist)}</b> from ${PS.esc(st.landmark.name)}</div>` : ""}
+            ${h.brand ? `<div class="brand-line">${PS.esc(h.brand)}</div>` : ""}
             ${h.rating ? `<div class="rating-row"><span class="score ${great ? "great" : ""}">${Number(h.rating).toFixed(1)}</span><b>${PS.ratingWord(h.rating)}</b><small>${h.reviews ? h.reviews.toLocaleString() + " reviews" : ""}</small></div>` : ""}
             <div class="tags">
               ${h.refundable ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation</span>` : `<span class="tag">Non-refundable</span>`}
@@ -259,13 +297,72 @@
     }
 
     function clearAll() {
-      Object.assign(st, { name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20 });
+      Object.assign(st, { name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20, maxDist: 0, brands: new Set() });
+      setLandmark(null, true);
+      document.querySelectorAll("#fBrands input").forEach(i => i.checked = false);
       document.getElementById("fName").value = ""; priceEl.value = pMax;
       ["fRefund", "fBreakfast", "fDeal"].forEach(id => document.getElementById(id).checked = false);
       document.querySelectorAll("#fRating .pill").forEach(p => p.classList.toggle("active", p.dataset.v === "0"));
       document.querySelectorAll("#fStars .pill").forEach(p => p.classList.remove("active"));
       apply();
     }
+
+    // ─── Distance from a landmark ───
+    const LANDMARKS = {
+      paris: [["Eiffel Tower", 48.8584, 2.2945], ["Louvre Museum", 48.8606, 2.3376], ["Notre-Dame", 48.8530, 2.3499], ["Arc de Triomphe", 48.8738, 2.2950], ["Sacré-Cœur, Montmartre", 48.8867, 2.3431], ["Gare du Nord", 48.8809, 2.3553]],
+      london: [["Big Ben", 51.5007, -0.1246], ["Tower of London", 51.5081, -0.0759], ["Buckingham Palace", 51.5014, -0.1419], ["British Museum", 51.5194, -0.1270], ["Covent Garden", 51.5117, -0.1240], ["King's Cross St Pancras", 51.5309, -0.1233]],
+      newyork: [["Times Square", 40.7580, -73.9855], ["Central Park", 40.7829, -73.9654], ["Empire State Building", 40.7484, -73.9857], ["Grand Central Terminal", 40.7527, -73.9772], ["Brooklyn Bridge", 40.7061, -73.9969], ["Battery Park (Statue of Liberty ferry)", 40.7033, -74.0170]],
+      tokyo: [["Shibuya Crossing", 35.6595, 139.7005], ["Shinjuku Station", 35.6896, 139.7006], ["Tokyo Station", 35.6812, 139.7671], ["Senso-ji, Asakusa", 35.7148, 139.7967], ["Tokyo Tower", 35.6586, 139.7454], ["Ginza", 35.6717, 139.7650]],
+      dubai: [["Burj Khalifa", 25.1972, 55.2744], ["The Dubai Mall", 25.1985, 55.2796], ["Dubai Marina", 25.0805, 55.1403], ["Atlantis, Palm Jumeirah", 25.1304, 55.1171], ["Dubai Airport (DXB)", 25.2532, 55.3657], ["Al Fahidi (Old Dubai)", 25.2637, 55.2972]],
+      rome: [["Colosseum", 41.8902, 12.4922], ["St Peter's Basilica", 41.9022, 12.4539], ["Trevi Fountain", 41.9009, 12.4833], ["Pantheon", 41.8986, 12.4769], ["Spanish Steps", 41.9060, 12.4828], ["Roma Termini", 41.9010, 12.5016]],
+      toronto: [["CN Tower", 43.6426, -79.3871], ["Union Station", 43.6453, -79.3806], ["Eaton Centre", 43.6544, -79.3807], ["Yorkville", 43.6708, -79.3935], ["Rogers Centre", 43.6414, -79.3894], ["Pearson Airport (YYZ)", 43.6777, -79.6248]],
+      lasvegas: [["The Strip (Bellagio)", 36.1126, -115.1767], ["Sphere", 36.1207, -115.1621], ["Fremont Street", 36.1699, -115.1422], ["Convention Center", 36.1314, -115.1519], ["Harry Reid Airport (LAS)", 36.0840, -115.1537]],
+      miami: [["South Beach", 25.7826, -80.1341], ["Brickell", 25.7617, -80.1918], ["Wynwood Walls", 25.8010, -80.1994], ["Port of Miami", 25.7781, -80.1794], ["Kaseya Center", 25.7814, -80.1870], ["Miami Airport (MIA)", 25.7959, -80.2870]],
+      cancun: [["Hotel Zone (Punta Cancún)", 21.1360, -86.7440], ["Downtown Cancún", 21.1619, -86.8515], ["Playa Delfines", 21.0624, -86.7802], ["Isla Mujeres ferry", 21.1856, -86.8095], ["Cancún Airport (CUN)", 21.0365, -86.8771]],
+    };
+    const km = (a1, o1, a2, o2) => { const R = 6371, r = Math.PI / 180, dA = (a2 - a1) * r, dO = (o2 - o1) * r; const x = Math.sin(dA / 2) ** 2 + Math.cos(a1 * r) * Math.cos(a2 * r) * Math.sin(dO / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+    const useMiles = all.filter(h => h.country).every(h => h.country === "US");
+    const fmtDist = (d) => useMiles ? `${(d * 0.621371).toFixed(d * 0.621371 < 10 ? 1 : 0)} mi` : `${d.toFixed(d < 10 ? 1 : 0)} km`;
+    const DIST_STEPS = useMiles ? [[0.5, "½ mi"], [1, "1 mi"], [3, "3 mi"]].map(([v, l]) => [v / 0.621371, l]) : [[1, "1 km"], [2, "2 km"], [5, "5 km"]];
+    function setLandmark(lm, silent) {
+      st.landmark = lm; st.maxDist = 0;
+      all.forEach(h => { h.dist = lm && h.lat && h.lng ? km(lm.lat, lm.lng, h.lat, h.lng) : null; });
+      const distTab = document.getElementById("distTab"), act = document.getElementById("lmActive"), dist = document.getElementById("fDist");
+      distTab.classList.toggle("hidden", !lm);
+      act.classList.toggle("hidden", !lm); dist.classList.toggle("hidden", !lm);
+      document.getElementById("lmSugg").classList.toggle("hidden", !!lm);
+      if (lm) {
+        act.innerHTML = `<span>${PS.icon("map", 14)}${PS.esc(lm.name)}</span><button type="button" aria-label="Clear landmark">${PS.icon("x", 14, 2.6)}</button>`;
+        act.querySelector("button").onclick = () => { document.getElementById("fLandmark").value = ""; setLandmark(null); };
+        dist.innerHTML = `<button class="pill active" data-v="0">Any distance</button>` + DIST_STEPS.map(([v, l]) => `<button class="pill" data-v="${v}">Within ${l}</button>`).join("");
+        dist.querySelectorAll(".pill").forEach(p => p.onclick = () => { dist.querySelectorAll(".pill").forEach(x => x.classList.remove("active")); p.classList.add("active"); st.maxDist = +p.dataset.v; st.shown = 20; apply(); });
+        document.querySelectorAll(".sort-tab").forEach(x => x.classList.toggle("active", x === distTab));
+        st.sort = "dist";
+      } else if (st.sort === "dist") {
+        st.sort = "rec";
+        document.querySelectorAll(".sort-tab").forEach(x => x.classList.toggle("active", x.dataset.sort === "rec"));
+      }
+      if (!silent) { st.shown = 20; apply(); }
+    }
+    (function initLandmarks() {
+      const pts = all.filter(h => h.lat && h.lng);
+      const mid = pts.length ? { lat: pts.map(h => h.lat).sort((a, b) => a - b)[pts.length >> 1], lng: pts.map(h => h.lng).sort((a, b) => a - b)[pts.length >> 1] } : null;
+      const set = mid && Object.values(LANDMARKS).find(l => km(l[0][1], l[0][2], mid.lat, mid.lng) < 40);
+      const sugg = document.getElementById("lmSugg");
+      sugg.innerHTML = set ? set.map(([n, la, ln], i) => `<button type="button" class="pill" data-i="${i}">${PS.esc(n)}</button>`).join("") : "";
+      sugg.querySelectorAll(".pill").forEach(b => b.onclick = () => { const [n, la, ln] = set[+b.dataset.i]; document.getElementById("fLandmark").value = n; setLandmark({ name: n, lat: la, lng: ln }); });
+      PS.autocomplete(document.querySelector(".lm-field"), {
+        fetcher: async (text) => (await PS.api(`/api/places?q=${encodeURIComponent(text + (q.dest && !new RegExp(q.dest, "i").test(text) ? ", " + q.dest : ""))}`)).data,
+        render: (p) => `<span class="ac-icon">${PS.icon("pin", 18)}</span><span style="min-width:0"><div class="ac-main">${PS.esc(p.name)}</div><div class="ac-sub">${PS.esc(p.detail || "")}</div></span>`,
+        onSelect: async (p) => {
+          const input = document.getElementById("fLandmark");
+          input.value = p.name;
+          try { const r = await PS.api(`/api/places/${encodeURIComponent(p.placeId)}/location`); setLandmark({ name: p.name, lat: r.data.lat, lng: r.data.lng }); }
+          catch { input.value = ""; input.placeholder = "Couldn't find that place, try another"; }
+        },
+        empty: "No places found",
+      });
+    })();
 
     // ─── Wire filters ───
     let nameT;
@@ -304,7 +401,7 @@
         const m = far
           ? L.circleMarker([h.lat, h.lng], { radius: 6, color: "#fff", weight: 2, fillColor: "#1f5bff", fillOpacity: 1 }).addTo(markers)
           : L.marker([h.lat, h.lng], { icon: L.divIcon({ className: "", html: `<span class="map-price" data-id="${h.id}">${h.memberOnly ? "Member price" : PS.money(h.perNight, h.currency, 0)}</span>`, iconSize: null }) }).addTo(markers);
-        m.bindPopup(`<a href="${hotelLink(h)}" style="display:block;width:200px">${h.thumb ? `<img src="${PS.esc(h.thumb)}" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:6px">` : ""}<b style="color:#0b1b3f">${PS.esc(h.name)}</b><br><span style="color:#4a5572">${h.memberOnly ? "Member price · sign in to see" : `${PS.money(h.perNight, h.currency, 0)}/night · ${PS.money(h.total, h.currency, 0)} total`}</span></a>`);
+        m.bindPopup(`<a href="${hotelLink(h)}" target="_blank" rel="noopener" style="display:block;width:200px">${h.thumb ? `<img src="${PS.esc(h.thumb)}" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:6px">` : ""}<b style="color:#0b1b3f">${PS.esc(h.name)}</b><br><span style="color:#4a5572">${h.memberOnly ? "Member price · sign in to see" : `${PS.money(h.perNight, h.currency, 0)}/night · ${PS.money(h.total, h.currency, 0)} total`}</span></a>`);
         pts.push([h.lat, h.lng]);
       });
       // Only frame the results once; after that the user controls the view.
@@ -338,6 +435,7 @@
         const fresh = (r.data || []).filter(h => !have.has(h.id));
         fresh.forEach(enrich);
         all.push(...fresh);
+        if (st.landmark) fresh.forEach(h => { h.dist = h.lat && h.lng ? km(st.landmark.lat, st.landmark.lng, h.lat, h.lng) : null; });
         if (fresh.length) { refreshFacets(); apply(); }
         mapStatus(fresh.length ? `${PS.icon("check", 14, 3)}${fresh.length} more hotel${fresh.length === 1 ? "" : "s"} in this area` : "No other hotels available here");
         setTimeout(() => { if (my === areaSeq) mapStatus(""); }, 2600);

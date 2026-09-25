@@ -103,6 +103,41 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     }));
   }
 
+  // ─── Coordinates of one place (for "distance from landmark" on results) ───
+  app.get("/api/places/:placeId/location", async (req, res) => {
+    const id = String(req.params.placeId || "");
+    if (!/^[A-Za-z0-9_-]{10,300}$/.test(id)) return res.status(400).json({ error: "Invalid place" });
+    try {
+      const r = await cached("placeloc:" + id, 30 * 24 * 60 * MIN, () => lite(`/data/places/${encodeURIComponent(id)}`, { timeoutMs: 10000 }));
+      const d = r.json?.data;
+      if (!r.ok || !d?.location) return res.status(404).json({ error: "Location not found" });
+      res.json({ success: true, data: { name: d.displayName?.text || d.displayName || "", lat: d.location.latitude, lng: d.location.longitude } });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  // ─── Hotel brand (chain) names, cached per hotel for a day ───
+  const brandCache = new Map(); // id → { brand, at }
+  async function attachBrands(hotels) {
+    const now = Date.now(), DAY = 24 * 3600 * 1000;
+    const missing = hotels.map(h => h.id).filter(id => { const c = brandCache.get(id); return !c || now - c.at > DAY; });
+    const chunks = [];
+    for (let i = 0; i < missing.length; i += 100) chunks.push(missing.slice(i, i + 100));
+    const work = Promise.all(chunks.map(async ids => {
+      const r = await lite(`/data/hotels?hotelIds=${ids.join(",")}&limit=${ids.length}`, { timeoutMs: 8000 });
+      for (const h of r.json?.data || []) {
+        const brand = h.chain && !/^not available$/i.test(h.chain) ? String(h.chain).trim() : null;
+        brandCache.set(h.id, { brand, at: now });
+      }
+      ids.forEach(id => { if (!brandCache.has(id)) brandCache.set(id, { brand: null, at: now }); });
+    })).catch(() => {});
+    // Don't hold the results up for brands: wait at most 2.5 s (they're cached for the next search).
+    await Promise.race([work, new Promise(r => setTimeout(r, 2500))]);
+    if (brandCache.size > 50000) brandCache.clear();
+    hotels.forEach(h => { const c = brandCache.get(h.id); if (c?.brand) h.brand = c.brand; });
+  }
+
   // ─── Destination autocomplete ───
   app.get("/api/places", async (req, res) => {
     const q = String(req.query.q || "").trim();
@@ -266,6 +301,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           perNight: best.total / nights,
         };
       }).filter(Boolean);
+      await attachBrands(data);
       const member = isMember(req);
       data.forEach(h => {
         const p = pricing.priceFor(h.total, h.ssp, member);
