@@ -502,12 +502,16 @@ app.post("/api/flights/prebook", async (req, res) => {
 // ─── Attach services to prebook ───
 app.post("/api/flights/prebook/services", async (req, res) => {
   try {
-    const { prebookId, services } = req.body;
-    const result = await flightEngine.attachServices(prebookId, services, db);
+    const { prebookId, selectedServices, voucherCode } = req.body || {};
+    const list = Array.isArray(selectedServices) ? selectedServices.slice(0, 30) : [];
+    if (list.some(s => !s || typeof s.serviceId !== "string" || s.serviceId.length > 600)) return res.status(400).json({ error: "Invalid seat or bag selection" });
+    const result = await flightEngine.attachServices(prebookId, list, voucherCode, db);
     if (!result.success) {
       const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Attach failed", code: e.code, key: e.key });
+      const status = e.status === 409 || e.status === 404 ? e.status : (e.status >= 500 || (e.code >= 500 && e.code < 600)) ? 502 : 400;
+      const unavailable = [44012, 54003].includes(e.code);
+      const expired = e.code === 44013;
+      return res.status(status).json({ error: unavailable ? "One of those seats was just taken. Please pick another." : expired ? "This fare hold has expired. Please search again." : e.message || "We couldn't add those extras", code: e.code, key: e.key });
     }
     res.json({ success: true, data: result.data });
   } catch (err) {

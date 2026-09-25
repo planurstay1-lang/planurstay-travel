@@ -332,17 +332,33 @@ async function createPrebook(body, userId = null, db) {
   };
 }
 
-async function attachServices(prebookId, services) {
+// 1.2 Attach seats / bags to a prebook. Returns a NEW payment intent (transactionId + secretKey)
+// for the updated total: pay and book with those, not the original prebook's.
+async function attachServices(prebookId, selectedServices, voucherCode, db) {
   if (!prebookId) return { success: false, error: { code: 400, message: "prebookId required", key: "prebookId" } };
-  if (!Array.isArray(services) || services.length === 0) {
-    return { success: false, error: { code: 400, message: "At least one service to attach", key: "services" } };
+  if (!Array.isArray(selectedServices) || selectedServices.length === 0) {
+    return { success: false, error: { code: 400, message: "Choose at least one seat or bag", key: "selectedServices" } };
   }
-  const result = await liteFetch(`/flights/prebooks/${encodeURIComponent(prebookId)}/services`, { prebookId, services });
+  const body = { selectedServices: selectedServices.map(s => ({ serviceId: String(s.serviceId), passengerIndex: +s.passengerIndex || 0, quantity: Math.max(1, Math.min(3, +s.quantity || 1)) })) };
+  if (voucherCode) body.voucherCode = String(voucherCode);
+  const result = await liteFetch(`/flights/prebooks/${encodeURIComponent(prebookId)}/services`, body);
   if (!result.ok) {
     const err = firstError(result.json) || { code: result.status, message: "Attach services failed", detail: result.json };
-    return { success: false, error: err };
+    return { success: false, error: { ...err, status: result.status } };
   }
-  return { success: true, data: result.json.data || result.json };
+  const d = Array.isArray(result.json.data) ? (result.json.data[0] || {}) : (result.json.data || result.json);
+  if (!d.transactionId || !d.secretKey) return { success: false, error: { code: 502, message: "The airline didn't return an updated payment for these extras" } };
+  if (db) {
+    try { db.prepare("UPDATE flight_prebooks SET total_amount = ?, transaction_id = ?, secret_key = ? WHERE prebook_id = ?").run(d.price, d.transactionId, d.secretKey, prebookId); } catch {}
+  }
+  const p = d.booking?.pricing || {};
+  return { success: true, data: {
+    prebookId: d.prebookId || prebookId, price: d.price, currency: d.currency, transactionId: d.transactionId, secretKey: d.secretKey,
+    voucherCode: d.voucherCode, voucherTotalAmount: d.voucherTotalAmount, sellingPriceToUser: d.sellingPriceToUser,
+    servicesAmount: p.servicesAmount, seatsAmount: p.seatsAmount, baggageAmount: p.baggageAmount,
+    selectedServices: d.booking?.selectedServices || body.selectedServices,
+    servicesAttachable: d.servicesAttachable,
+  } };
 }
 
 async function completeBooking(body, userId = null, db) {

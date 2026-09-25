@@ -2020,3 +2020,39 @@ a.route:hover .route-go { background: var(--blue); color: #fff; }
 .mini-link { display: block; padding: 8px 0; border-bottom: 1px solid var(--line-2); color: var(--ink); font-weight: 600; font-size: 14px; }
 .mini-link:hover { color: var(--blue); }
 .seo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 24px; margin: 10px 0 28px; }
+
+/* Checkout: seats & bags */
+.fs { border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 14px; background: #fff; }
+.fs-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.fs-head h3 { font-size: 16px; display: flex; gap: 6px; align-items: center; }
+.fs-head h3 small { font-weight: 600; color: var(--muted); font-size: 12.5px; }
+.fs-tabs, .fs-segs { display: flex; gap: 6px; flex-wrap: wrap; }
+.fs-tabs { margin-bottom: 10px; }
+.fs-tabs button, .fs-segs button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 5px 12px; font-weight: 700; font-size: 13px; color: var(--text-2); }
+.fs-tabs button.on, .fs-segs button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.fs-block { border-top: 1px solid var(--line-2); padding-top: 10px; margin-top: 10px; }
+.fs-sub { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.fs-pick { font-size: 13.5px; margin-bottom: 8px; }
+.fs-scroll { max-height: 300px; overflow: auto; border: 1px solid var(--line-2); border-radius: 10px; padding: 8px; }
+.fs-map { display: inline-grid; gap: 4px; }
+.fs-row { display: flex; gap: 4px; align-items: center; }
+.fs-rn, .fs-col { width: 26px; text-align: center; font-size: 11px; color: var(--muted); font-weight: 700; }
+.fs-gap { width: 14px; }
+.fs-seat { width: 26px; height: 26px; border-radius: 6px 6px 4px 4px; border: 1px solid #c9d3e6; background: #fff; font-size: 11px; font-weight: 800; color: #fff; padding: 0; display: inline-grid; place-items: center; }
+.fs-seat.free { background: #e9f8ef; border-color: #9fd8b7; }
+.fs-seat.paid { background: #dbeafe; border-color: #93b4f0; }
+.fs-seat.plus { background: #fde7c7; border-color: #f2b766; }
+.fs-seat.mine { background: var(--blue); border-color: var(--blue); }
+.fs-seat.taken { background: #eceff4; border-color: #e1e5ec; cursor: not-allowed; }
+.fs-seat.none { visibility: hidden; }
+button.fs-seat:not(:disabled):hover { outline: 2px solid var(--blue); }
+.fs-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-top: 8px; }
+.fs-legend span { display: inline-flex; gap: 5px; align-items: center; }
+.fs-legend i.fs-seat { width: 14px; height: 14px; }
+.fs-bag { display: flex; gap: 10px; align-items: center; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; font-size: 13.5px; cursor: pointer; }
+.fs-bag.on { border-color: var(--blue); background: var(--blue-50); }
+.fs-bag input { accent-color: var(--blue); }
+.fs-bag span { flex: 1; }
+.fs-bag small { display: block; color: var(--muted); font-size: 12px; }
+.fs-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line-2); padding-top: 10px; margin-top: 10px; font-size: 13.5px; }
+.fs-foot svg { color: var(--green); vertical-align: -2px; }

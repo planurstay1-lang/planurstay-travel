@@ -129,6 +129,7 @@
             <div><span>Departure</span><b>${PS.fmtDay(s.depart)}</b></div>
             ${s.return ? `<div><span>Return</span><b>${PS.fmtDay(s.return)}</b></div>` : ""}
             <div><span>Fare</span><b>${PS.esc(PS.fareName(sel.offer?.fare?.family) || "Economy")}</b></div>
+            ${(p.services || []).length ? `<div><span>Seats &amp; bags</span><b>${p.services.map(x => PS.esc(x.name || "Extra")).join(", ")}</b></div>` : ""}
             <div><span>Lead traveler</span><b>${PS.esc([p.holder?.firstName, p.holder?.lastName].join(" "))}</b></div>
           </div>`;
       }
