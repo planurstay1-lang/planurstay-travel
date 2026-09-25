@@ -51,6 +51,25 @@
         <div class="res-toolbar">
           <div class="res-title"><h1 id="resTitle" class="sr-only">Hotels</h1><p id="resMeta"></p></div>
           <div class="res-actions">
+            <div class="res-tools">
+              <label for="sortSel" class="price-sub" style="font-weight:600">Sort by</label>
+              <select class="select" id="sortSel">
+                <option value="rec">Recommended</option>
+                <option value="price">Price (lowest first)</option>
+                <option value="priceDesc">Price (highest first)</option>
+                <option value="value">Best reviewed &amp; lowest price</option>
+                <option value="rating">Guest rating (high to low)</option>
+                <option value="reviews">Most reviewed</option>
+                <option value="starsDesc">Stars (5 to 1)</option>
+                <option value="starsAsc">Stars (1 to 5)</option>
+                <option value="deal">Biggest discount first</option>
+                <option value="dist" id="distOpt" hidden>Distance</option>
+              </select>
+            </div>
+            <div class="view-sw" role="group" aria-label="View">
+              <button type="button" data-view="list" aria-label="List view"></button>
+              <button type="button" data-view="grid" aria-label="Grid view"></button>
+            </div>
             <button class="btn btn-sm btn-ghost show-mobile" id="openFilters"></button>
             <button class="btn btn-sm btn-ghost hidden" id="alertBtn"></button>
             <button class="btn btn-sm btn-ghost" id="mapToggle"></button>
@@ -269,7 +288,13 @@
         dist: (a, b) => (a.dist ?? 1e9) - (b.dist ?? 1e9),
         rec: (a, b) => b.rec - a.rec,
         price: (a, b) => a.total - b.total,
+        priceDesc: (a, b) => b.total - a.total,
         rating: (a, b) => (b.rating - a.rating) || (b.reviews - a.reviews),
+        value: (a, b) => (((b.rating || 0) >= 8) - ((a.rating || 0) >= 8)) || a.total - b.total,
+        reviews: (a, b) => (b.reviews || 0) - (a.reviews || 0),
+        starsDesc: (a, b) => (b.stars || 0) - (a.stars || 0) || a.total - b.total,
+        starsAsc: (a, b) => (a.stars || 0) - (b.stars || 0) || a.total - b.total,
+        deal: (a, b) => (b.deal || 0) - (a.deal || 0) || a.total - b.total,
       };
       const top = (k) => [...list].filter(h => !h.memberOnly).sort(by[k])[0];
       const lbl = (h) => h ? `${PS.money(h.perNight, h.currency, 0)} avg/night` : "Member prices";
@@ -277,7 +302,7 @@
       document.getElementById("sPrice").textContent = lbl(top("price"));
       document.getElementById("sRating").textContent = lbl(top("rating"));
       if (st.landmark || centre) { const n = [...list].sort(by.dist)[0]; document.getElementById("sDist").textContent = n && n.dist != null ? `${fmtDist(n.dist)} ${st.landmark ? "away" : "from centre"}` : "—"; }
-      list.sort(by[st.sort]);
+      list.sort(by[st.sort] || by.rec);
       meta.textContent = list.length === all.length ? PS.plural(all.length, "property", "properties") : `${list.length} of ${all.length} properties`;
       document.getElementById("fPriceMax").textContent = st.max >= pMax ? "Any" : "Up to " + PS.money(st.max, PS.cur(), 0);
       document.getElementById("openFilters").innerHTML = PS.icon("filter", 16) + "Filters" + (list.length < all.length ? ` (${list.length})` : "");
@@ -378,15 +403,16 @@
       setDistances();
       const distTab = document.getElementById("distTab"), act = document.getElementById("lmActive");
       distTab.classList.toggle("hidden", !lm && !centre);
+      document.getElementById("distOpt").hidden = !lm && !centre;
       act.classList.toggle("hidden", !lm);
       document.getElementById("lmSugg").classList.toggle("hidden", !!lm);
       if (lm) {
         act.innerHTML = `<span>${PS.icon("map", 14)}${PS.esc(lm.name)}</span><button type="button" aria-label="Clear landmark">${PS.icon("x", 14, 2.6)}</button>`;
         act.querySelector("button").onclick = () => { document.getElementById("fLandmark").value = ""; setLandmark(null); };
+        st.sort = "dist"; document.getElementById("sortSel").value = "dist";
         document.querySelectorAll(".sort-tab").forEach(x => x.classList.toggle("active", x === distTab));
-        st.sort = "dist";
       } else if (st.sort === "dist") {
-        st.sort = "rec";
+        st.sort = "rec"; document.getElementById("sortSel").value = "rec";
         document.querySelectorAll(".sort-tab").forEach(x => x.classList.toggle("active", x.dataset.sort === "rec"));
       }
       if (!silent) { st.shown = 20; apply(); }
@@ -425,8 +451,19 @@
     priceEl.oninput = () => { st.max = +priceEl.value; st.shown = 20; renderList(); };
     priceEl.onchange = () => apply();
     document.getElementById("clearFilters").onclick = clearAll;
+    const sortSel = document.getElementById("sortSel");
+    const syncSort = () => { sortSel.value = st.sort; document.querySelectorAll(".sort-tab").forEach(x => x.classList.toggle("active", x.dataset.sort === st.sort)); };
+    sortSel.onchange = () => { st.sort = sortSel.value; syncSort(); st.shown = 20; apply(); };
+    // List / grid view (remembered in this browser)
+    const setView = (v) => {
+      results.classList.toggle("grid", v === "grid");
+      document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+      PS.local.set("ps_hotel_view", v);
+    };
+    document.querySelectorAll("[data-view]").forEach(b => { b.innerHTML = PS.icon(b.dataset.view, 16); b.onclick = () => setView(b.dataset.view); });
+    setView(PS.local.get("ps_hotel_view") === "grid" ? "grid" : "list");
     document.querySelectorAll(".sort-tab").forEach(t => t.onclick = () => {
-      document.querySelectorAll(".sort-tab").forEach(x => x.classList.remove("active")); t.classList.add("active"); st.sort = t.dataset.sort; apply();
+      document.querySelectorAll(".sort-tab").forEach(x => x.classList.remove("active")); t.classList.add("active"); st.sort = t.dataset.sort; sortSel.value = st.sort; apply();
     });
     moreBtn.onclick = () => { st.shown += 20; renderList(); };
     const filtersEl = document.getElementById("filters");
