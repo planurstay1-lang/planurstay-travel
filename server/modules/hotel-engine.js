@@ -256,7 +256,7 @@ async function completeBooking(body, userId = null, db) {
       firstName:    body.holder.firstName,
       lastName:     body.holder.lastName,
       email:        body.holder.email,
-      phoneNumber:  body.holder.phoneNumber || body.holder.phone || undefined,
+      phone:        body.holder.phone || body.holder.phoneNumber || undefined, // LiteAPI field is "phone"
     },
     payment: {
       method:        body.payment?.method || "TRANSACTION_ID",

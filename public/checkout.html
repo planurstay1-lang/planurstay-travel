@@ -11,12 +11,12 @@
   <link rel="stylesheet" href="/css/ps.css">
   <script src="https://payment-wrapper.liteapi.travel/dist/liteAPIPayment.js?v=a1"></script>
 </head>
-<body>
-  <main class="container">
-    <div class="steps-bar" id="stepsBar"></div>
+<body class="co-page">
+  <main class="container co-main">
+    <a class="co-back" id="coBack" href="javascript:history.back()"></a>
     <div class="co-layout">
       <div id="formCol"></div>
-      <aside class="sticky-book" id="sumCol"></aside>
+      <aside class="co-sum" id="sumCol"></aside>
     </div>
   </main>
 
@@ -32,11 +32,9 @@
     const extrasTotal = () => (extras.uber?.value || 0) + (extras.esim?.price || 0);
     const formCol = document.getElementById("formCol");
     const sumCol = document.getElementById("sumCol");
-
-    const steps = (n) => document.getElementById("stepsBar").innerHTML =
-      ["Your details", "Payment", "Confirmation"].map((t, i) =>
-        `${i ? '<span class="sep"></span>' : ""}<span class="s ${i + 1 === n ? "on" : i + 1 < n ? "done" : ""}"><i>${i + 1 < n ? "✓" : i + 1}</i>${t}</span>`).join("");
-    steps(1);
+    const back = document.getElementById("coBack");
+    back.innerHTML = `${PS.icon("left", 16)}<span>Back</span>`;
+    back.href = type === "hotel" ? (sel?.back || "javascript:history.back()") : (sel?.search ? PS.url("/flights", sel.search) : "javascript:history.back()");
 
     const selOk = sel && (type === "hotel" ? sel.offer?.offerId === q.offerId : !!sel.offer?.offerId);
     if (!selOk) {
@@ -44,62 +42,77 @@
       return;
     }
 
+    // ─── Hold (prebook) state: re-used as long as add-ons and promo code haven't changed ───
+    let held = null, heldKey = "";
+    const holdKey = () => JSON.stringify({ v: (document.getElementById("voucher")?.value || "").trim(), u: extras.uber?.value || 0, e: extras.esim?.packageId || "" });
+
     // ─── Summary column ───
-    function summaryHTML(priceOverride) {
+    const sumBox = (label, value, cls = "") => `<div class="co-line ${cls}"><span>${label}</span><span>${value}</span></div>`;
+    function cancelBlock(offer) {
+      if (!offer.refundable) return `<div class="co-cancel no"><b>${PS.icon("info", 16)}Non-refundable</b><p>This booking is non-refundable. If you change or cancel it, you won't be refunded.</p></div>`;
+      const first = (offer.cancelPolicy || []).find(c => c.amount > 0) || (offer.cancelPolicy || [])[0];
+      const until = first ? PS.deadline(first.from, first.tz) : (offer.cancelBy ? PS.fmtDate(new Date(offer.cancelBy)) : "");
+      return `<div class="co-cancel ok"><b>${PS.icon("check", 16, 2.6)}Free cancellation${until ? ` until ${until}` : ""}</b><p>Cancel before then for a full refund. After that, the hotel's cancellation fee applies.</p></div>`;
+    }
+    function summaryHTML(o = {}) {
       if (type === "hotel") {
         const { hotel, offer, stay } = sel;
         const n = PS.nights(stay.checkin, stay.checkout);
-        const total = priceOverride?.total ?? (offer.total + extrasTotal());
-        const cur = priceOverride?.currency || offer.currency;
+        const cur = o.currency || offer.currency;
+        const total = o.total ?? (offer.total + extrasTotal());
         const roomPart = total - extrasTotal();
-        const tax = (offer.taxesExcluded || []).reduce((s, t) => s + (t.amount || 0), 0);
-        return `<div class="panel">
-          <div class="sum-hotel">${hotel.photo ? `<img src="${PS.esc(hotel.photo)}" alt="">` : ""}<div><div class="stars">${PS.stars(hotel.stars)}</div><h3>${PS.esc(hotel.name)}</h3><div class="addr">${PS.esc(hotel.address || "")}</div></div></div>
-          <div class="divider"></div>
-          <div class="sum-lines">
-            <div><span>Room</span><b style="text-align:right">${PS.esc(offer.roomName || offer.name)}</b></div>
-            <div><span>Board</span><b>${PS.esc(offer.board || "Room only")}</b></div>
-            <div><span>Check-in</span><b>${PS.fmtDay(stay.checkin)}</b></div>
-            <div><span>Check-out</span><b>${PS.fmtDay(stay.checkout)}</b></div>
-            <div><span>Guests</span><b>${PS.plural(stay.adults + (stay.childAges || []).length, "guest")}, ${PS.plural(stay.rooms, "room")}</b></div>
-            <div><span>Cancellation</span><b style="color:${offer.refundable ? "var(--green)" : "var(--text-2)"}">${offer.refundable ? "Free cancellation" + (offer.cancelBy ? " before " + PS.fmtDate(new Date(offer.cancelBy)) : "") : "Non-refundable"}</b></div>
+        const rooms = stay.rooms || 1;
+        const incl = (offer.taxesIncluded || []).reduce((s, t) => s + (t.amount || 0), 0);
+        const payAtHotel = offer.taxesExcluded || [];
+        const voucher = o.voucher || 0;
+        return `<div class="co-card">
+          <div class="co-hotel">${hotel.photo ? `<img src="${PS.esc(hotel.photo)}" alt="">` : ""}<div>
+            <div class="stars">${PS.stars(hotel.stars)}</div><h3>${PS.esc(hotel.name)}</h3>
+            ${hotel.address ? `<div class="addr">${PS.icon("pin", 14)}${PS.esc(hotel.address)}</div>` : ""}
+            ${hotel.rating ? `<div class="co-rate"><span class="score ${hotel.rating >= 8.5 ? "great" : ""}">${(+hotel.rating).toFixed(1)}</span>${PS.ratingWord(hotel.rating)}</div>` : ""}
+          </div></div>
+          <div class="co-sec"><small>${PS.icon("cal", 14)}Check-in &amp; Check-out</small>
+            <b>${PS.fmtDate(stay.checkin, { month: "short", day: "numeric", year: "numeric" })} – ${PS.fmtDate(stay.checkout, { month: "short", day: "numeric", year: "numeric" })} (${PS.plural(n, "night")})</b></div>
+          <div class="co-sec"><h4>Cancellation policy</h4>${cancelBlock(offer)}</div>
+          <div class="co-sec">
+            <span class="co-room-tag">${rooms > 1 ? `${rooms} rooms` : "Room 1"}</span>
+            <b class="co-room">${PS.esc(offer.roomName || offer.name)}${offer.board ? `, ${PS.esc(offer.board)}` : ""}</b>
+            <small class="muted">${PS.plural(stay.adults + (stay.childAges || []).length, "guest")}</small>
+            <small class="muted">${PS.money(roomPart / n / rooms, cur, 2)} average per night</small>
+            <div class="co-lines">
+              ${sumBox(`${PS.plural(rooms, "room")} × ${PS.plural(n, "night")}`, PS.money(roomPart, cur, 2))}
+              ${incl ? sumBox("Included taxes and fees", PS.money(incl, cur, 2), "muted") : ""}
+              ${extras.uber ? sumBox("Uber ride credit", PS.money(extras.uber.value, "USD", 2)) : ""}
+              ${extras.esim ? sumBox(`eSIM ${PS.esc(extras.esim.dataGb != null ? extras.esim.dataGb + " GB" : "")}${extras.esim.days ? " · " + extras.esim.days + " days" : ""}`, PS.money(extras.esim.price, extras.esim.currency, 2)) : ""}
+              ${voucher ? sumBox("Promo code", `−${PS.money(voucher, cur, 2)}`, "good") : ""}
+            </div>
           </div>
-          <div class="divider"></div>
-          <div class="sum-lines">
-            <div><span>${PS.plural(n, "night")}</span><span>${PS.money(roomPart, cur, 2)}</span></div>
-            ${extras.uber ? `<div><span>Uber ride credit</span><span>${PS.money(extras.uber.value, "USD", 2)}</span></div>` : ""}
-            ${extras.esim ? `<div><span>eSIM ${PS.esc(extras.esim.dataGb != null ? extras.esim.dataGb + " GB" : "")}${extras.esim.days ? " · " + extras.esim.days + " days" : ""}</span><span>${PS.money(extras.esim.price, extras.esim.currency, 2)}</span></div>` : ""}
-            ${priceOverride?.voucher ? `<div><span>Voucher</span><span style="color:var(--green)">−${PS.money(priceOverride.voucher, cur, 2)}</span></div>` : ""}
-          </div>
-          <div class="divider"></div>
-          <div class="sum-total"><span>Total due now</span><b>${PS.money(Math.max(0, total - (priceOverride?.voucher || 0)), cur, 2)}</b></div>
+          <div class="co-total"><div><b>Total</b><b>${PS.money(Math.max(0, total - voucher), cur, 2)}</b></div><small>Includes taxes and fees</small></div>
+          ${payAtHotel.length ? `<div class="co-lines pay-hotel"><small>Paid at the hotel</small>${payAtHotel.map(f => sumBox(PS.esc(f.description), PS.money(f.amount, f.currency || cur, 2))).join("")}</div>` : ""}
           <div id="earnNote"></div>
-          ${tax ? `<div class="sum-lines" style="margin-top:12px">${(offer.taxesExcluded || []).map(f => `<div><span>${PS.esc(f.description)} <small class="muted">(pay at hotel)</small></span><span>${PS.money(f.amount, f.currency || cur, 2)}</span></div>`).join("")}</div>` : ""}
         </div>
         <div class="secure-note">${PS.icon("lock", 14)}Secure, encrypted payment</div>`;
       }
       const { journey, offer, search } = sel;
       const byDir = groupLegs(journey);
-      const total = priceOverride?.total ?? offer.pricing?.display?.total;
-      const cur = priceOverride?.currency || offer.pricing?.display?.currency || "USD";
-      return `<div class="panel">
+      const total = o.total ?? offer.pricing?.display?.total;
+      const cur = o.currency || offer.pricing?.display?.currency || "USD";
+      return `<div class="co-card">
         <h3 style="font-size:17px;margin-bottom:12px">${PS.esc(search.fromCity || search.from)} → ${PS.esc(search.toCity || search.to)}</h3>
-        ${byDir.map(l => `<div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
-          ${l.segs[0].carrier?.marketingLogo ? `<img src="${PS.esc(l.segs[0].carrier.marketingLogo)}" alt="" style="width:30px;height:30px;object-fit:contain">` : ""}
-          <div><b style="color:var(--ink)">${PS.time(l.segs[0].departureTime)} ${l.segs[0].originCode} → ${PS.time(l.segs[l.segs.length - 1].arrivalTime)} ${l.segs[l.segs.length - 1].destinationCode}</b>
+        ${byDir.map(l => `<div class="co-leg">
+          ${l.segs[0].carrier?.marketingLogo ? `<img src="${PS.esc(l.segs[0].carrier.marketingLogo)}" alt="">` : ""}
+          <div><b>${PS.time(l.segs[0].departureTime)} ${l.segs[0].originCode} → ${PS.time(l.segs[l.segs.length - 1].arrivalTime)} ${l.segs[l.segs.length - 1].destinationCode}</b>
           <div class="price-sub">${PS.fmtDay(l.segs[0].departureTime.slice(0, 10))} · ${l.segs.length === 1 ? "Nonstop" : PS.plural(l.segs.length - 1, "stop")} · ${PS.dur(l.minutes)}</div>
-          ${l.segs.map(s => `<div class="price-sub">${PS.esc(s.carrier?.marketingCode || "")}${PS.esc(s.flight?.marketingNumber || "")} ${s.originCode}→${s.destinationCode}</div>`).join("")}
           ${(l.conns || []).map(c => `<div class="price-sub" style="color:${c.changeAirport ? "var(--red)" : "#a66a00"}">${PS.dur(c.duration?.minutes || 0)} layover in ${c.arrivalAirportCode}${c.changeAirport ? " · change to " + c.departureAirportCode : ""}${c.overnight ? " · overnight" : ""}</div>`).join("")}</div></div>`).join("")}
-        <div class="divider"></div>
-        <div class="sum-lines">
-          <div><span>Fare</span><b>${PS.esc(offer.fare?.family || "Economy")}</b></div>
-          <div><span>Travelers</span><b>${PS.plural(+search.adults || 1, "adult")}</b></div>
-          <div><span>Changes</span><b>${offer.terms?.changeable ? "Allowed" : "Not allowed"}</b></div>
-          <div><span>Refunds</span><b>${offer.terms?.refundable ? "Refundable" : "Non-refundable"}</b></div>
-        </div>
-        <div class="divider"></div>
-        <div class="sum-total"><span>Total</span><b>${PS.money(total, cur, 2)}</b></div>
-        <div class="price-sub" style="margin-top:6px">Includes taxes and carrier fees for all travelers.</div>
+        <div class="co-sec"><div class="co-lines">
+          ${sumBox("Fare", PS.esc(offer.fare?.family || "Economy"))}
+          ${sumBox("Travelers", PS.plural(+search.adults || 1, "adult"))}
+          ${sumBox("Changes", offer.terms?.changeable ? "Allowed" : "Not allowed")}
+          ${sumBox("Refunds", offer.terms?.refundable ? "Refundable" : "Non-refundable")}
+          ${o.voucher ? sumBox("Promo code", `−${PS.money(o.voucher, cur, 2)}`, "good") : ""}
+        </div></div>
+        <div class="co-total"><div><b>Total</b><b>${PS.money(Math.max(0, total - (o.voucher || 0)), cur, 2)}</b></div><small>Includes taxes and carrier fees for all travelers.</small></div>
+        <div id="earnNote"></div>
       </div>
       <div class="secure-note">${PS.icon("lock", 14)}Secure, encrypted payment</div>`;
     }
@@ -112,157 +125,194 @@
       });
       return out;
     }
+    const repaint = () => { sumCol.innerHTML = summaryHTML(held && heldKey === holdKey() ? { total: held.price, currency: held.currency, voucher: held.voucherTotalAmount } : {}); paintEarn(); };
     sumCol.innerHTML = summaryHTML();
 
-    // Signing in is optional: guests can book and save the trip to an account later.
     const auth = await PS.auth();
     const me = auth.loggedIn ? (auth.user || {}) : {};
     const here = encodeURIComponent(location.pathname + location.search);
-    const memberBanner = auth.loggedIn
-      ? `<div class="alert success" style="margin-bottom:18px">${PS.icon("check", 18)}<div>Signed in as <b>${PS.esc(me.email)}</b>. This trip will be saved to your account${type === "hotel" ? " and earn points" : ""}.</div></div>`
-      : `<div class="panel" style="display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:18px">
-          <div><b style="color:var(--ink)">Checking out as a guest</b><div style="color:var(--text-2);font-size:14px">Sign in${type === "hotel" ? " for member prices and" : " to"} earn points, or just continue. You can save this trip to an account anytime.</div></div>
-          <div style="display:flex;gap:8px"><a class="btn btn-sm btn-ghost" href="/login?redirect=${here}">Sign in</a><a class="btn btn-sm btn-primary" href="/login?mode=signup&redirect=${here}">Join free</a></div>
-        </div>`;
 
-    // ─── Details form ───
-    const f = (id, label, attrs = "", hint = "") => `<div class="field ${attrs.includes("full") ? "full" : ""}" data-f="${id}"><label for="${id}">${label}</label><input id="${id}" ${attrs.replace("full", "")}>${hint ? `<div class="hint">${hint}</div>` : ""}</div>`;
+    // ─── Form pieces ───
+    const f = (id, label, attrs = "", hint = "", req = true) => `<div class="field ${attrs.includes("full") ? "full" : ""}" data-f="${id}"><label for="${id}">${label}${req ? ' <i class="req">*</i>' : ""}</label><input id="${id}" ${attrs.replace("full", "")}>${hint ? `<div class="hint">${hint}</div>` : ""}</div>`;
+    const DIAL = [["+1", "US/Canada"], ["+44", "UK"], ["+33", "France"], ["+34", "Spain"], ["+49", "Germany"], ["+39", "Italy"], ["+31", "Netherlands"], ["+41", "Switzerland"], ["+353", "Ireland"], ["+351", "Portugal"], ["+46", "Sweden"], ["+47", "Norway"], ["+45", "Denmark"], ["+30", "Greece"], ["+90", "Türkiye"], ["+52", "Mexico"], ["+55", "Brazil"], ["+54", "Argentina"], ["+57", "Colombia"], ["+61", "Australia"], ["+64", "New Zealand"], ["+91", "India"], ["+92", "Pakistan"], ["+971", "UAE"], ["+966", "Saudi Arabia"], ["+20", "Egypt"], ["+27", "South Africa"], ["+234", "Nigeria"], ["+65", "Singapore"], ["+60", "Malaysia"], ["+62", "Indonesia"], ["+63", "Philippines"], ["+66", "Thailand"], ["+84", "Vietnam"], ["+81", "Japan"], ["+82", "South Korea"], ["+86", "China"], ["+852", "Hong Kong"]];
+    const guessDial = () => { const r = (navigator.language || "en-US").split("-")[1] || ""; return ({ GB: "+44", FR: "+33", ES: "+34", DE: "+49", IT: "+39", MX: "+52", IN: "+91", AU: "+61", AE: "+971" })[r] || "+1"; };
+    const phoneField = (req) => `<div class="field full" data-f="phone"><label for="phone">Phone${req ? ' <i class="req">*</i>' : ""}</label>
+      <div class="phone-row"><select id="dial" aria-label="Country code">${DIAL.map(([c, n]) => `<option value="${c}" ${c === guessDial() ? "selected" : ""}>${c} ${n}</option>`).join("")}</select>
+      <input id="phone" type="tel" autocomplete="tel-national" placeholder="Enter phone number"></div></div>`;
     const countries = ["US", "CA", "GB", "IN", "AU", "FR", "DE", "IT", "ES", "MX", "BR", "AE", "SG", "JP", "CN", "PH", "PK", "NG", "IE", "NL", "NZ", "ZA"];
     const regionName = (c) => { try { return new Intl.DisplayNames(["en"], { type: "region" }).of(c); } catch { return c; } };
-    const countrySelect = (id, label, def = "CA") => `<div class="field" data-f="${id}"><label for="${id}">${label}</label><select id="${id}">${countries.map(c => `<option value="${c}" ${c === def ? "selected" : ""}>${regionName(c)}</option>`).join("")}</select></div>`;
+    const countrySelect = (id, label, def = "CA") => `<div class="field" data-f="${id}"><label for="${id}">${label} <i class="req">*</i></label><select id="${id}">${countries.map(c => `<option value="${c}" ${c === def ? "selected" : ""}>${regionName(c)}</option>`).join("")}</select></div>`;
+    const signInLink = auth.loggedIn ? "" : `<a class="link" href="/login?redirect=${here}">Sign in</a>`;
 
-    let html = "";
+    let html = `<div class="co-note">${PS.icon("info", 16)}All fields marked with <i class="req">*</i> are required.</div>
+      ${auth.loggedIn ? `<div class="alert success" style="margin-bottom:16px">${PS.icon("check", 18)}<div>Signed in as <b>${PS.esc(me.email)}</b>. This trip will be saved to your account and earn points.</div></div>`
+        : `<div class="co-guest">${PS.icon("tag", 18)}<div><b>Checking out as a guest.</b> <a class="link" href="/login?redirect=${here}">Sign in</a> or <a class="link" href="/login?mode=signup&redirect=${here}">join free</a>${type === "hotel" ? " for member prices and" : " to"} earn points.</div></div>`}`;
     if (type === "hotel") {
-      html = `<div class="panel">
-        <h2>Who's checking in?</h2>
-        <p style="color:var(--text-2);margin:-6px 0 18px">Use the name on the ID the lead guest will show at check-in.</p>
+      html += `<section class="co-panel" id="detailsPanel">
+        <div class="co-head"><h2>Your details</h2>${signInLink}</div>
         <div class="form-grid">
-          ${f("firstName", "First name", 'autocomplete="given-name" required')}
-          ${f("lastName", "Last name", 'autocomplete="family-name" required')}
-          ${f("email", "Email", `full type="email" autocomplete="email" required value="${PS.esc(me.email || "")}"`, "We'll send your confirmation here.")}
-          ${f("phone", "Mobile number", 'full type="tel" autocomplete="tel" placeholder="+1 416 555 0100"', "The hotel may contact you about your stay.")}
+          ${f("firstName", "First name", 'autocomplete="given-name" placeholder="Enter first name"')}
+          ${f("lastName", "Last name", 'autocomplete="family-name" placeholder="Enter last name"')}
+          ${f("email", "Email", `full type="email" autocomplete="email" placeholder="Enter email" value="${PS.esc(me.email || "")}"`, "We'll send your confirmation here.")}
+          ${phoneField(false)}
         </div>
-      </div>`;
+        <div class="co-q"><span>Are you traveling for work?</span><label><input type="radio" name="work" value="yes"> Yes</label><label><input type="radio" name="work" value="no" checked> No</label></div>
+      </section>
+      <section class="co-panel">
+        <div class="co-head"><h2>Who is the booking for?</h2></div>
+        <div class="co-who"><label class="on"><input type="radio" name="who" value="me" checked><span>Myself</span></label><label><input type="radio" name="who" value="other"><span>Someone else</span></label></div>
+        <div class="form-grid hidden" id="guestFields" style="margin-top:14px">
+          ${f("gFirst", "Guest first name", 'autocomplete="off" placeholder="As on their ID"')}
+          ${f("gLast", "Guest last name", 'autocomplete="off" placeholder="As on their ID"')}
+          <div class="hint full">The guest shows ID in this name at check-in. Your confirmation still goes to your email.</div>
+        </div>
+      </section>
+      <section class="co-panel co-fold" id="reqPanel">
+        <button type="button" class="co-fold-btn" aria-expanded="false"><div><h2>Any special requests?</h2><small>The property will do its best to arrange it.</small></div><span class="co-plus">+</span></button>
+        <div class="co-fold-body" hidden><textarea id="remarks" maxlength="500" rows="3" placeholder="e.g. Quiet room, late arrival around 11 pm, twin beds if possible"></textarea><div class="hint">Requests aren't guaranteed. For anything essential, contact the hotel before you travel.</div></div>
+      </section>
+      <section class="co-panel" id="extrasPanel">
+        <div class="co-head"><h2>Add-ons</h2></div>
+        <div id="uberRow"></div><div id="esimRow"></div>
+      </section>`;
     } else {
       const n = +sel.search.adults || 1;
-      html = `<div class="panel">
-        <h2>Traveler details</h2>
-        <div class="alert info" style="margin:-4px 0 18px">${PS.icon("info", 18)}<div>Enter names exactly as they appear on each passport. Airlines may refuse boarding if they don't match.</div></div>
+      html += `<section class="co-panel" id="detailsPanel">
+        <div class="co-head"><h2>Traveler details</h2>${signInLink}</div>
+        <div class="alert info" style="margin-bottom:16px">${PS.icon("info", 18)}<div>Enter names exactly as they appear on each passport. Airlines may refuse boarding if they don't match.</div></div>
         ${Array.from({ length: n }, (_, i) => `<div class="pax-card"><h3>${PS.icon("user", 18)}Adult ${i + 1}${i === 0 ? " (lead traveler)" : ""}</h3>
           <div class="form-grid">
-            ${f(`p${i}_first`, "First & middle names", 'autocomplete="given-name" required')}
-            ${f(`p${i}_last`, "Last name", 'autocomplete="family-name" required')}
-            <div class="field" data-f="p${i}_gender"><label for="p${i}_gender">Gender (as on passport)</label><select id="p${i}_gender"><option value="">Select</option><option value="M">Male</option><option value="F">Female</option></select></div>
-            ${f(`p${i}_dob`, "Date of birth", `type="date" max="${PS.iso(PS.addDays(PS.today(), -365 * 12))}" required`)}
+            ${f(`p${i}_first`, "First & middle names", 'autocomplete="given-name"')}
+            ${f(`p${i}_last`, "Last name", 'autocomplete="family-name"')}
+            <div class="field" data-f="p${i}_gender"><label for="p${i}_gender">Gender (as on passport) <i class="req">*</i></label><select id="p${i}_gender"><option value="">Select</option><option value="M">Male</option><option value="F">Female</option></select></div>
+            ${f(`p${i}_dob`, "Date of birth", `type="date" max="${PS.iso(PS.addDays(PS.today(), -365 * 12))}"`)}
             ${countrySelect(`p${i}_nat`, "Nationality")}
-            ${f(`p${i}_doc`, "Passport number", 'required autocomplete="off"')}
-            ${f(`p${i}_exp`, "Passport expiry", `type="date" min="${PS.iso(PS.today())}" required`)}
+            ${f(`p${i}_doc`, "Passport number", 'autocomplete="off"')}
+            ${f(`p${i}_exp`, "Passport expiry", `type="date" min="${PS.iso(PS.today())}"`)}
             ${countrySelect(`p${i}_iss`, "Passport issued by")}
           </div></div>`).join("")}
-      </div>
-      <div class="panel"><h2>Contact details</h2>
+        <h3 class="co-sub">Contact details</h3>
         <div class="form-grid">
-          ${f("email", "Email", `type="email" autocomplete="email" required value="${PS.esc(me.email || "")}"`, "Tickets and updates go here.")}
-          ${f("phone", "Mobile number", 'type="tel" autocomplete="tel" placeholder="+1 416 555 0100" required', "Include your country code.")}
+          ${f("email", "Email", `full type="email" autocomplete="email" value="${PS.esc(me.email || "")}"`, "Tickets and updates go here.")}
+          ${phoneField(true)}
         </div>
-      </div>`;
+      </section>`;
     }
-    if (type === "hotel") html += `<div class="panel" id="extrasPanel">
-        <h2>Add extras</h2>
-        <p style="color:var(--text-2);margin:-6px 0 16px">Optional. Added to this booking and paid in the same checkout.</p>
-        <div class="extra">
-          <div class="extra-head"><span class="extra-ico">${PS.icon("car", 22)}</span><div><b>Uber ride credit</b><p>Airport to your hotel and rides around ${PS.esc(sel.hotel.city || "town")}. Your voucher link arrives with your confirmation.</p></div></div>
-          <div class="extra-opts" id="uberOpts"></div>
-        </div>
-        <div id="esimBox"></div>
-      </div>`;
-    html += `<div class="panel">
-        <h2>Rewards &amp; promo code</h2>
+    html += `<section class="co-panel">
+        <div class="co-head"><h2>Redeem a promo code <small>(optional)</small></h2></div>
         <div id="rewardsPick"></div>
-        <div style="display:flex;gap:10px"><div class="field" style="flex:1"><input id="voucher" placeholder="Enter a voucher code (optional)" aria-label="Voucher code"></div></div>
-      </div>
+        <div class="co-promo"><input id="voucher" placeholder="Enter promo code" aria-label="Promo code" autocomplete="off"><button type="button" class="btn btn-ghost" id="applyBtn">Apply</button></div>
+        <div id="promoMsg"></div>
+      </section>
       <div id="formMsg"></div>
-      <button class="btn btn-coral btn-lg btn-block" id="continueBtn" style="margin-top:18px">Continue to payment ${PS.icon("arrow", 18)}</button>
-      <p class="agree-note">By continuing you agree to our <a href="/terms" target="_blank">Terms</a>, <a href="/cancellation-policy" target="_blank">Cancellation policy</a> and <a href="/privacy" target="_blank">Privacy policy</a>, and the hotel or airline's own rules.</p>
-      <p class="price-sub" style="text-align:center;margin-top:10px">We'll hold your ${type === "hotel" ? "room" : "seats"} and confirm the final price before you pay.</p>`;
-    formCol.innerHTML = memberBanner + html;
+      <section class="co-panel hidden" id="payPanel">
+        <div class="co-head"><h2>Payment information</h2><span class="tag green">${PS.icon("lock", 13)}${type === "hotel" ? "Room" : "Seats"} held for you</span></div>
+        <div id="sandboxNote"></div>
+        <div id="priceNote"></div>
+        <div id="paymentPortal" class="pay-box"></div>
+      </section>
+      <button class="btn btn-primary btn-lg btn-block co-go" id="continueBtn">Continue to payment ${PS.icon("right", 18)}</button>
+      <p class="agree-note">By continuing you agree to our <a href="/terms" target="_blank">Terms</a>, <a href="/cancellation-policy" target="_blank">Cancellation policy</a> and <a href="/privacy" target="_blank">Privacy policy</a>, and the ${type === "hotel" ? "hotel's" : "airline's"} own rules.</p>`;
+    formCol.innerHTML = html;
+
+    // Who is the booking for
+    document.querySelectorAll('input[name="who"]').forEach(r => r.onchange = () => {
+      document.querySelectorAll(".co-who label").forEach(l => l.classList.toggle("on", l.querySelector("input").checked));
+      document.getElementById("guestFields")?.classList.toggle("hidden", r.value !== "other" || !r.checked);
+    });
+    // Special requests fold
+    document.querySelectorAll(".co-fold-btn").forEach(b => b.onclick = () => {
+      const body = b.nextElementSibling, open = body.hidden;
+      body.hidden = !open; b.setAttribute("aria-expanded", open); b.querySelector(".co-plus").textContent = open ? "−" : "+";
+      if (open) body.querySelector("textarea")?.focus();
+    });
 
     // ─── PlanurStay Rewards: use a voucher, or turn points into one right here ───
-    const paintEarn = (r) => {
-      const el = document.getElementById("earnNote"); if (!el || !r) return;
+    let rw = null;
+    function paintEarn() {
+      const el = document.getElementById("earnNote"); if (!el || !rw) return;
       const cur = type === "hotel" ? sel.offer.currency : sel.offer.pricing?.display?.currency;
       const amt = type === "hotel" ? sel.offer.total : sel.offer.pricing?.display?.total;
-      el.innerHTML = `<div class="earn-note">${PS.icon("star", 14)}${cur === "USD" ? `You'll earn about <b>${Math.floor(amt * r.tier.multiplier).toLocaleString()} points</b>` : "You'll earn points"} after your ${type === "hotel" ? "stay" : "trip"}</div>`;
-    };
+      el.innerHTML = `<div class="earn-note">${PS.icon("star", 14)}${cur === "USD" ? `You'll earn about <b>${Math.floor(amt * rw.tier.multiplier).toLocaleString()} points</b>` : "You'll earn points"} after your ${type === "hotel" ? "stay" : "trip"}</div>`;
+    }
     if (auth.loggedIn) PS.api("/api/rewards").then(r => {
-      r = r.data; paintEarn(r);
+      rw = r.data; paintEarn();
       const box = document.getElementById("rewardsPick");
-      const active = (r.vouchers || []).filter(v => v.status === "active");
+      const active = (rw.vouchers || []).filter(v => v.status === "active");
       const paint = () => {
         box.innerHTML = `<div class="rw-box">
-          <div class="rw-top"><b>${PS.icon("gift", 16)}${r.points.toLocaleString()} points</b><span>worth ${PS.money(r.valueUsd, "USD", 2)}</span></div>
+          <div class="rw-top"><b>${PS.icon("gift", 16)}${rw.points.toLocaleString()} points</b><span>worth ${PS.money(rw.valueUsd, "USD", 2)}</span></div>
           ${active.length ? `<div class="pill-row">${active.map(v => `<button type="button" class="pill" data-vc="${PS.esc(v.code)}">Use ${PS.money(v.value, "USD", 0)} reward</button>`).join("")}</div>` : ""}
-          ${r.points >= r.redeem.min ? `<button type="button" class="link" id="rwRedeem" style="background:none;border:0;padding:0;margin-top:8px">Turn ${Math.floor(r.points / r.redeem.step) * r.redeem.step >= r.redeem.min ? (Math.floor(r.points / r.redeem.step) * r.redeem.step).toLocaleString() : r.redeem.min.toLocaleString()} points into ${PS.money(Math.floor(r.points / r.redeem.step) * r.redeem.step * r.redeem.pointValueUsd, "USD", 0)} off</button>` : `<small class="muted">Redeem from ${r.redeem.min.toLocaleString()} points (${PS.money(r.redeem.min * r.redeem.pointValueUsd, "USD", 0)} off).</small>`}
+          ${rw.points >= rw.redeem.min ? `<button type="button" class="link" id="rwRedeem" style="background:none;border:0;padding:0;margin-top:8px">Turn ${(Math.floor(rw.points / rw.redeem.step) * rw.redeem.step).toLocaleString()} points into ${PS.money(Math.floor(rw.points / rw.redeem.step) * rw.redeem.step * rw.redeem.pointValueUsd, "USD", 0)} off</button>` : `<small class="muted">Redeem from ${rw.redeem.min.toLocaleString()} points (${PS.money(rw.redeem.min * rw.redeem.pointValueUsd, "USD", 0)} off).</small>`}
         </div>`;
-        box.querySelectorAll("[data-vc]").forEach(b => b.onclick = () => { document.getElementById("voucher").value = b.dataset.vc; box.querySelectorAll("[data-vc]").forEach(x => x.classList.toggle("active", x === b)); });
+        box.querySelectorAll("[data-vc]").forEach(b => b.onclick = () => { document.getElementById("voucher").value = b.dataset.vc; box.querySelectorAll("[data-vc]").forEach(x => x.classList.toggle("active", x === b)); applyPromo(); });
         box.querySelector("#rwRedeem")?.addEventListener("click", async (e) => {
           e.target.disabled = true;
           try {
-            const pts = Math.floor(r.points / r.redeem.step) * r.redeem.step;
+            const pts = Math.floor(rw.points / rw.redeem.step) * rw.redeem.step;
             const v = (await PS.api("/api/rewards/redeem", { method: "POST", body: { points: pts } })).data;
-            r.points = v.points; r.valueUsd = +(v.points * r.redeem.pointValueUsd).toFixed(2);
+            rw.points = v.points; rw.valueUsd = +(v.points * rw.redeem.pointValueUsd).toFixed(2);
             active.unshift({ code: v.code, value: v.value, status: "active" });
-            paint(); document.getElementById("voucher").value = v.code;
-            box.querySelector(`[data-vc="${v.code}"]`)?.classList.add("active");
+            paint(); document.getElementById("voucher").value = v.code; applyPromo();
           } catch (err) { PS.toast(err.message); e.target.disabled = false; }
         });
       };
       paint();
     }).catch(() => {});
 
+    // ─── Add-ons (hotels): rows that open to show the options ───
     if (type === "hotel") {
-      const repaint = () => { sumCol.innerHTML = summaryHTML(); };
-      const opt = (key, v, label, sub, active) => `<button type="button" class="extra-opt ${active ? "active" : ""}" data-${key}="${v}">${label}${sub ? `<small>${sub}</small>` : ""}</button>`;
-      const uberBox = document.getElementById("uberOpts");
-      const paintUber = (vals) => {
-        uberBox.innerHTML = opt("uber", "", "No thanks", "", !extras.uber) + vals.map(u => opt("uber", u.value, PS.money(u.value, "USD", 0), "ride credit", extras.uber?.value === u.value)).join("");
-        uberBox.querySelectorAll("[data-uber]").forEach(b => b.onclick = () => { extras.uber = b.dataset.uber ? { value: +b.dataset.uber, currency: "USD" } : null; paintUber(vals); repaint(); });
+      const addonRow = (host, icon, title, sub, optionsHTML, bind) => {
+        const chosen = host.dataset.chosen || "";
+        host.innerHTML = `<div class="co-addon"><button type="button" class="co-addon-head"><span class="extra-ico">${PS.icon(icon, 22)}</span><div><b>${title}</b><small>${chosen || sub}</small></div><span class="co-sel">${chosen ? "Change" : "Select"} ${PS.icon("right", 14)}</span></button>
+          <div class="co-addon-body" hidden><div class="extra-opts">${optionsHTML}</div></div></div>`;
+        const head = host.querySelector(".co-addon-head"), body = host.querySelector(".co-addon-body");
+        head.onclick = () => { body.hidden = !body.hidden; };
+        bind(host);
       };
+      const opt = (key, v, label, sub, active) => `<button type="button" class="extra-opt ${active ? "active" : ""}" data-${key}="${v}">${label}${sub ? `<small>${sub}</small>` : ""}</button>`;
+      const uberHost = document.getElementById("uberRow"), esimHost = document.getElementById("esimRow");
+      let anyAddon = false;
+      const hideIfEmpty = () => document.getElementById("extrasPanel").classList.toggle("hidden", !anyAddon);
+      hideIfEmpty();
       // LiteAPI Uber vouchers are USD-only, so offer them only when the room is priced in USD
-      if ((sel.offer.currency || "USD") === "USD") PS.api("/api/extras/uber").then(r => paintUber(r.data || [])).catch(() => document.querySelector("#uberOpts").closest(".extra").remove());
-      else { document.querySelector("#uberOpts").closest(".extra").remove(); document.getElementById("extrasPanel").classList.add("hidden"); }
-
+      if ((sel.offer.currency || "USD") === "USD") PS.api("/api/extras/uber").then(r => {
+        const vals = r.data || []; if (!vals.length) return;
+        anyAddon = true; hideIfEmpty();
+        const paint = () => addonRow(uberHost, "car", "Uber ride credit", `Rides from the airport and around ${PS.esc(sel.hotel.city || "town")}`,
+          opt("uber", "", "No thanks", "", !extras.uber) + vals.map(u => opt("uber", u.value, PS.money(u.value, "USD", 0), "ride credit", extras.uber?.value === u.value)).join(""),
+          (h) => h.querySelectorAll("[data-uber]").forEach(b => b.onclick = () => { extras.uber = b.dataset.uber ? { value: +b.dataset.uber, currency: "USD" } : null; h.dataset.chosen = extras.uber ? `${PS.money(extras.uber.value, "USD", 0)} ride credit added` : ""; paint(); repaint(); }));
+        paint();
+      }).catch(() => {});
       // eSIM for the hotel's country — only shown when the eSIM service is enabled on the account
       if (sel.hotel.country) PS.api(`/api/extras/esim?country=${encodeURIComponent(sel.hotel.country)}`).then(r => {
         if (!r.enabled || !r.data?.length) return;
-        const box = document.getElementById("esimBox");
-        document.getElementById("extrasPanel").classList.remove("hidden");
+        anyAddon = true; hideIfEmpty();
         const plans = r.data.slice(0, 5);
-        const paint = () => {
-          box.innerHTML = `<div class="extra">
-            <div class="extra-head"><span class="extra-ico esim">${PS.icon("wifi", 22)}</span><div><b>Stay connected with an eSIM</b><p>Mobile data in ${PS.esc(sel.hotel.city || sel.hotel.country)} from the moment you land. No SIM swap; install by QR code.</p></div></div>
-            <div class="extra-opts">${opt("esim", "", "No thanks", "", !extras.esim)}${plans.map((p, i) => opt("esim", i, PS.money(p.price, p.currency, 0), `${p.unlimited ? "Unlimited" : p.dataGb != null ? p.dataGb + " GB" : PS.esc(p.name)}${p.days ? " · " + p.days + " days" : ""}`, extras.esim?.packageId === p.packageId)).join("")}</div>
-          </div>`;
-          box.querySelectorAll("[data-esim]").forEach(b => b.onclick = () => { extras.esim = b.dataset.esim === "" ? null : plans[+b.dataset.esim]; paint(); repaint(); });
-        };
+        const paint = () => addonRow(esimHost, "wifi", "eSIM data plan", `Mobile data in ${PS.esc(sel.hotel.city || sel.hotel.country)} from the moment you land`,
+          opt("esim", "", "No thanks", "", !extras.esim) + plans.map((p, i) => opt("esim", i, PS.money(p.price, p.currency, 0), `${p.unlimited ? "Unlimited" : p.dataGb != null ? p.dataGb + " GB" : PS.esc(p.name)}${p.days ? " · " + p.days + " days" : ""}`, extras.esim?.packageId === p.packageId)).join(""),
+          (h) => h.querySelectorAll("[data-esim]").forEach(b => b.onclick = () => { extras.esim = b.dataset.esim === "" ? null : plans[+b.dataset.esim]; h.dataset.chosen = extras.esim ? `${extras.esim.dataGb != null ? extras.esim.dataGb + " GB" : "Plan"} added` : ""; paint(); repaint(); }));
         paint();
       }).catch(() => {});
     }
 
+    // ─── Validation ───
     const val = (id) => (document.getElementById(id)?.value || "").trim();
     function setErr(id, msg) {
       const w = document.querySelector(`[data-f="${id}"]`); if (!w) return;
       w.classList.toggle("err", !!msg); w.querySelector(".err-msg")?.remove();
       if (msg) w.insertAdjacentHTML("beforeend", `<div class="err-msg">${msg}</div>`);
     }
+    const phoneFull = () => { const n = val("phone").replace(/[^\d]/g, ""); return n ? val("dial") + n.replace(/^0+/, "") : ""; };
     function validate() {
       let ok = true;
       const need = (id, msg, test = (v) => !!v) => { const good = test(val(id)); setErr(id, good ? "" : msg); if (!good) ok = false; };
       const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-      const phoneOk = (v) => v.replace(/\D/g, "").length >= 8;
+      const phoneOk = () => val("phone").replace(/\D/g, "").length >= 6;
       if (type === "hotel") {
         need("firstName", "Enter a first name"); need("lastName", "Enter a last name"); need("email", "Enter a valid email", emailOk);
         if (val("phone")) need("phone", "Enter a valid phone number", phoneOk);
+        if (document.querySelector('input[name="who"]:checked')?.value === "other") { need("gFirst", "Enter the guest's first name"); need("gLast", "Enter the guest's last name"); }
       } else {
         for (let i = 0; i < (+sel.search.adults || 1); i++) {
           need(`p${i}_first`, "Required"); need(`p${i}_last`, "Required"); need(`p${i}_gender`, "Required");
@@ -274,72 +324,119 @@
       if (!ok) document.querySelector(".field.err input, .field.err select")?.focus();
       return ok;
     }
-    function splitPhone(raw) {
-      const digits = raw.replace(/[^\d+]/g, "");
-      if (digits.startsWith("+")) {
-        const d = digits.slice(1);
-        const cc = d.startsWith("1") ? "1" : d.slice(0, 2);
-        return { phoneCountryCode: cc, phoneNumber: "+" + d, local: d.slice(cc.length) };
+
+    // ─── Hold the room / seats (prebook) ───
+    async function hold() {
+      const key = holdKey();
+      if (held && heldKey === key) return held;
+      const voucherCode = val("voucher") || undefined;
+      let pb;
+      if (type === "hotel") {
+        const adults = sel.stay.adults || 1;
+        const addons = [];
+        if (extras.uber) addons.push({ addon: "uber", value: extras.uber.value, currency: "USD", adults });
+        if (extras.esim) addons.push({ addon: "esimply", value: extras.esim.price, currency: extras.esim.currency, adults,
+          addonDetails: { package_id: extras.esim.packageId, destination_code: extras.esim.destinationCode, start_date: sel.stay.checkin, end_date: sel.stay.checkout } });
+        pb = (await PS.api("/api/hotels/prebook", { method: "POST", body: { offerId: sel.offer.offerId, voucherCode, usePaymentSdk: true, ...(addons.length ? { addons } : {}) } })).data;
+      } else {
+        const phone = phoneFull();
+        const passengers = Array.from({ length: +sel.search.adults || 1 }, (_, i) => ({
+          type: "ADT", firstName: val(`p${i}_first`), lastName: val(`p${i}_last`), gender: val(`p${i}_gender`),
+          birthday: val(`p${i}_dob`), nationality: val(`p${i}_nat`), documentType: "passport",
+          documentNumber: val(`p${i}_doc`), documentExpiry: val(`p${i}_exp`), documentIssueCountry: val(`p${i}_iss`),
+          email: i === 0 ? val("email") : undefined,
+        }));
+        pb = (await PS.api("/api/flights/prebook", { method: "POST", body: {
+          offerId: sel.offer.offerId, usePaymentSdk: true, voucherCode,
+          contact: { firstName: passengers[0].firstName, lastName: passengers[0].lastName, email: val("email"), phoneNumber: phone, phoneCountryCode: val("dial").replace("+", "") },
+          passengers,
+        }})).data;
+        pb._passengers = passengers;
       }
-      return { phoneCountryCode: "1", phoneNumber: "+1" + digits, local: digits };
+      if (!pb?.prebookId || !pb?.secretKey) throw new Error("We couldn't hold this option. Please pick another one.");
+      held = pb; heldKey = key;
+      return pb;
     }
 
+    // Promo code: Apply holds the room with the code, so the discount shows before paying
+    const promoMsg = document.getElementById("promoMsg");
+    async function applyPromo() {
+      const code = val("voucher");
+      const btn = document.getElementById("applyBtn");
+      if (!code) { promoMsg.innerHTML = ""; repaint(); return; }
+      if (type === "flight" && !validate()) { promoMsg.innerHTML = `<div class="hint">Fill in the traveler details first, then apply your code.</div>`; return; }
+      btn.disabled = true; btn.textContent = "Applying…";
+      try {
+        const pb = await hold();
+        if (pb.voucherTotalAmount) promoMsg.innerHTML = `<div class="co-promo-ok">${PS.icon("check", 16, 2.6)}Code applied: −${PS.money(pb.voucherTotalAmount, pb.currency, 2)}</div>`;
+        else promoMsg.innerHTML = `<div class="co-promo-bad">${PS.icon("alert", 16)}This code doesn't apply to this booking.</div>`;
+        repaint();
+      } catch (e) {
+        // LiteAPI rejects unknown/expired codes at the hold; remove the code so checkout can carry on
+        promoMsg.innerHTML = `<div class="co-promo-bad">${PS.icon("alert", 16)}"${PS.esc(code)}" isn't valid or has expired, so it was removed.</div>`;
+        document.getElementById("voucher").value = "";
+        held = null; repaint();
+      }
+      btn.disabled = false; btn.textContent = "Apply";
+    }
+    document.getElementById("applyBtn").onclick = applyPromo;
+    document.getElementById("voucher").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyPromo(); } });
+
+    // ─── Continue: validate → hold → payment appears below ───
     const btn = document.getElementById("continueBtn");
     const msg = document.getElementById("formMsg");
+    const lockForm = (locked) => {
+      document.querySelectorAll("#formCol .co-panel:not(#payPanel) input, #formCol .co-panel:not(#payPanel) select, #formCol .co-panel:not(#payPanel) textarea, #formCol .co-panel:not(#payPanel) button").forEach(el => { el.disabled = locked; });
+      document.getElementById("formCol").classList.toggle("co-locked", locked);
+    };
     btn.onclick = async () => {
+      if (btn.dataset.mode === "edit") { // back to editing the details; the hold is kept
+        lockForm(false); document.getElementById("payPanel").classList.add("hidden");
+        btn.dataset.mode = ""; btn.innerHTML = `Continue to payment ${PS.icon("right", 18)}`; return;
+      }
       msg.innerHTML = "";
       if (!validate()) return;
       btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Holding your ${type === "hotel" ? "room" : "seats"}…`;
-      const voucherCode = val("voucher") || undefined;
-      let pb, holder, passengers;
-      try {
-        if (type === "hotel") {
-          holder = { firstName: val("firstName"), lastName: val("lastName"), email: val("email"), phone: val("phone") };
-          const adults = sel.stay.adults || 1;
-          const addons = [];
-          if (extras.uber) addons.push({ addon: "uber", value: extras.uber.value, currency: "USD", adults });
-          if (extras.esim) addons.push({ addon: "esimply", value: extras.esim.price, currency: extras.esim.currency, adults,
-            addonDetails: { package_id: extras.esim.packageId, destination_code: extras.esim.destinationCode, start_date: sel.stay.checkin, end_date: sel.stay.checkout } });
-          const r = await PS.api("/api/hotels/prebook", { method: "POST", body: { offerId: sel.offer.offerId, voucherCode, usePaymentSdk: true, ...(addons.length ? { addons } : {}) } });
-          pb = r.data;
-        } else {
-          const ph = splitPhone(val("phone"));
-          passengers = Array.from({ length: +sel.search.adults || 1 }, (_, i) => ({
-            type: "ADT", firstName: val(`p${i}_first`), lastName: val(`p${i}_last`), gender: val(`p${i}_gender`),
-            birthday: val(`p${i}_dob`), nationality: val(`p${i}_nat`), documentType: "passport",
-            documentNumber: val(`p${i}_doc`), documentExpiry: val(`p${i}_exp`), documentIssueCountry: val(`p${i}_iss`),
-            email: i === 0 ? val("email") : undefined,
-          }));
-          holder = { firstName: passengers[0].firstName, lastName: passengers[0].lastName, email: val("email"), phone: ph.phoneNumber };
-          const r = await PS.api("/api/flights/prebook", { method: "POST", body: {
-            offerId: sel.offer.offerId, usePaymentSdk: true, voucherCode,
-            contact: { firstName: holder.firstName, lastName: holder.lastName, email: holder.email, phoneNumber: ph.phoneNumber, phoneCountryCode: ph.phoneCountryCode },
-            passengers,
-          }});
-          pb = r.data;
+      let pb;
+      try { pb = await hold(); }
+      catch (e) {
+        btn.disabled = false; btn.innerHTML = `Continue to payment ${PS.icon("right", 18)}`;
+        if (val("voucher")) {
+          promoMsg.innerHTML = `<div class="co-promo-bad">${PS.icon("alert", 16)}"${PS.esc(val("voucher"))}" isn't valid or has expired, so it was removed. Tap Continue again.</div>`;
+          document.getElementById("voucher").value = ""; held = null; repaint();
+          promoMsg.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
         }
-        if (!pb?.prebookId || !pb?.secretKey) throw new Error("We couldn't hold this option. Please pick another one.");
-      } catch (e) {
-        btn.disabled = false; btn.innerHTML = `Continue to payment ${PS.icon("arrow", 18)}`;
         msg.innerHTML = `<div class="alert error" style="margin-top:14px">${PS.icon("alert", 18)}<div><b>That ${type === "hotel" ? "room" : "fare"} is no longer available at this price.</b><br>${PS.esc(e.message)}<br><a class="link" href="${type === "hotel" ? (sel.back || "/hotels") : PS.url("/flights", sel.search)}">Choose another ${type === "hotel" ? "room" : "flight"}</a></div></div>`;
         return;
       }
-
-      // Save everything the confirmation page needs to finalize the booking after payment.
-      const pending = { type, prebookId: pb.prebookId, transactionId: pb.transactionId, holder, sel, extras: { ...extras }, voucherCode, price: pb.price, currency: pb.currency, createdAt: Date.now() };
+      // Everything the confirmation page needs to finalize the booking after payment
+      const someoneElse = type === "hotel" && document.querySelector('input[name="who"]:checked')?.value === "other";
+      const holder = type === "hotel"
+        ? { firstName: val("firstName"), lastName: val("lastName"), email: val("email"), phone: phoneFull() }
+        : { firstName: pb._passengers[0].firstName, lastName: pb._passengers[0].lastName, email: val("email"), phone: phoneFull() };
+      const pending = {
+        type, prebookId: pb.prebookId, transactionId: pb.transactionId, holder, sel, extras: { ...extras }, voucherCode: val("voucher") || undefined,
+        guest: someoneElse ? { firstName: val("gFirst"), lastName: val("gLast") } : null,
+        remarks: type === "hotel" ? val("remarks") || undefined : undefined,
+        work: document.querySelector('input[name="work"]:checked')?.value === "yes",
+        price: pb.price, currency: pb.currency, createdAt: Date.now(),
+      };
       PS.local.set("ps_pending_" + pb.prebookId, pending);
       PS.store.set("ps_pending_" + pb.prebookId, pending);
-
+      lockForm(true);
+      btn.disabled = false; btn.dataset.mode = "edit"; btn.classList.remove("btn-primary"); btn.classList.add("btn-ghost");
+      btn.innerHTML = `${PS.icon("left", 16)} Edit details`;
       showPayment(pb);
     };
 
+    let sdkFor = null;
     async function showPayment(pb) {
-      steps(2);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      const panel = document.getElementById("payPanel");
+      panel.classList.remove("hidden");
       const expected = type === "hotel" ? sel.offer.total + extrasTotal() : sel.offer.pricing?.display?.total;
       const changed = pb.price != null && expected != null && Math.abs(pb.price - expected) > 0.5;
-      // Hotels: use the fees and cancellation terms confirmed by the hold (prebook), not the earlier search.
-      let confirmedFees = null, confirmedCancel = null;
+      // Hotels: use the fees and cancellation terms confirmed by the hold (prebook), not the earlier search
       if (type === "hotel" && Array.isArray(pb.roomTypes)) {
         const rates = pb.roomTypes.flatMap(rt => rt.rates || []);
         const map = new Map();
@@ -350,32 +447,22 @@
           const cur = map.get(k) || { description: label, amount: 0, currency: t.currency || pb.currency };
           cur.amount = Math.round((cur.amount + t.amount) * 100) / 100; map.set(k, cur);
         });
-        confirmedFees = [...map.values()];
-        sel.offer.taxesExcluded = confirmedFees;
-        const cp = rates[0]?.cancellationPolicies;
-        if (cp) confirmedCancel = { refundable: cp.refundableTag === "RFN", infos: cp.cancelPolicyInfos || [] };
+        sel.offer.taxesExcluded = [...map.values()];
       }
-      const nightsN = type === "hotel" ? PS.nights(sel.stay.checkin, sel.stay.checkout) : 1;
-      const dueFees = type === "hotel" ? PS.hotelFees(sel.offer, nightsN) : [];
-      sumCol.innerHTML = summaryHTML({ total: pb.price ?? expected, currency: pb.currency, voucher: pb.voucherTotalAmount });
-      formCol.innerHTML = `
-        ${changed ? `<div class="alert warn" style="margin-bottom:16px">${PS.icon("alert", 18)}<div><b>The price changed</b> from ${PS.money(expected, pb.currency, 2)} to <b>${PS.money(pb.price, pb.currency, 2)}</b> while we held your ${type === "hotel" ? "room" : "seats"}. The new total is shown on the right.</div></div>` : ""}
-        ${pb.cancellationChanged ? `<div class="alert warn" style="margin-bottom:16px">${PS.icon("alert", 18)}<div>The cancellation policy was updated by the ${type === "hotel" ? "hotel" : "airline"}. Please review it before paying.</div></div>` : ""}
-        <div class="panel" id="payPanel">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px"><h2 style="margin:0">Payment</h2><span class="tag green">${PS.icon("lock", 13)}Held for you</span></div>
-          <div id="sandboxNote"></div>
-          <div id="paymentPortal" class="pay-box"><div class="loading-note" style="border:0;padding:0"><span class="spinner"></span>Loading secure payment…</div></div>
-        </div>
-        <p class="price-sub" style="text-align:center;margin-top:12px">By paying you agree to the ${type === "hotel" ? "hotel's" : "airline's"} booking terms and the cancellation policy shown.</p>`;
-
+      repaint();
+      document.getElementById("priceNote").innerHTML = changed ? `<div class="alert warn" style="margin-bottom:14px">${PS.icon("alert", 18)}<div><b>The price changed</b> from ${PS.money(expected, pb.currency, 2)} to <b>${PS.money(pb.price, pb.currency, 2)}</b> while we held your ${type === "hotel" ? "room" : "seats"}. The new total is shown in the summary.</div></div>` : "";
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (sdkFor === pb.prebookId) return; // same hold: the payment form is already there
+      sdkFor = pb.prebookId;
+      const portal = document.getElementById("paymentPortal");
+      portal.innerHTML = `<div class="loading-note" style="border:0;padding:0"><span class="spinner"></span>Loading secure payment…</div>`;
       let cfg = { publicKey: "sandbox" };
       try { const c = await PS.api("/api/payment-sdk/config"); cfg = c.configTemplate || cfg; if (c.isSandbox) document.getElementById("sandboxNote").innerHTML = `<div class="alert info" style="margin-bottom:14px">${PS.icon("info", 18)}<div><b>Test mode.</b> Use card 4242 4242 4242 4242, any future expiry and any CVC. No real charge is made.</div></div>`; } catch {}
-
       if (typeof LiteAPIPayment !== "function") {
-        document.getElementById("paymentPortal").innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>The payment form didn't load. Check your connection or disable ad blockers, then <a class="link" href="javascript:location.reload()">reload</a>.</div></div>`;
+        portal.innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>The payment form didn't load. Check your connection or disable ad blockers, then <a class="link" href="javascript:location.reload()">reload</a>.</div></div>`;
         return;
       }
-      document.getElementById("paymentPortal").innerHTML = "";
+      portal.innerHTML = "";
       window.liteAPIPayment = new LiteAPIPayment({
         publicKey: cfg.publicKey || "sandbox",
         appearance: { theme: "flat" },

@@ -59,9 +59,12 @@
     async function book() {
       const h = pending.holder || {};
       if (type === "hotel") {
+        const g = pending.guest || h; // the guest checking in (may differ from the booker)
         const r = await PS.api("/api/hotels/book", { method: "POST", body: {
           prebookId, transactionId: transactionId || pending.transactionId,
-          guestFirstName: h.firstName, guestLastName: h.lastName, guestEmail: h.email,
+          guestFirstName: g.firstName, guestLastName: g.lastName, guestEmail: h.email,
+          holderFirstName: h.firstName, holderLastName: h.lastName, phone: h.phone || undefined,
+          remarks: pending.remarks || undefined,
           voucherCode: pending.voucherCode || undefined,
         }});
         return r.data;

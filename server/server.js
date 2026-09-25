@@ -380,13 +380,19 @@ app.post("/api/hotels/prebook", async (req, res) => {
 app.post("/api/hotels/book", async (req, res) => {
   try {
     const { prebookId, transactionId, guestFirstName, guestLastName, guestEmail, user_email } = req.body;
+    // Booker (holder) and the guest checking in can differ ("Someone else"); special requests go to the hotel.
+    const clip = (v, n) => (v == null ? undefined : String(v).trim().slice(0, n) || undefined);
+    const holderFirst = clip(req.body.holderFirstName, 60) || guestFirstName, holderLast = clip(req.body.holderLastName, 60) || guestLastName;
+    const phone = clip(req.body.phone, 24);
+    const remarks = clip(req.body.remarks, 500);
 
     const bookData = {
       prebookId,
       holder: {
-        firstName: guestFirstName,
-        lastName: guestLastName,
-        email: guestEmail
+        firstName: holderFirst,
+        lastName: holderLast,
+        email: guestEmail,
+        phone,
       },
       payment: {
         method: transactionId ? "TRANSACTION_ID" : "NUITEE_PAY",
@@ -396,7 +402,8 @@ app.post("/api/hotels/book", async (req, res) => {
         occupancyNumber: 1,
         firstName: guestFirstName,
         lastName: guestLastName,
-        email: guestEmail
+        email: guestEmail,
+        remarks,
       }]
     };
 
