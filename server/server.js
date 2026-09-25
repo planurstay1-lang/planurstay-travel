@@ -179,6 +179,7 @@ async function sendEmail({ to, subject, html, replyTo }) {
 }
 const support = require("./modules/support").createSupport({ db, jwt, JWT_SECRET, apiKey: () => key, isSandbox: liveKey.isSandbox, sendEmail, isAdmin: admin.isAdmin });
 support.register(app);
+require("./modules/saved").createSaved({ db, jwt, JWT_SECRET }).register(app);
 require("./modules/reminders").createReminders({ db, apiKey: () => key, jwt, JWT_SECRET, sendEmail, appUrl: () => APP_URL }).register(app);
 require("./modules/webhooks").createWebhooks({ db, sendEmail }).register(app);
 require("./modules/chat").createChat({ port: PORT, support }).register(app);

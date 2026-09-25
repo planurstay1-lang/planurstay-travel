@@ -16,11 +16,10 @@
       <div class="skel" style="height:34px;width:45%;margin:10px 0 18px"></div>
       <div class="skel" style="height:428px;border-radius:26px"></div>
     </div>
+    <div id="hdTabs"></div>
+    <div id="overview"></div>
     <div id="roomsWrap"></div>
-    <div class="hd-layout">
-      <div id="mainCol"></div>
-      <aside class="sticky-book" id="bookCol"></aside>
-    </div>
+    <div id="mainCol" class="hd-main"></div>
   </main>
 
   <script src="/js/ps.js"></script>
@@ -57,10 +56,10 @@
       if (!hotel || !hotel.name) throw new Error("Hotel not found");
     } catch (e) {
       document.getElementById("top").innerHTML = `<div class="empty" style="margin-top:20px"><div class="ei">${PS.icon("bed", 28)}</div><h3>We couldn't find this hotel</h3><p>${PS.esc(e.message)}</p><a class="btn btn-primary" href="${backUrl}">Back to results</a></div>`;
-      document.querySelector(".hd-layout").remove();
       return;
     }
     document.title = `${hotel.name} — PlanurStay`;
+    PS.searchPill({ placeId: q.placeId, dest: q.dest || hotel.city, destDetail: q.destDetail, checkin: PS.iso(checkin), checkout: PS.iso(checkout), adults: occ.adults, rooms: occ.rooms, children: occ.childAges.join(",") });
     document.getElementById("crumbName").textContent = hotel.name;
 
     const images = (hotel.hotelImages || []).map(i => i.urlHd || i.url).filter(Boolean);
@@ -77,7 +76,10 @@
           <h1>${PS.esc(hotel.name)}</h1>
           <div class="addr" style="font-size:14.5px;margin-top:8px">${PS.icon("pin", 16)}${PS.esc([hotel.address, hotel.city, hotel.zip].filter(Boolean).join(", "))}${hotel.location?.latitude ? ` · <a class="link" href="#locPanel">View on map</a>` : ""}</div>
         </div>
-        ${rating ? `<div class="rating-row" style="margin:0"><span class="score ${rating >= 8.5 ? "great" : ""}" style="min-width:48px;height:38px;font-size:17px">${rating.toFixed(1)}</span><div><b style="display:block">${PS.ratingWord(rating)}</b><small>${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></div>` : ""}
+        <div class="hd-head-right">
+          ${rating ? `<a class="rating-row" href="#reviewsSec" style="margin:0"><span class="score ${rating >= 8.5 ? "great" : ""}" style="min-width:48px;height:38px;font-size:17px">${rating.toFixed(1)}</span><div><b style="display:block">${PS.ratingWord(rating)}</b><small>${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></a>` : ""}
+          <button type="button" class="save-btn lg" data-label="1" data-save="${PS.esc(JSON.stringify({ hotelId, name: hotel.name, photo: images[0] || "", city: hotel.city || "", stars: hotel.starRating || 0, rating }))}"></button>
+        </div>
       </div>
       <div class="gallery">
         ${images.slice(0, 5).map((src, i) => i === 0
@@ -117,19 +119,43 @@
     const sa = hotel.sentiment_analysis || {};
     const times = hotel.checkinCheckoutTimes || {};
     const roomsById = new Map((hotel.rooms || []).map(r => [r.id, r]));
-    document.getElementById("mainCol").innerHTML = `
+    const FAC_ICON = [[/wi-?fi|internet/i, "wifi"], [/parking|valet|garage/i, "car"], [/restaurant|breakfast|dining|bar|coffee|lounge/i, "coffee"], [/pet/i, "home"],
+      [/fitness|gym|spa|sauna|massage|pool/i, "star"], [/24-hour|front desk|reception|concierge/i, "clock"], [/luggage|storage/i, "suitcase"], [/family|child|babysit/i, "users"],
+      [/air condition|heating/i, "sun"], [/business|meeting|banquet|conference/i, "landmark"], [/laundry|cleaning|ironing/i, "refresh"], [/shuttle|airport|transfer/i, "plane"],
+      [/non-smoking|smoke/i, "shield"], [/terrace|garden|beach/i, "sun"], [/elevator|lift/i, "arrow"], [/safe|security/i, "lock"]];
+    const facIcon = (f) => (FAC_ICON.find(([re]) => re.test(f)) || [0, "check"])[1];
+    const cats = sa.categories || [];
 
+    // ─── Sticky section tabs ───
+    const TABS = [["overview", "Overview"], ["facSec", "Facilities"], ["roomsPanel", "Rooms"], ...(rating ? [["reviewsSec", "Reviews"]] : []), ["descSec", "Description"], ["askSec", "Ask AI"]];
+    document.getElementById("hdTabs").innerHTML = `<nav class="hd-tabs" aria-label="Hotel sections"><div class="hd-tabs-in">
+      <div class="hd-tab-links">${TABS.map(([id, l], k) => `<a href="#${id}" data-tab="${id}" class="${k === 0 ? "on" : ""}">${l}${id === "askSec" ? ' <em class="beta">Beta</em>' : ""}</a>`).join("")}</div>
+      <div class="hd-tab-book"><span class="hd-from" id="hdFrom"></span><a href="#roomsPanel" class="btn btn-primary">Select rooms</a></div>
+    </div></nav>`;
+
+    // ─── Overview: smart highlights, popular facilities, review highlights ───
+    document.getElementById("overview").innerHTML = `
+      <section class="hd-sec" id="hlSec" hidden><h2>Smart highlights</h2><div class="hl-grid" id="hlGrid"></div></section>
+      ${facilities.length ? `<section class="hd-sec" id="facSec"><div class="sec-head"><h2>Popular facilities</h2>${facilities.length > 16 ? `<button type="button" class="link-btn u" id="allFac">See all ${facilities.length} facilities</button>` : ""}</div>
+        <div class="fac-row">${facilities.slice(0, 16).map(f => `<span class="fac">${PS.icon(facIcon(f), 18)}${PS.esc(f)}</span>`).join("")}</div></section>` : `<span id="facSec"></span>`}
+      ${rating ? `<section class="hd-sec"><div class="sec-head"><h2>Review highlights</h2><a class="link-btn u" href="#reviewsSec">Read all reviews</a></div>
+        <div class="rv-sum"><span class="score ${rating >= 8.5 ? "great" : ""}">${rating.toFixed(1)}</span><div><b>${PS.ratingWord(rating)}</b><small>Based on ${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></div>
+        ${(sa.pros || []).length ? `<div class="rv-quotes">${sa.pros.slice(0, 3).map(p => `<span>👍 ${PS.esc(p)}</span>`).join("")}</div>` : ""}</section>` : ""}`;
+
+    // ─── After rooms: reviews, description, location, good to know, Ask AI ───
+    document.getElementById("mainCol").innerHTML = `
+      ${rating ? `<section class="panel" id="reviewsSec"><div class="sec-head"><h2>Guest reviews</h2><select class="select" id="rvSort" aria-label="Sort reviews"><option value="newest">Newest first</option><option value="highest">Highest score</option><option value="lowest">Lowest score</option></select></div>
+        <div class="rv-layout">
+          <div class="rv-side">
+            <div class="rv-sum"><span class="score ${rating >= 8.5 ? "great" : ""}">${rating.toFixed(1)}</span><div><b>${PS.ratingWord(rating)}</b><small>Based on ${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></div>
+            ${cats.length ? `<h3>Top comments from travellers</h3><div class="rv-cats">${cats.slice(0, 8).map(c => `<span>${PS.esc(c.name)} (${(+c.rating).toFixed(1)})</span>`).join("")}</div>` : ""}
+            <div id="rvWho"></div>
+          </div>
+          <div class="rv-list"><div id="rvItems"><div class="skel" style="height:110px;border-radius:14px"></div></div>
+            <div class="rv-more"><button type="button" class="btn btn-ghost" id="rvMore" hidden>Load more reviews</button><span id="rvCount"></span></div></div>
+        </div></section>` : ""}
+      <section class="panel" id="descSec"><h2>Property description</h2><div class="hd-desc rich clamped" id="desc">${cleanHTML(hotel.hotelDescription) || "<p>No description available.</p>"}</div><button class="link" id="descMore" style="background:none;border:0;padding:0;margin-top:8px">Read more</button></section>
       ${hotel.location?.latitude ? `<section class="panel" id="wxPanel"></section>` : ""}
-      <section class="panel"><h2>About this property</h2><div class="hd-desc clamped" id="desc">${cleanHTML(hotel.hotelDescription) || "<p>No description available.</p>"}</div><button class="link" id="descMore" style="background:none;border:0;padding:0;margin-top:8px">Read more</button></section>
-      ${facilities.length ? `<section class="panel"><h2>Popular amenities</h2><div class="amen-grid">${facilities.slice(0, 24).map(f => `<div class="amen">${PS.icon("check", 16, 2.6)}${PS.esc(f)}</div>`).join("")}</div></section>` : ""}
-      ${rating ? `<section class="panel"><h2>Guest reviews</h2>
-        <div class="review-summary"><span class="score ${rating >= 8.5 ? "great" : ""}">${rating.toFixed(1)}</span><div><b style="font-size:20px;color:var(--ink)">${PS.ratingWord(rating)}</b><div style="color:var(--text-2)">Based on ${(hotel.reviewCount || 0).toLocaleString()} verified reviews</div></div></div>
-        ${(sa.categories || []).length ? `<div class="cat-bars">${sa.categories.slice(0, 8).map(c => `<div class="cat-bar"><small><span>${PS.esc(c.name)}</span><span>${(+c.rating).toFixed(1)}</span></small><div class="track"><i style="width:${Math.min(100, c.rating * 10)}%"></i></div></div>`).join("")}</div>` : ""}
-        ${(sa.pros || sa.cons) ? `<div class="pros-cons">
-          ${(sa.pros || []).length ? `<div><b style="color:var(--green)">Guests liked</b><ul>${sa.pros.map(p => `<li>👍 ${PS.esc(p)}</li>`).join("")}</ul></div>` : ""}
-          ${(sa.cons || []).length ? `<div><b style="color:var(--text-2)">Could be better</b><ul>${sa.cons.map(p => `<li>👎 ${PS.esc(p)}</li>`).join("")}</ul></div>` : ""}
-        </div>` : ""}
-      </section>` : ""}
       ${hotel.location?.latitude ? `<section class="panel" id="locPanel"><h2>Location</h2>
         <div class="addr" style="font-size:14.5px">${PS.icon("pin", 16)}${PS.esc([hotel.address, hotel.city, hotel.zip].filter(Boolean).join(", "))}</div>
         <div id="hdMap" style="height:340px;border-radius:14px;overflow:hidden;margin-top:14px;background:var(--line-2)"></div>
@@ -141,6 +167,12 @@
           ${times.checkout ? `<div>${PS.icon("clock", 18)}<div><b>Check-out</b><br><span style="color:var(--text-2)">Until ${PS.esc(times.checkout)}</span></div></div>` : ""}
           ${hotel.hotelImportantInformation ? `<div>${PS.icon("info", 18)}<div><b>Important information</b><br><span style="color:var(--text-2)">${PS.esc(hotel.hotelImportantInformation)}</span></div></div>` : ""}
         </div>
+      </section>
+      <section class="panel ask-sec" id="askSec"><h2>${PS.icon("sparkle", 22)} Ask AI about this hotel <em class="beta">Beta</em></h2>
+        <p style="color:var(--text-2);margin:4px 0 12px">Answers come from the hotel's own information. Check important details with the hotel before you travel.</p>
+        <div class="ask-sugg">${["Is there parking?", "Is breakfast included?", "How far is the airport?", "Is there a pool?", "Are pets allowed?"].map(x => `<button type="button" class="pill">${x}</button>`).join("")}</div>
+        <form class="ask-form" id="askForm"><input id="askIn" maxlength="300" placeholder="Ask anything, e.g. Is there a gym?" aria-label="Ask a question about this hotel"><button class="btn btn-primary" type="submit">Ask</button></form>
+        <div id="askOut"></div>
       </section>`;
     document.getElementById("roomsWrap").innerHTML = `
       <section id="roomsPanel" class="rooms-sec">
@@ -152,12 +184,92 @@
             <div class="stepbox"><span class="lbl">Rooms</span><div class="stepper"><button type="button" data-occ="rooms" data-d="-1" aria-label="Fewer rooms">−</button><output id="oRooms"></output><button type="button" data-occ="rooms" data-d="1" aria-label="More rooms">+</button></div></div>
           </div>
         </div>
+        <div id="memberNudge"></div>
         <div class="pill-row" id="roomFilters"></div>
         <div id="rooms"></div>
       </section>`;
     const desc = document.getElementById("desc"), more = document.getElementById("descMore");
     if (desc.scrollHeight <= 190) more.remove();
     more && (more.onclick = () => { desc.classList.toggle("clamped"); more.textContent = desc.classList.contains("clamped") ? "Read more" : "Show less"; });
+
+    // ─── Save (♥) ───
+    PS.saved.bind(document.getElementById("top"));
+
+    // ─── Tabs follow the scroll position ───
+    (() => {
+      const links = [...document.querySelectorAll(".hd-tab-links a")];
+      const secs = links.map(l => document.getElementById(l.dataset.tab)).filter(Boolean);
+      const setOn = (id) => links.forEach(l => l.classList.toggle("on", l.dataset.tab === id));
+      const onScroll = () => {
+        const y = window.scrollY + 160;
+        let cur = secs[0]?.id;
+        for (const sec of secs) if (sec.getBoundingClientRect().top + window.scrollY <= y) cur = sec.id;
+        setOn(cur);
+        document.querySelector(".hd-tabs")?.classList.toggle("stuck", (document.getElementById("hdTabs").getBoundingClientRect().top <= 72));
+      };
+      addEventListener("scroll", onScroll, { passive: true }); onScroll();
+    })();
+
+    // ─── Smart highlights (AI, cached) ───
+    PS.api(`/api/hotels/${encodeURIComponent(hotelId)}/highlights`).then(r => {
+      const list = r.data || []; if (!list.length) return;
+      const ic = ["pin", "star", "gift"];
+      document.getElementById("hlGrid").innerHTML = list.map((h, k) => `<div class="hl-card"><b>${PS.icon(ic[k % 3], 20)}${PS.esc(h.title)}</b><p>${PS.esc(h.description)}</p></div>`).join("");
+      document.getElementById("hlSec").hidden = false;
+    }).catch(() => {});
+
+    // ─── All facilities ───
+    document.getElementById("allFac")?.addEventListener("click", () => {
+      const back = document.createElement("div"); back.className = "modal-back";
+      back.innerHTML = `<div class="modal" style="width:min(720px,100%)" role="dialog" aria-modal="true" aria-label="All facilities"><div class="modal-head"><h2>All facilities</h2><button class="modal-close" aria-label="Close">${PS.icon("x", 20)}</button></div>
+        <div class="modal-body"><div class="fac-row all">${facilities.map(f => `<span class="fac">${PS.icon(facIcon(f), 18)}${PS.esc(f)}</span>`).join("")}</div></div></div>`;
+      const close = () => { back.remove(); document.body.style.overflow = ""; };
+      back.addEventListener("click", (e) => { if (e.target === back) close(); });
+      back.querySelector(".modal-close").onclick = close;
+      document.body.appendChild(back); document.body.style.overflow = "hidden";
+    });
+
+    // ─── Guest reviews ───
+    if (rating) {
+      const rv = { sort: "newest", offset: 0, shown: [] };
+      const TYPE = { couple: ["Couple", "heart"], family: ["Family", "users"], solo: ["Solo", "user"], group: ["Friends/Group", "users"], business: ["Business", "suitcase"], other: ["Others", "user"] };
+      const typeLabel = (t) => String(t || "").replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
+      const clip = (t, n) => t.length > n ? `${PS.esc(t.slice(0, n).replace(/\s+\S*$/, ""))}… <button type="button" class="link-btn more">Show more</button><span class="full" hidden>${PS.esc(t)}</span>` : PS.esc(t);
+      const card = (v) => `<article class="rv-item"><div class="rv-top"><div><b>${PS.esc(v.name)}</b>${v.type ? `<span class="rv-type"> · ${PS.esc(typeLabel(v.type))}</span>` : ""}<small>${v.date ? PS.fmtDay(v.date.slice(0, 10)) : ""}</small></div><span class="score ${v.score >= 8.5 ? "great" : ""}">${Math.round(v.score * 10) / 10}</span></div>
+        ${v.headline ? `<h4>${PS.esc(v.headline)}</h4>` : ""}
+        ${v.pros ? `<p class="pro">${clip(v.pros, 240)}</p>` : ""}${v.cons ? `<p class="con">${clip(v.cons, 180)}</p>` : ""}</article>`;
+      async function loadReviews(reset) {
+        if (reset) { rv.offset = 0; rv.shown = []; }
+        const r = await PS.api(`/api/hotels/${encodeURIComponent(hotelId)}/reviews?sort=${rv.sort}&offset=${rv.offset}&limit=4`).catch(() => null);
+        const d = r?.data; const items = document.getElementById("rvItems");
+        if (!d || (!d.reviews.length && !rv.shown.length)) { items.innerHTML = `<p style="color:var(--text-2)">No written reviews yet.</p>`; return; }
+        if (reset && d.types?.length) document.getElementById("rvWho").innerHTML = `<h3>Who stays here</h3><div class="rv-who">${d.types.slice(0, 6).map(t => `<div><span class="ic">${PS.icon((TYPE[t.type] || TYPE.other)[1], 20)}</span><small>${(TYPE[t.type] || TYPE.other)[0]}</small><b>${t.pct}%</b></div>`).join("")}</div>`;
+        rv.shown.push(...d.reviews); rv.offset += d.reviews.length;
+        items.innerHTML = rv.shown.map(card).join("");
+        items.querySelectorAll(".more").forEach(b => b.onclick = () => { const f = b.nextElementSibling; b.parentElement.innerHTML = f.innerHTML; });
+        const more = document.getElementById("rvMore");
+        more.hidden = rv.offset >= d.withText;
+        document.getElementById("rvCount").textContent = `Showing ${rv.shown.length} of ${(d.total || rv.shown.length).toLocaleString()} reviews`;
+      }
+      document.getElementById("rvMore").onclick = () => loadReviews(false);
+      document.getElementById("rvSort").onchange = (e) => { rv.sort = e.target.value; loadReviews(true); };
+      const rio = new IntersectionObserver((en) => { if (en.some(x => x.isIntersecting)) { rio.disconnect(); loadReviews(true); } }, { rootMargin: "400px" });
+      rio.observe(document.getElementById("reviewsSec"));
+    }
+
+    // ─── Ask AI about this hotel ───
+    (() => {
+      const form = document.getElementById("askForm"), input = document.getElementById("askIn"), out = document.getElementById("askOut");
+      const ask = async (text) => {
+        text = String(text || "").trim(); if (text.length < 3) return;
+        input.value = text;
+        out.innerHTML = `<div class="ask-a"><span class="spinner" style="width:16px;height:16px;border-width:2px"></span> Looking that up…</div>`;
+        try { const r = await PS.api(`/api/hotels/${encodeURIComponent(hotelId)}/ask?q=${encodeURIComponent(text)}`); out.innerHTML = `<div class="ask-a"><b>${PS.esc(text)}</b><p>${PS.esc(r.data.answer)}</p></div>`; }
+        catch (e) { out.innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>${PS.esc(e.message)}</div></div>`; }
+      };
+      form.onsubmit = (e) => { e.preventDefault(); ask(input.value); };
+      document.querySelectorAll(".ask-sugg .pill").forEach(b => b.onclick = () => ask(b.textContent));
+    })();
 
     // ─── Weather during the stay ───
     const loadWeather = () => {
@@ -182,24 +294,13 @@
       io.observe(mapEl);
     }
 
-    // ─── Booking column ───
-    const bookCol = document.getElementById("bookCol");
+    // ─── Price in the tab bar + member nudge above the rooms ───
     function paintBookBox(from) {
       const n = PS.nights(PS.iso(checkin), PS.iso(checkout));
-      bookCol.innerHTML = `<div class="panel book-box">
-        ${from ? `<div class="from">From</div><div class="price-big">${PS.money(from.total / n, from.currency, 0)}<span style="font-size:15px;font-weight:600;color:var(--text-2)"> /night</span></div><div class="price-sub">${PS.money(from.total, from.currency, 0)} total for ${PS.plural(n, "night")}</div>`
-               : `<div class="from">Live prices</div><div class="price-big" style="font-size:22px">Select dates to see prices</div>`}
-        <div class="book-summary">
-          <div><span>Check-in</span><b>${PS.fmtDay(checkin)}</b></div>
-          <div><span>Check-out</span><b>${PS.fmtDay(checkout)}</b></div>
-          <div><span>Guests</span><b>${PS.plural(occ.adults + occ.childAges.length, "guest")}, ${PS.plural(occ.rooms, "room")}</b></div>
-        </div>
-        <a href="#roomsPanel" class="btn btn-primary btn-block btn-lg">Choose a room</a>
-        <div class="secure-note">${PS.icon("lock", 14)}Your card isn't charged until you confirm</div>
-      </div>
-      <div id="memberNudge"></div>`;
+      document.getElementById("hdFrom").innerHTML = from ? `from <b>${PS.money(from.total / n, from.currency, 0)}</b> / night` : "";
       PS.auth().then(a => {
-        if (!a.loggedIn) document.getElementById("memberNudge").innerHTML = `<div class="alert info" style="margin-top:14px">${PS.icon("tag", 18)}<div><b>Members see lower prices.</b> <a class="link" href="${PS.loginUrl()}">Sign in or join free</a> to unlock member prices (about <span data-save-pct>${PS.savePct()}</span>% off) on this hotel.</div></div>`;
+        const el = document.getElementById("memberNudge");
+        if (el) el.innerHTML = !a.loggedIn && !roomPricing.package ? `<div class="alert info" style="margin-bottom:12px">${PS.icon("tag", 18)}<div><b>Members see lower prices.</b> <a class="link" href="${PS.loginUrl()}">Sign in or join free</a> to unlock member prices (about <span data-save-pct>${PS.savePct()}</span>% off) on this hotel.</div></div>` : "";
       });
     }
     paintBookBox(null);

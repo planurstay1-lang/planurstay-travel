@@ -18,6 +18,7 @@
     swap: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/>',
     sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4M17 5h4M5 17v4M3 19h4"/>',
     send: '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>',
     left: '<path d="m15 18-6-6 6-6"/>',
@@ -72,7 +73,23 @@
   PS.parse = (s) => { if (!s) return null; const [y, m, d] = s.split("-").map(Number); return y ? new Date(y, m - 1, d) : null; };
   PS.addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
   PS.today = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
-  PS.fmtDate = (s, opts = { month: "short", day: "numeric" }) => { const d = typeof s === "string" ? PS.parse(s) : s; return d ? d.toLocaleDateString("en-US", opts) : ""; };
+  // ─── Language (EN / FR / ES) ───
+  const LANGS = { en: "English", fr: "Français", es: "Español" };
+  const I18N_ON = false; // French/Spanish switched off until the translations are fully tested
+  PS.lang = () => {
+    if (!I18N_ON) return "en";
+    let l = null; try { l = JSON.parse(localStorage.getItem("ps_lang")); } catch {}
+    if (LANGS[l]) return l;
+    const n = String(navigator.language || "en").slice(0, 2).toLowerCase();
+    return LANGS[n] ? n : "en";
+  };
+  PS.locale = () => ({ en: "en-US", fr: "fr-FR", es: "es-ES" })[PS.lang()];
+  PS.setLang = (l) => {
+    try { localStorage.setItem("ps_lang", JSON.stringify(l)); } catch {}
+    document.cookie = `ps_lang=${l}; path=/; max-age=31536000; samesite=lax`;
+    location.reload();
+  };
+  PS.fmtDate = (s, opts = { month: "short", day: "numeric" }) => { const d = typeof s === "string" ? PS.parse(s) : s; return d ? d.toLocaleDateString(PS.locale(), opts) : ""; };
   PS.fmtDay = (s) => PS.fmtDate(s, { weekday: "short", month: "short", day: "numeric" });
   PS.nights = (a, b) => Math.max(1, Math.round((PS.parse(b) - PS.parse(a)) / 86400000));
   PS.plural = (n, w, pl) => `${n} ${n === 1 ? w : pl || w + "s"}`;
@@ -217,12 +234,18 @@
           <a href="/membership" class="${active === "rewards" ? "active" : ""}">${PS.icon("gift", 18)}Rewards</a>
         </nav>
         <div class="hdr-right" id="hdrRight">
+          ${I18N_ON ? `<div class="menu-wrap lang-wrap"><button type="button" class="cur-btn" id="langBtn" aria-haspopup="true" aria-label="Language">${PS.lang().toUpperCase()}</button>
+            <div class="menu hidden" id="langMenu">${Object.entries(LANGS).map(([k, n]) => `<button type="button" data-lang="${k}"${k === PS.lang() ? ' class="on"' : ""}>${n}</button>`).join("")}</div></div>` : ""}
           <button type="button" class="cur-btn" id="curBtn" aria-label="Currency: ${PS.cur()}">${PS.cur()}</button>
           <a href="/my-bookings" class="hdr-link hide-sm">Trips</a>
         </div>
       </div>`;
     document.body.prepend(el);
     el.querySelector("#curBtn").onclick = PS.openCurrency;
+    const lb = el.querySelector("#langBtn"), lm = el.querySelector("#langMenu");
+    if (lb) lb.onclick = (e) => { e.stopPropagation(); lm.classList.toggle("hidden"); };
+    if (lm) document.addEventListener("click", () => lm.classList.add("hidden"));
+    if (lm) lm.querySelectorAll("[data-lang]").forEach(b => b.onclick = () => PS.setLang(b.dataset.lang));
 
     const mob = document.createElement("nav");
     mob.className = "mobile-nav";
@@ -298,6 +321,94 @@
       } catch (err) { btn.disabled = false; msg.innerHTML = `<p class="news-err">${PS.esc(err.message)}</p>`; }
     };
   };
+
+  // ─── Compact search in the header (hotel page): tap to open the full search, pre-filled ───
+  PS.searchPill = (init = {}) => {
+    const header = document.querySelector(".site-header"), inner = header?.querySelector(".hdr-inner");
+    if (!inner || inner.querySelector(".hdr-pill")) return;
+    const guests = (+init.adults || 2) + (init.children ? String(init.children).split(",").filter(Boolean).length : 0);
+    const pill = document.createElement("button");
+    pill.type = "button"; pill.className = "hdr-pill"; pill.setAttribute("aria-label", "Change search");
+    pill.innerHTML = `<span class="hp-dest">${PS.esc(init.dest || "Where to?")}</span><i></i><span>${init.checkin ? `${PS.fmtDate(init.checkin)} – ${PS.fmtDate(init.checkout)}` : "Add dates"}</span><i></i><span>${PS.plural(guests, "guest")}</span><span class="hp-go">${PS.icon("search", 16, 2.6)}</span>`;
+    inner.insertBefore(pill, inner.querySelector("#hdrRight"));
+    header.classList.add("has-pill");
+    const panel = document.createElement("div");
+    panel.className = "hdr-panel hidden";
+    panel.innerHTML = `<div class="container"><div class="search-card sleek hdr-search"><div id="hdrSearchHost"></div></div></div>`;
+    header.appendChild(panel);
+    let built = false;
+    const close = () => { panel.classList.add("hidden"); pill.classList.remove("open"); PS.closeCalendars(); };
+    pill.onclick = () => {
+      if (!panel.classList.contains("hidden")) return close();
+      if (!built) { PS.staysSearch(panel.querySelector("#hdrSearchHost"), init); built = true; }
+      panel.classList.remove("hidden"); pill.classList.add("open");
+      setTimeout(() => panel.querySelector(".dest input")?.focus(), 50);
+    };
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !panel.classList.contains("hidden")) close(); });
+  };
+
+  // ─── Saved hotels (♥): on this device for guests, in the account for members ───
+  PS.saved = (() => {
+    const KEY = "ps_saved";
+    const local = () => PS.local.get(KEY) || {};
+    let serverIds = null, loading = null;
+    async function ids() {
+      const a = await PS.auth();
+      if (!a.loggedIn) return new Set(Object.keys(local()));
+      if (serverIds) return serverIds;
+      loading = loading || (async () => {
+        try {
+          const loc = local();
+          if (Object.keys(loc).length) { // move device saves into the account once
+            await PS.api("/api/saved/import", { method: "POST", body: { items: Object.values(loc) } });
+            PS.local.set(KEY, {});
+          }
+          const r = await PS.api("/api/saved");
+          serverIds = new Set((r.data || []).map(x => x.hotelId));
+        } catch { serverIds = new Set(); }
+        return serverIds;
+      })();
+      return loading;
+    }
+    async function toggle(h) {
+      const a = await PS.auth();
+      if (!a.loggedIn) {
+        const loc = local();
+        if (loc[h.hotelId]) delete loc[h.hotelId]; else loc[h.hotelId] = { ...h, savedAt: Date.now() };
+        PS.local.set(KEY, loc);
+        return !!loc[h.hotelId];
+      }
+      const set = await ids();
+      const on = !set.has(h.hotelId);
+      await PS.api("/api/saved", { method: "POST", body: { ...h, saved: on } });
+      on ? set.add(h.hotelId) : set.delete(h.hotelId);
+      return on;
+    }
+    async function list() {
+      const a = await PS.auth();
+      if (!a.loggedIn) return Object.values(local()).sort((x, y) => (y.savedAt || 0) - (x.savedAt || 0));
+      await ids();
+      return (await PS.api("/api/saved")).data || [];
+    }
+    // Heart button: <button class="save-btn" data-save='{"hotelId":…}'>
+    const heart = (on) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>`;
+    async function bind(root = document) {
+      const set = await ids();
+      root.querySelectorAll("[data-save]").forEach(b => {
+        if (b._saveBound) return; b._saveBound = true;
+        let h; try { h = JSON.parse(b.dataset.save); } catch { return; }
+        const paint = (on) => { b.classList.toggle("on", on); b.innerHTML = heart(on) + (b.dataset.label ? `<span>${on ? "Saved" : "Save"}</span>` : ""); b.setAttribute("aria-label", on ? "Remove from saved" : "Save this hotel"); b.setAttribute("aria-pressed", on); };
+        paint(set.has(h.hotelId));
+        b.addEventListener("click", async (e) => {
+          e.preventDefault(); e.stopPropagation();
+          b.disabled = true;
+          try { paint(await toggle(h)); } catch {}
+          b.disabled = false;
+        });
+      });
+    }
+    return { ids, toggle, list, bind };
+  })();
 
   // ─── Assistants ───
   // "Ask AI" in the homepage search opens Nuitee's hotel chatbot (its own corner bubble is hidden).
@@ -390,7 +501,7 @@
       .replace(/\[([^\]]+)\]\((\/[^)\s]*)\)/g, '<a href="$2">$1</a>')
       .replace(/^[-•] (.*)$/gm, "<li>$1</li>").replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m.replace(/\n/g, "")}</ul>`)
       .replace(/\n/g, "<br>");
-    const time = (s) => s ? new Date(s).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "";
+    const time = (s) => s ? new Date(s).toLocaleTimeString(PS.locale(), { hour: "numeric", minute: "2-digit" }) : "";
     const cardHTML = (c) => c.kind === "hotel"
       ? `<a class="cc hotel" href="${PS.esc(c.url)}"><img src="${PS.esc(c.photo || "")}" alt="" loading="lazy"><div><b>${PS.esc(c.name)}</b>
           <small>${c.stars ? PS.stars(c.stars) + " · " : ""}${c.rating ? Number(c.rating).toFixed(1) + " " + PS.ratingWord(c.rating) : "New"}${c.area ? " · " + PS.esc(c.area) : ""}</small>
@@ -614,10 +725,10 @@
     };
     const month = (y, m) => {
       const first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate();
-      let cells = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => `<div class="cdow">${d}</div>`).join("");
+      let cells = ({ fr: ["Di", "Lu", "Ma", "Me", "Je", "Ve", "Sa"], es: ["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"] }[PS.lang()] || ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]).map(d => `<div class="cdow">${d}</div>`).join("");
       for (let i = 0; i < first.getDay(); i++) cells += "<div></div>";
       for (let d = 1; d <= days; d++) cells += dayCell(new Date(y, m, d));
-      return `<div class="cmonth"><div class="ctitle">${first.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</div><div class="cgrid">${cells}</div></div>`;
+      return `<div class="cmonth"><div class="ctitle">${first.toLocaleDateString(PS.locale(), { month: "long", year: "numeric" })}</div><div class="cgrid">${cells}</div></div>`;
     };
     const render = () => {
       const y = view.getFullYear(), m = view.getMonth();
@@ -812,7 +923,7 @@
     const iso = String(from).replace(" ", "T") + (/(GMT|UTC)/i.test(tz || "GMT") && !/[zZ]|[+-]\d\d:?\d\d$/.test(from) ? "Z" : "");
     const d = new Date(iso);
     if (isNaN(d)) return String(from);
-    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+    return d.toLocaleString(PS.locale(), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
   };
   // Fees collected by the hotel: amounts from LiteAPI are totals for the whole stay.
   PS.hotelFees = (o, nights) => [...(o.taxesExcluded || []).map(f => ({ ...f, perNight: nights > 1 ? f.amount / nights : null })), ...(o.nameFees || [])];
@@ -984,4 +1095,56 @@
       });
     });
   };
+
+  // ─── Page translation (FR / ES) ───
+  // Loads /js/i18n.js for non-English visitors and translates text, placeholders and labels as the page
+  // renders (including content added later). Hotel names, addresses and prices aren't in the dictionary,
+  // so they stay as they are. The page stays hidden (max 1.5 s) until the dictionary is ready.
+  (function i18n() {
+    const lang = PS.lang();
+    document.documentElement.lang = lang;
+    if (lang === "en") return;
+    if (!document.cookie.includes("ps_lang=" + lang)) document.cookie = `ps_lang=${lang}; path=/; max-age=31536000; samesite=lax`;
+    const hide = document.createElement("style"); hide.id = "i18n-hide"; hide.textContent = "body{opacity:0!important}";
+    document.head.appendChild(hide);
+    const reveal = () => document.getElementById("i18n-hide")?.remove();
+    setTimeout(reveal, 1500);
+    const sc = document.createElement("script"); sc.src = "/js/i18n.js?v=1";
+    sc.onload = () => { try { start((window.PS_I18N || {})[lang]); } finally { reveal(); } };
+    sc.onerror = reveal;
+    document.head.appendChild(sc);
+    function start(D) {
+      if (!D) return;
+      const exact = D.exact || {};
+      const patterns = (D.patterns || []).map(([re, rep]) => [new RegExp("^" + re + "$"), rep]);
+      PS.t = (t) => exact[t] || t;
+      const tr = (txt) => {
+        const t = String(txt).trim();
+        if (!t || t.length > 400) return null;
+        if (exact[t] != null) return txt.replace(t, exact[t]);
+        for (const [re, rep] of patterns) { const m = t.match(re); if (m) return txt.replace(t, typeof rep === "function" ? rep(...m.slice(1)) : t.replace(re, rep)); }
+        return null;
+      };
+      const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEXTAREA", "CODE"]);
+      const ATTRS = ["placeholder", "aria-label", "title"];
+      const doText = (n) => { const r = tr(n.nodeValue); if (r != null && r !== n.nodeValue) n.nodeValue = r; };
+      const doAttrs = (el) => { for (const a of ATTRS) { const v = el.getAttribute && el.getAttribute(a); if (v) { const r = tr(v); if (r != null && r !== v) el.setAttribute(a, r); } } };
+      const walk = (root) => {
+        if (root.nodeType === 3) { if (!root.parentElement?.closest("[data-no-i18n]")) doText(root); return; }
+        if (root.nodeType !== 1 || SKIP.has(root.tagName) || root.closest("[data-no-i18n]")) return;
+        doAttrs(root);
+        const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, { acceptNode: (n) => n.nodeType === 1 && (SKIP.has(n.tagName) || n.hasAttribute("data-no-i18n")) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+        let n; while ((n = w.nextNode())) n.nodeType === 3 ? doText(n) : doAttrs(n);
+      };
+      walk(document.body);
+      document.title = tr(document.title) || document.title;
+      new MutationObserver((ms) => {
+        for (const m of ms) {
+          if (m.type === "characterData") doText(m.target);
+          else if (m.type === "attributes") doAttrs(m.target);
+          else m.addedNodes.forEach(walk);
+        }
+      }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
+    }
+  })();
 })();

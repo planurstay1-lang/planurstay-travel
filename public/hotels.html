@@ -267,6 +267,7 @@
       cards.splice(Math.min(3, cards.length), 0, trackerHTML());
       results.innerHTML = memberBanner + cards.join("");
       bindTracker();
+      PS.saved.bind(results);
       moreBtn.classList.toggle("hidden", list.length <= st.shown);
       moreBtn.textContent = `Show ${Math.min(20, list.length - st.shown)} more`;
       drawMap(list);
@@ -278,7 +279,7 @@
 
     function card(h) {
       const great = h.rating >= 8.5;
-      return `<a class="hcard" href="${hotelLink(h)}" data-id="${h.id}" target="_blank" rel="noopener">
+      return `<div class="hcard-wrap"><button type="button" class="save-btn card" data-save="${PS.esc(JSON.stringify({ hotelId: h.id, name: h.name, photo: h.thumb || h.photo || "", city: h.city || "", stars: h.stars || 0, rating: h.rating || 0 }))}"></button><a class="hcard" href="${hotelLink(h)}" data-id="${h.id}" target="_blank" rel="noopener">
         <div class="hcard-img">${h.photo ? `<img src="${PS.esc(h.photo)}" alt="" loading="lazy" onerror="this.remove()">` : ""}${h.deal >= 5 ? `<span class="hcard-badge">${h.deal}% off</span>` : ""}</div>
         <div class="hcard-body">
           <div style="min-width:0">
@@ -306,7 +307,7 @@
             <span class="btn btn-primary btn-sm">View rooms</span>`}
           </div>
         </div>
-      </a>`;
+      </a></div>`;
     }
 
     function empty(icon, h, p, extra) {

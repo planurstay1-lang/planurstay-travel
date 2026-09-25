@@ -13,6 +13,7 @@
   <main class="container" style="padding-bottom:40px">
     <div class="page-head"><h1>My trips</h1><p id="who"></p></div>
     <div id="root"><div class="skel" style="height:96px;border-radius:18px;margin-bottom:14px"></div><div class="skel" style="height:84px;border-radius:18px"></div></div>
+    <section id="savedWrap" class="saved-wrap" hidden></section>
   </main>
 
   <script src="/js/ps.js"></script>
@@ -20,6 +21,15 @@
   (async function () {
     PS.header({ active: "trips" });
     PS.footer();
+    // ─── Saved hotels (♥) ───
+    PS.saved.list().then(list => {
+      const box = document.getElementById("savedWrap");
+      if (!list.length) return;
+      box.hidden = false;
+      box.innerHTML = `<h2>${PS.icon("heart", 22)} Saved hotels</h2><div class="saved-grid">${list.map(h => `<div class="saved-card"><a href="/hotel/${encodeURIComponent(h.hotelId)}">${h.photo ? `<img src="${PS.esc(h.photo)}" alt="" loading="lazy">` : `<div class="ph"></div>`}<div><b>${PS.esc(h.name || "Hotel")}</b><small>${PS.esc(h.city || "")}${h.rating ? ` · ${(+h.rating).toFixed(1)} ${PS.ratingWord(h.rating)}` : ""}</small><span class="link">See prices</span></div></a>
+        <button type="button" class="save-btn card" data-save="${PS.esc(JSON.stringify(h))}"></button></div>`).join("")}</div>`;
+      PS.saved.bind(box);
+    }).catch(() => {});
     const root = document.getElementById("root");
     const auth = await PS.auth();
     const findForm = (title, sub, btnText) => `<div class="panel" style="margin-bottom:22px">

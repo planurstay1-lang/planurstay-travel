@@ -327,10 +327,69 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
   });
 
   // ─── Hotel details (static content, cached 1h) ───
+  // ─── Hotel page extras: AI highlights, reviews, Ask AI ───
+  const langOf = (req) => (["fr", "es"].includes(req.cookies?.ps_lang) ? req.cookies.ps_lang : "en");
+  const askHits = new Map();
+  setInterval(() => askHits.clear(), 3600 * 1000).unref();
+
+  // 3 "Smart highlight" cards. LiteAPI allows 10/min per key, so results are cached for a week.
+  app.get(/^\/api\/hotels\/(lp[0-9a-z]+)\/highlights$/i, async (req, res) => {
+    const id = req.params[0], language = langOf(req);
+    try {
+      const r = await cached(`hl:${id}:${language}`, 7 * 24 * 60 * MIN, () => lite("/data/hotel/highlights", { method: "POST", body: { hotelId: id, language, count: 3 }, timeoutMs: 20000 }));
+      const d = r.json?.data;
+      if (!r.ok || !d?.generated) return res.json({ success: true, data: [] }); // hide template fallbacks
+      res.json({ success: true, data: (d.highlights || []).slice(0, 3).map(h => ({ title: h.title, description: h.description })) });
+    } catch { res.json({ success: true, data: [] }); }
+  });
+
+  // Reviews: first 200 fetched once (6 h) for "Who stays here", sorting and paging.
+  app.get(/^\/api\/hotels\/(lp[0-9a-z]+)\/reviews$/i, async (req, res) => {
+    const id = req.params[0];
+    try {
+      const r = await cached(`rev:${id}`, 6 * 60 * MIN, () => lite(`/data/reviews?hotelId=${encodeURIComponent(id)}&limit=200&getSentiment=true&timeout=15`, { timeoutMs: 25000 }));
+      if (!r.ok) return res.json({ success: true, data: { total: 0, reviews: [], categories: [], types: [] } });
+      const all = (r.json.data || []).map(v => ({
+        name: String(v.name || "Guest").split(" ")[0].slice(0, 30), type: v.type || "", country: v.country || "",
+        date: v.date, score: v.averageScore, headline: v.headline || "", pros: v.pros || "", cons: v.cons || "", language: v.language || "",
+      })).filter(v => v.headline || v.pros || v.cons);
+      const sort = String(req.query.sort || "newest");
+      const sorted = [...all].sort(sort === "highest" ? (a, b) => b.score - a.score : sort === "lowest" ? (a, b) => a.score - b.score : (a, b) => String(b.date).localeCompare(String(a.date)));
+      const offset = Math.max(0, +req.query.offset || 0), limit = Math.min(20, Math.max(1, +req.query.limit || 4));
+      const group = (t) => /couple/i.test(t) ? "couple" : /family/i.test(t) ? "family" : /solo/i.test(t) ? "solo" : /business/i.test(t) ? "business" : /group|friend/i.test(t) ? "group" : "other";
+      const counts = {};
+      for (const v of r.json.data || []) { const g = group(v.type || ""); counts[g] = (counts[g] || 0) + 1; }
+      const n = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+      res.json({ success: true, data: {
+        total: r.json.total || all.length, withText: all.length,
+        categories: (r.json.sentimentAnalysis?.categories || []).map(c => ({ name: c.name, rating: c.rating })),
+        pros: r.json.sentimentAnalysis?.pros || [], cons: r.json.sentimentAnalysis?.cons || [],
+        types: Object.entries(counts).map(([k, c]) => ({ type: k, pct: Math.round(100 * c / n) })).sort((a, b) => b.pct - a.pct),
+        reviews: sorted.slice(offset, offset + limit), offset, limit,
+      } });
+    } catch { res.json({ success: true, data: { total: 0, reviews: [], categories: [], types: [] } }); }
+  });
+
+  // Ask AI about one hotel (LiteAPI's grounded Q&A). 20 questions per visitor per hour.
+  app.get(/^\/api\/hotels\/(lp[0-9a-z]+)\/ask$/i, async (req, res) => {
+    const id = req.params[0], q = String(req.query.q || "").trim().slice(0, 300);
+    if (q.length < 3) return res.status(400).json({ error: "Ask a question about this hotel" });
+    const ip = req.ip || ""; const n = (askHits.get(ip) || 0) + 1; askHits.set(ip, n);
+    if (n > 20) return res.status(429).json({ error: "You've asked a lot of questions. Please try again later." });
+    try {
+      const lang = langOf(req);
+      const question = lang === "en" ? q : `${q} (answer in ${lang === "fr" ? "French" : "Spanish"})`;
+      const r = await cached(`ask:${id}:${lang}:${q.toLowerCase()}`, 24 * 60 * MIN, () => lite(`/data/hotel/ask?hotelId=${encodeURIComponent(id)}&query=${encodeURIComponent(question)}`, { timeoutMs: 25000 }));
+      if (!r.ok || !r.json?.data?.answer) return res.status(502).json({ error: "The assistant couldn't answer right now. Please try again." });
+      res.json({ success: true, data: { answer: r.json.data.answer } });
+    } catch { res.status(502).json({ error: "The assistant couldn't answer right now. Please try again." }); }
+  });
+
   app.get(/^\/api\/hotels\/(lp[0-9a-z]+)$/i, async (req, res, next) => {
     const id = req.params[0];
     try {
-      const r = await cached("hotel:" + id, 60 * MIN, () => lite(`/data/hotel?hotelId=${encodeURIComponent(id)}&timeout=4`, { timeoutMs: 15000 }));
+      const lang = ["fr", "es"].includes(req.cookies?.ps_lang) ? req.cookies.ps_lang : null; // hotel descriptions/amenities in the visitor's language
+      const r = await cached("hotel:" + id + (lang || ""), 60 * MIN, () => lite(`/data/hotel?hotelId=${encodeURIComponent(id)}&timeout=4${lang ? "&language=" + lang : ""}`, { timeoutMs: 15000 }));
       if (!r.ok || !r.json?.data) return next(); // fall back to the legacy route
       res.set("Cache-Control", "public, max-age=600");
       res.json(r.json.data);
