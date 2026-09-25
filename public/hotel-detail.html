@@ -125,6 +125,10 @@
       [/air condition|heating/i, "sun"], [/business|meeting|banquet|conference/i, "landmark"], [/laundry|cleaning|ironing/i, "refresh"], [/shuttle|airport|transfer/i, "plane"],
       [/non-smoking|smoke/i, "shield"], [/terrace|garden|beach/i, "sun"], [/elevator|lift/i, "arrow"], [/safe|security/i, "lock"]];
     const facIcon = (f) => (FAC_ICON.find(([re]) => re.test(f)) || [0, "check"])[1];
+    // "WiFi available" + "Free WiFi", "Fitness facilities" + "Fitness center": show one of each
+    const FAC_SAME = [/wi-?fi|internet/i, /fitness|gym/i, /parking/i, /pool/i, /restaurant/i, /breakfast/i, /\bbar\b|lounge/i, /air condition/i, /non-smoking/i, /front desk|reception/i, /laundry/i, /pet/i];
+    const topFac = []; const seenFac = new Set();
+    facilities.forEach(f => { const k = FAC_SAME.findIndex(re => re.test(f)); const key = k >= 0 ? "g" + k : f.toLowerCase(); if (!seenFac.has(key)) { seenFac.add(key); topFac.push(f); } });
     const cats = sa.categories || [];
     const hasFac = (re) => facilities.find(f => re.test(f));
     const catScore = (re) => { const c = cats.find(x => re.test(x.name || "")); return c && +c.rating ? +c.rating : null; };
@@ -150,11 +154,10 @@
 
     // ─── Overview: smart highlights, popular facilities, review highlights ───
     document.getElementById("overview").innerHTML = `
-      <section class="hd-sec" id="hlSec" hidden><h2>Smart highlights</h2><div class="hl-grid" id="hlGrid"></div></section>
       <div class="hd-fac-row">
-      ${facilities.length ? `<section class="hd-sec" id="facSec"><div class="sec-head"><h2>Popular facilities</h2>${facilities.length > 16 ? `<button type="button" class="link-btn u" id="allFac">See all ${facilities.length} facilities</button>` : ""}</div>
-        <div class="fac-row">${facilities.slice(0, 16).map(f => `<span class="fac">${PS.icon(facIcon(f), 18)}${PS.esc(f)}</span>`).join("")}</div></section>` : `<span id="facSec"></span>`}
-      ${propHL.length ? `<aside class="prop-hl"><h3>Property highlights</h3>${propHL.map(([ic, t, s]) => `<div class="ph-row">${PS.icon(ic, 18)}<div><b>${PS.esc(t)}</b>${s ? `<small>${PS.esc(s)}</small>` : ""}</div></div>`).join("")}
+      ${facilities.length ? `<section class="hd-sec" id="facSec"><div class="sec-head"><h2>Popular facilities</h2>${facilities.length > 8 ? `<button type="button" class="link-btn u" id="allFac">See all ${facilities.length} facilities</button>` : ""}</div>
+        <div class="fac-row">${topFac.slice(0, 8).map(f => `<span class="fac">${PS.icon(facIcon(f), 18)}${PS.esc(f)}</span>`).join("")}</div></section>` : `<span id="facSec"></span>`}
+      ${propHL.length ? `<aside class="prop-hl"><h3>Property highlights</h3>${propHL.slice(0, 4).map(([ic, t, s]) => `<div class="ph-row">${PS.icon(ic, 16)}<div><b>${PS.esc(t)}</b>${s ? ` <small>· ${PS.esc(s)}</small>` : ""}</div></div>`).join("")}
         <button type="button" class="save-btn prop-save" data-label="1" data-save="${PS.esc(JSON.stringify({ hotelId, name: hotel.name, photo: images[0] || "", city: hotel.city || "", stars: hotel.starRating || 0, rating }))}"></button></aside>` : ""}
       </div>
       ${rating ? `<section class="hd-sec"><div class="sec-head"><h2>Review highlights</h2><a class="link-btn u" href="#reviewsSec">Read all reviews</a></div>
@@ -174,6 +177,7 @@
             <div class="rv-more"><button type="button" class="btn btn-ghost" id="rvMore" hidden>Load more reviews</button><span id="rvCount"></span></div></div>
         </div></section>` : ""}
       <section class="panel" id="descSec"><h2>Property description</h2><div class="hd-desc rich clamped" id="desc">${cleanHTML(hotel.hotelDescription) || "<p>No description available.</p>"}</div><button class="link" id="descMore" style="background:none;border:0;padding:0;margin-top:8px">Read more</button></section>
+      <section class="panel" id="hlSec" hidden><h2>Smart highlights</h2><div class="hl-grid" id="hlGrid"></div></section>
       ${hotel.location?.latitude ? `<section class="panel" id="wxPanel"></section>` : ""}
       ${hotel.location?.latitude ? `<section class="panel" id="locPanel"><h2>Location</h2>
         <div class="addr" style="font-size:14.5px">${PS.icon("pin", 16)}${PS.esc(addrLine)}</div>
@@ -461,12 +465,19 @@
         return [o.refundable, o.refundable && first ? String(first.from).slice(0, 10) : "", hasBreakfast(o) ? (o.board || "").toLowerCase() : "", (o.perks || []).join("|")].join("~");
       };
       const dedupe = (opts) => { const seen = new Set(); return opts.filter(o => { const k = sameKey(o); if (seen.has(k)) return false; seen.add(k); return true; }); };
-      const list = [...groups.values()].map(g => { const opts = dedupe(g.opts.sort((a, b) => a.total - b.total)); return { ...g, opts, min: opts[0].total, pick: 0 }; })
+      // Show at most 3 clear choices per room: cheapest, cheapest with free cancellation, cheapest with breakfast.
+      // Everything else waits behind "More options".
+      const feature = (opts) => {
+        const pickF = [opts[0], opts.find(o => o.refundable && !hasBreakfast(o)) || opts.find(o => o.refundable), opts.find(hasBreakfast)].filter(Boolean);
+        const top = [...new Set(pickF)].sort((a, b) => a.total - b.total);
+        return { opts: [...top, ...opts.filter(o => !top.includes(o))], shown: top.length };
+      };
+      const list = [...groups.values()].map(g => { const f = feature(dedupe(g.opts.sort((a, b) => a.total - b.total))); return { ...g, opts: f.opts, shown: f.shown, min: f.opts[0].total, pick: 0 }; })
         .sort((a, b) => rf.sort === "high" ? b.min - a.min : a.min - b.min);
 
       const optLabel = (o) => {
         const first = (o.cancelPolicy || []).find(c => c.amount > 0) || (o.cancelPolicy || [])[0];
-        const canc = o.refundable ? `Free cancellation${first ? ` until ${PS.deadline(first.from, first.tz).replace(/,? \d{1,2}:\d{2}.*$/, "")}` : ""}` : "Non-refundable";
+        const canc = o.refundable ? `Free cancellation${first ? ` until ${PS.deadline(first.from, first.tz).replace(/(,| at)? \d{1,2}:\d{2}.*$/, "")}` : ""}` : "Non-refundable";
         return { canc, meal: hasBreakfast(o) ? PS.esc(o.board) : "" };
       };
       const footHTML = (g) => {
@@ -497,11 +508,12 @@
             <button type="button" class="rc-more" data-rd="${gi}">More details ${PS.icon("right", 13)}</button>
             <div class="rc-opts" role="radiogroup" aria-label="Options">
               ${g.opts.map((o, k) => { const L = optLabel(o); return `
-                <label class="rc-opt ${k === g.pick ? "on" : ""} ${g.opts.length === 1 ? "single" : ""}">
+                <label class="rc-opt ${k === g.pick ? "on" : ""} ${g.opts.length === 1 ? "single" : ""}"${k >= g.shown ? " hidden" : ""}>
                   ${g.opts.length > 1 ? `<input type="radio" name="rc${gi}" value="${k}" ${k === g.pick ? "checked" : ""}>` : ""}
                   <span class="rc-o"><span class="${o.refundable ? "ok" : ""}">${L.canc}</span>${L.meal ? `<small>${L.meal}</small>` : ""}</span>
                   ${g.opts.length > 1 ? `<span class="rc-d">${k === 0 ? "" : "+" + PS.money(o.total - g.opts[0].total, o.currency, 0)}</span>` : ""}
                 </label>`; }).join("")}
+              ${g.opts.length > g.shown ? `<button type="button" class="rc-moreopts" data-mo>${PS.plural(g.opts.length - g.shown, "more option")} ${PS.icon("down", 13)}</button>` : ""}
             </div>
             <div class="rc-foot">${footHTML(g)}</div>
           </div>
@@ -512,6 +524,8 @@
       roomsEl.querySelectorAll(".rcard").forEach(el => {
         const g = list[+el.dataset.g];
         bind(el, g);
+        const mo = el.querySelector("[data-mo]");
+        if (mo) mo.onclick = () => { el.querySelectorAll(".rc-opt[hidden]").forEach(x => x.hidden = false); mo.remove(); };
         el.querySelectorAll('input[type="radio"]').forEach(r => r.onchange = () => {
           g.pick = +r.value;
           el.querySelectorAll(".rc-opt").forEach((c, k) => c.classList.toggle("on", k === g.pick));

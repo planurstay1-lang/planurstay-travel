@@ -1974,3 +1974,85 @@ a.route:hover .route-go { background: var(--blue); color: #fff; }
 #results.grid .hcard h3 { font-size: 16px; }
 #results.grid .save-btn.card { left: auto; right: 12px; }
 @media (max-width: 760px) { .view-sw { display: none; } }
+
+/* Rooms: extra rate options behind a toggle; compact property highlights */
+.rc-opt[hidden] { display: none; }
+.rc-moreopts { justify-self: start; display: inline-flex; gap: 4px; align-items: center; padding: 2px 0; border: 0; background: none; color: var(--blue); font-weight: 700; font-size: 13px; }
+.prop-hl { gap: 9px; padding: 14px 16px; }
+.ph-row { align-items: center; font-size: 13px; }
+.ph-row svg { margin-top: 0; }
+.ph-row b { display: inline; }
+.prop-hl .prop-save { padding: 7px; font-size: 13px; }
+#hlSec .hl-grid { margin-top: 12px; }
+.hd-page .rc-img { aspect-ratio: 2 / 1; }
+.price-col .member-nudge { display: inline-flex; gap: 4px; align-items: center; background: var(--green-50); padding: 3px 8px; border-radius: 8px; margin-top: 4px; font-weight: 600; }
+.price-col .member-nudge b { font-weight: 800; }
+
+/* Checkout: refundable upgrade + package teaser */
+.co-flex { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.co-flex input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--green); flex: none; }
+.co-flex b { display: block; color: var(--ink); }
+.co-flex small { color: var(--text-2); font-size: 13px; }
+.co-flex.on b { color: var(--green); }
+.co-pkg { display: flex; gap: 12px; align-items: flex-start; background: #fff8ec; border-color: #fde2b3; }
+.co-pkg svg { color: #c2410c; flex: none; margin-top: 2px; }
+.co-pkg b { color: var(--ink); }
+.co-pkg p { color: var(--text-2); font-size: 13.5px; margin: 2px 0 0; }
+
+/* Confirmation: partner links */
+.partners { margin-top: 18px; }
+.partners h3 { font-size: 16px; margin-bottom: 10px; }
+.partner-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.partner { display: flex; gap: 10px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); }
+.partner:hover { border-color: var(--blue); }
+.partner > svg:first-child { color: var(--blue); flex: none; }
+.partner > svg:last-child { margin-left: auto; color: var(--muted); flex: none; }
+.partner b { display: block; font-size: 14px; }
+.partner small { color: var(--text-2); font-size: 12.5px; }
+
+/* Route / city landing pages */
+.seo-hero { padding: 26px 0 8px; }
+.seo-hero small { color: var(--text-2); font-weight: 700; font-size: 13px; }
+.seo-hero h1 { font-size: clamp(26px, 3.4vw, 36px); font-weight: 800; margin: 4px 0 8px; }
+.seo-hero p { color: var(--text-2); max-width: 680px; }
+.seo-cta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.seo-page .faq details { margin-top: 10px; }
+.mini-link { display: block; padding: 8px 0; border-bottom: 1px solid var(--line-2); color: var(--ink); font-weight: 600; font-size: 14px; }
+.mini-link:hover { color: var(--blue); }
+.seo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 24px; margin: 10px 0 28px; }
+
+/* Checkout: seats & bags */
+.fs { border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 14px; background: #fff; }
+.fs-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.fs-head h3 { font-size: 16px; display: flex; gap: 6px; align-items: center; }
+.fs-head h3 small { font-weight: 600; color: var(--muted); font-size: 12.5px; }
+.fs-tabs, .fs-segs { display: flex; gap: 6px; flex-wrap: wrap; }
+.fs-tabs { margin-bottom: 10px; }
+.fs-tabs button, .fs-segs button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 5px 12px; font-weight: 700; font-size: 13px; color: var(--text-2); }
+.fs-tabs button.on, .fs-segs button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.fs-block { border-top: 1px solid var(--line-2); padding-top: 10px; margin-top: 10px; }
+.fs-sub { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.fs-pick { font-size: 13.5px; margin-bottom: 8px; }
+.fs-scroll { max-height: 300px; overflow: auto; border: 1px solid var(--line-2); border-radius: 10px; padding: 8px; }
+.fs-map { display: inline-grid; gap: 4px; }
+.fs-row { display: flex; gap: 4px; align-items: center; }
+.fs-rn, .fs-col { width: 26px; text-align: center; font-size: 11px; color: var(--muted); font-weight: 700; }
+.fs-gap { width: 14px; }
+.fs-seat { width: 26px; height: 26px; border-radius: 6px 6px 4px 4px; border: 1px solid #c9d3e6; background: #fff; font-size: 11px; font-weight: 800; color: #fff; padding: 0; display: inline-grid; place-items: center; }
+.fs-seat.free { background: #e9f8ef; border-color: #9fd8b7; }
+.fs-seat.paid { background: #dbeafe; border-color: #93b4f0; }
+.fs-seat.plus { background: #fde7c7; border-color: #f2b766; }
+.fs-seat.mine { background: var(--blue); border-color: var(--blue); }
+.fs-seat.taken { background: #eceff4; border-color: #e1e5ec; cursor: not-allowed; }
+.fs-seat.none { visibility: hidden; }
+button.fs-seat:not(:disabled):hover { outline: 2px solid var(--blue); }
+.fs-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-top: 8px; }
+.fs-legend span { display: inline-flex; gap: 5px; align-items: center; }
+.fs-legend i.fs-seat { width: 14px; height: 14px; }
+.fs-bag { display: flex; gap: 10px; align-items: center; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; font-size: 13.5px; cursor: pointer; }
+.fs-bag.on { border-color: var(--blue); background: var(--blue-50); }
+.fs-bag input { accent-color: var(--blue); }
+.fs-bag span { flex: 1; }
+.fs-bag small { display: block; color: var(--muted); font-size: 12px; }
+.fs-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line-2); padding-top: 10px; margin-top: 10px; font-size: 13.5px; }
+.fs-foot svg { color: var(--green); vertical-align: -2px; }

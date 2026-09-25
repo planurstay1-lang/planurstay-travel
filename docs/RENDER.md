@@ -33,6 +33,10 @@ Never commit the values. Set them in Render → Environment.
 | `PUBLIC_MARGIN`, `MEMBER_MARGIN` | optional | Defaults only; the markup is normally set in `/admin` (saved in the database). |
 | `MAX_SSP_MARGIN` | optional | Highest margin used when pricing up to a hotel's own price (default `100`). Guards against bogus SSPs. |
 | `PARITY_GATE` | optional | `on` hides below-SSP prices from guests. Leave off. |
+| `PAID_EXTRA_ESSENTIAL`, `PAID_EXTRA_PLUS` | optional | Extra hotel discount for paid members, in margin points (default `2` and `3`). |
+| `PAID_MARGIN_FLOOR` | optional | Lowest margin a paid-member discount can bring a hotel down to (default `2`). |
+| `COMEBACK_BONUS_POINTS` | optional | Bonus points in the "Welcome back" email for booking again within 30 days (default `500`). |
+| `INSURANCE_URL`, `TRANSFERS_URL`, `CAR_HIRE_URL` | optional | Partner (affiliate) links shown as "Complete your trip" after booking. HTTPS only; placeholders `{city}` `{country}` `{checkin}` `{checkout}` `{airport}` are filled in. Unset = hidden. |
 
 ## Nuitee Connect webhook events
 

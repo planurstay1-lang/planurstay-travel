@@ -21,6 +21,7 @@
   </main>
 
   <script src="/js/ps.js"></script>
+  <script src="/js/flight-services.js"></script>
   <script>
   (async function () {
     PS.header({});
@@ -46,7 +47,7 @@
 
     // ─── Hold (prebook) state: re-used as long as add-ons and promo code haven't changed ───
     let held = null, heldKey = "";
-    const holdKey = () => JSON.stringify({ v: (document.getElementById("voucher")?.value || "").trim(), u: extras.uber?.value || 0, e: extras.esim?.packageId || "" });
+    const holdKey = () => JSON.stringify({ o: sel.offer?.offerId, v: (document.getElementById("voucher")?.value || "").trim(), u: extras.uber?.value || 0, e: extras.esim?.packageId || "" });
 
     // ─── Summary column ───
     const sumBox = (label, value, cls = "") => `<div class="co-line ${cls}"><span>${label}</span><span>${value}</span></div>`;
@@ -108,8 +109,9 @@
           <div class="price-sub">${PS.fmtDay(l.segs[0].departureTime.slice(0, 10))} · ${l.segs.length === 1 ? "Nonstop" : PS.plural(l.segs.length - 1, "stop")} · ${PS.dur(l.minutes)}</div>
           ${(l.conns || []).map(c => `<div class="price-sub" style="color:${c.changeAirport ? "var(--red)" : "#a66a00"}">${PS.dur(c.duration?.minutes || 0)} layover in ${c.arrivalAirportCode}${c.changeAirport ? " · change to " + c.departureAirportCode : ""}${c.overnight ? " · overnight" : ""}</div>`).join("")}</div></div>`).join("")}
         <div class="co-sec"><h4>Price breakdown</h4><div class="co-lines">
-          ${sumBox(`${PS.plural(+search.adults || 1, "ticket")} (${PS.plural(+search.adults || 1, "adult")}) · ${PS.esc(offer.fare?.family || "Economy")}`, PS.money(total, cur, 2))}
-          ${(+search.adults || 1) > 1 ? sumBox("Per adult", PS.money(total / (+search.adults || 1), cur, 2), "muted") : ""}
+          ${sumBox(`${PS.plural(+search.adults || 1, "ticket")} (${PS.plural(+search.adults || 1, "adult")}) · ${PS.esc(PS.fareName(offer.fare?.family) || "Economy")}`, PS.money(total - (o.services || 0), cur, 2))}
+          ${(+search.adults || 1) > 1 ? sumBox("Per adult", PS.money((total - (o.services || 0)) / (+search.adults || 1), cur, 2), "muted") : ""}
+          ${o.services ? sumBox("Seats &amp; bags", "+" + PS.money(o.services, cur, 2)) : ""}
           ${sumBox("Baggage", PS.esc(bagText(offer.baggage)))}
           ${sumBox("Taxes, fees and charges", "Included", "muted")}
           ${sumBox("Changes", offer.terms?.changeable ? "Allowed" : "Not allowed")}
@@ -140,7 +142,7 @@
       });
       return out;
     }
-    const repaint = () => { sumCol.innerHTML = timerHTML() + summaryHTML(held && heldKey === holdKey() ? { total: held.price, currency: held.currency, voucher: held.voucherTotalAmount } : {}); paintEarn(); };
+    const repaint = () => { sumCol.innerHTML = timerHTML() + summaryHTML(held && heldKey === holdKey() ? { total: held.price, currency: held.currency, voucher: held.voucherTotalAmount, services: held.servicesAmount || 0 } : {}); paintEarn(); };
     // ─── Price hold countdown (flights): the fare is only guaranteed until the offer expires ───
     let expiresAt = type === "flight" && sel.offer.expiration ? Date.parse(sel.offer.expiration) : null;
     let expired = false;
@@ -265,7 +267,10 @@
           ${f("email", "Email", `full type="email" autocomplete="email" value="${PS.esc(me.email || "")}"`, "Your e-tickets and flight updates go here.")}
           ${phoneField(true)}
         </div>
-      </section>`;
+      </section>
+      ${sel.upgrade ? `<section class="co-panel co-upsell" id="flexPanel"></section>` : ""}
+      ${sel.search?.to ? `<section class="co-panel co-pkg">${PS.icon("gift", 20)}<div><b>Need a hotel in ${PS.esc(sel.search.toCity || sel.search.to)}?</b>
+        <p>Book this flight and package prices unlock on hotels near ${PS.esc(sel.search.to)} for your dates: about <span data-save-pct>${PS.savePct()}</span>% off, no sign-in needed. You'll see them right after booking.</p></div></section>` : ""}`;
     }
     html += `<section class="co-panel">
         <div class="co-head"><h2>Redeem a promo code <small>(optional)</small></h2></div>
@@ -278,12 +283,32 @@
         <div class="co-head"><h2>Payment information</h2><span class="tag green">${PS.icon("lock", 13)}${type === "hotel" ? "Room" : "Seats"} held for you</span></div>
         <div id="sandboxNote"></div>
         <div id="priceNote"></div>
+        <div id="svcBox"></div>
         <div id="paymentPortal" class="pay-box"></div>
       </section>
       <button class="btn btn-primary btn-lg btn-block co-go" id="continueBtn">Continue to payment ${PS.icon("right", 18)}</button>
       <p class="agree-note">By continuing you agree to our <a href="/terms" target="_blank">Terms</a>, <a href="/cancellation-policy" target="_blank">Cancellation policy</a> and <a href="/privacy" target="_blank">Privacy policy</a>, and the ${type === "hotel" ? "hotel's" : "airline's"} own rules.</p>`;
     formCol.innerHTML = html;
     tick();
+    // ─── "Make it refundable": swap to the cheapest refundable fare on the same flights ───
+    const flexPanel = document.getElementById("flexPanel");
+    function paintFlex() {
+      if (!flexPanel) return;
+      const base = sel.offer.terms?.refundable ? sel.downgrade : sel.offer, up = sel.offer.terms?.refundable ? sel.offer : sel.upgrade;
+      const on = !!sel.offer.terms?.refundable;
+      const diff = up.pricing.display.total - base.pricing.display.total, cur = up.pricing.display.currency;
+      const fam = PS.fareName(up.fare?.family);
+      flexPanel.innerHTML = `<label class="co-flex ${on ? "on" : ""}"><input type="checkbox" ${on ? "checked" : ""}>
+        <div><b>Make it refundable for +${PS.money(diff, cur, 0)}</b><small>Switch to the ${PS.esc(fam || "flexible")} fare on the same flights: refundable${up.terms?.changeable ? " and changeable" : ""}${up.baggage?.hasCheckedBag && !base.baggage?.hasCheckedBag ? ", checked bag included" : ""}. Airline refund rules apply.</small></div></label>`;
+      flexPanel.querySelector("input").onchange = (e) => {
+        if (e.target.checked && !on) { sel.downgrade = sel.offer; sel.offer = sel.upgrade; }
+        else if (!e.target.checked && on) { sel.offer = sel.downgrade; }
+        PS.store.set("ps_flight_sel", sel);
+        expiresAt = sel.offer.expiration ? Date.parse(sel.offer.expiration) : null;
+        repaint(); paintFlex();
+      };
+    }
+    paintFlex();
     document.querySelectorAll("[data-date]").forEach(w => {
       const id = w.dataset.date, sync = () => {
         const d = w.querySelector(`#${id}_d`).value, m = w.querySelector(`#${id}_m`).value, y = w.querySelector(`#${id}_y`).value;
@@ -472,6 +497,10 @@
       }
       if (!pb?.prebookId || !pb?.secretKey) throw new Error("We couldn't hold this option. Please pick another one.");
       held = pb; heldKey = key;
+      // Signed-in members who don't finish get one "still available" email (server ignores guests)
+      if (auth.loggedIn) PS.api("/api/growth/checkout-start", { method: "POST", body: type === "hotel"
+        ? { type, prebookId: pb.prebookId, name: sel.hotel?.name, checkin: sel.stay?.checkin, checkout: sel.stay?.checkout, total: pb.price, currency: pb.currency, back: sel.back }
+        : { type, prebookId: pb.prebookId, name: `${sel.search?.fromCity || sel.search?.from} → ${sel.search?.toCity || sel.search?.to}`, checkin: sel.search?.depart, checkout: sel.search?.return, total: pb.price, currency: pb.currency, back: PS.url("/flights", sel.search) } }).catch(() => {});
       const hx = Date.parse(pb.servicesAttachable?.expiresAt || "");
       if (type === "flight" && hx && (!expiresAt || hx > expiresAt)) expiresAt = hx;
       return pb;
@@ -552,11 +581,32 @@
       showPayment(pb);
     };
 
-    let sdkFor = null;
-    async function showPayment(pb) {
+    let sdkFor = null, svcFor = null;
+    // Seats & bags attached (new payment intent for the higher total), or removed (hold the fare again)
+    const savePending = (pb, services) => {
+      const p = PS.local.get("ps_pending_" + pb.prebookId) || PS.store.get("ps_pending_" + pb.prebookId);
+      if (!p) return;
+      Object.assign(p, { transactionId: pb.transactionId, price: pb.price, currency: pb.currency, services: services || [] });
+      PS.local.set("ps_pending_" + pb.prebookId, p); PS.store.set("ps_pending_" + pb.prebookId, p);
+    };
+    async function onAttached(data, lines) {
+      if (!data) {
+        const old = held; held = null;
+        const pb = await hold();
+        const p = PS.local.get("ps_pending_" + old.prebookId) || PS.store.get("ps_pending_" + old.prebookId);
+        if (p) { const np = { ...p, prebookId: pb.prebookId, transactionId: pb.transactionId, price: pb.price, services: [] }; PS.local.set("ps_pending_" + pb.prebookId, np); PS.store.set("ps_pending_" + pb.prebookId, np); }
+        repaint(); return showPayment(pb, true);
+      }
+      Object.assign(held, { price: data.price, currency: data.currency || held.currency, transactionId: data.transactionId, secretKey: data.secretKey,
+        voucherTotalAmount: data.voucherTotalAmount, servicesAmount: data.servicesAmount ?? lines.reduce((a, l) => a + l.amount, 0) });
+      savePending(held, lines);
+      repaint();
+      showPayment(held, true);
+    }
+    async function showPayment(pb, keepScroll) {
       const panel = document.getElementById("payPanel");
       panel.classList.remove("hidden");
-      const expected = type === "hotel" ? sel.offer.total + extrasTotal() : sel.offer.pricing?.display?.total;
+      const expected = type === "hotel" ? sel.offer.total + extrasTotal() : (sel.offer.pricing?.display?.total || 0) + (pb.servicesAmount || 0);
       const changed = pb.price != null && expected != null && !(extrasUsd() && !extrasTotal()) && Math.abs(pb.price - expected) > 0.5;
       // Hotels: use the fees and cancellation terms confirmed by the hold (prebook), not the earlier search
       if (type === "hotel" && Array.isArray(pb.roomTypes)) {
@@ -573,9 +623,13 @@
       }
       repaint();
       document.getElementById("priceNote").innerHTML = changed ? `<div class="alert warn" style="margin-bottom:14px">${PS.icon("alert", 18)}<div><b>The price changed</b> from ${PS.money(expected, pb.currency, 2)} to <b>${PS.money(pb.price, pb.currency, 2)}</b> while we held your ${type === "hotel" ? "room" : "seats"}. The new total is shown in the summary.</div></div>` : "";
-      panel.scrollIntoView({ behavior: "smooth", block: "start" });
-      if (sdkFor === pb.prebookId) return; // same hold: the payment form is already there
-      sdkFor = pb.prebookId;
+      if (type === "flight" && svcFor !== pb.prebookId && window.FS) {
+        svcFor = pb.prebookId;
+        FS.mount(document.getElementById("svcBox"), { pb, sel, passengers: pb._passengers || [], voucherCode: val("voucher") || undefined, onAttached });
+      }
+      if (!keepScroll) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (sdkFor === pb.transactionId) return; // same payment intent: the payment form is already there
+      sdkFor = pb.transactionId;
       const portal = document.getElementById("paymentPortal");
       portal.innerHTML = `<div class="loading-note" style="border:0;padding:0"><span class="spinner"></span>Loading secure payment…</div>`;
       let cfg = { publicKey: "sandbox" };

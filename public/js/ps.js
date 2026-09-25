@@ -39,6 +39,7 @@
     refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/>',
     map: '<path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/>',
     list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    down: '<path d="m6 9 6 6 6-6"/>',
     grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
     filter: '<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>',
     home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
@@ -137,6 +138,8 @@
   }
 
   // Member saving shown in copy ("Members save about 8%") follows the live pricing settings.
+  // LiteAPI fare names: "ECONOMY_FLEX" → "Economy Flex"
+  PS.fareName = (v) => { const t = String(v || "").replace(/_/g, " ").trim(); return t && t === t.toUpperCase() ? t.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : t; };
   PS.savePct = () => PS.store.get("ps_save") || 8;
   function fillSave() { document.querySelectorAll("[data-save-pct]").forEach(n => { n.textContent = PS.savePct(); }); }
   function loadSave() {
@@ -303,7 +306,7 @@
             <div id="newsMsg"></div>
           </div>
           <div class="foot-cols">
-            <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/guides">Travel guides</a><a href="/membership">Rewards</a></div>
+            <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/guides">Travel guides</a><a href="/travel">Popular routes</a><a href="/membership">Rewards</a></div>
             <div><h4>Your account</h4><a href="/my-bookings">My trips</a><a href="/login">Sign in</a><a href="/membership">Your points</a></div>
             <div><h4>Support</h4><a href="/contact">Contact us</a><a href="/cancellation-policy">Cancellations &amp; refunds</a><a href="/my-bookings">Manage a booking</a><a href="/my-bookings">Find a booking</a></div>
           </div>

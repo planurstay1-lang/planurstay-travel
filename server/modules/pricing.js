@@ -30,18 +30,24 @@ function publicMargin(net, ssp0) {
   if (need <= P) return P;
   return Math.min(Math.ceil(need / SSP_BAND - 1e-9) * SSP_BAND, Math.max(P, MAX_MARGIN()));
 }
-/** Price a net rate for this visitor. total = what they pay; publicTotal = the guest price (member strike-through). */
-function priceFor(net, ssp0, member) {
+// Paid members (Essential / Plus) get an extra few percent off hotels, never below PAID_FLOOR margin.
+const PAID_EXTRA = () => ({ essential: num(process.env.PAID_EXTRA_ESSENTIAL, 2), plus: num(process.env.PAID_EXTRA_PLUS, 3) });
+const PAID_FLOOR = () => num(process.env.PAID_MARGIN_FLOOR, 2);
+const paidExtraPct = (planId) => PAID_EXTRA()[planId] || 0;
+/** Price a net rate for this visitor. total = what they pay; publicTotal = the guest price (member strike-through).
+ *  extraPct: extra margin points off for paid members (0 for everyone else). */
+function priceFor(net, ssp0, member, extraPct = 0) {
   const pub = publicMargin(net, ssp0);
   // Members always save the same share off the guest price (about 8% at 16%/6%), also on hotels
   // priced up to their SSP, so the member saving matches the "Members save about X%" promise.
   const memberMargin = round2(((1 + pub / 100) * (1 + MEMBER_MARGIN() / 100) / (1 + PUBLIC_MARGIN() / 100) - 1) * 100);
-  const margin = member ? Math.min(memberMargin, pub) : pub;
+  let margin = member ? Math.min(memberMargin, pub) : pub;
+  if (member && extraPct > 0) margin = Math.max(Math.min(margin, PAID_FLOOR()), round2(margin - extraPct));
   return { margin, total: round2(net * (1 + margin / 100)), publicTotal: round2(net * (1 + pub / 100)) };
 }
 
 module.exports = {
-  publicMargin, priceFor,
+  publicMargin, priceFor, paidExtraPct,
   marginFor: (isMember) => (isMember ? MEMBER_MARGIN() : PUBLIC_MARGIN()),
   // Estimated member price for a public price (same net rate, different margin)
   memberFactor: () => (1 + MEMBER_MARGIN() / 100) / (1 + PUBLIC_MARGIN() / 100),

@@ -514,7 +514,11 @@
 
     function pick(idx, oi) {
       const j = J.find(x => x.idx === +idx), o = j.offers[oi];
+      const slim = (x) => x && ({ offerId: x.offerId, pricing: x.pricing, fare: x.fare, terms: x.terms, baggage: x.baggage, expiration: x.expiration, segmentFares: x.segmentFares });
+      // Cheapest refundable fare on the same flights: offered at checkout as "Make it refundable"
+      const upgrade = !o.terms?.refundable ? j.offers.filter(x => x.terms?.refundable && x.pricing.display.total > o.pricing.display.total).sort((a, b) => a.pricing.display.total - b.pricing.display.total)[0] : null;
       PS.store.set("ps_flight_sel", {
+        upgrade: slim(upgrade),
         journey: { journeyKey: j.key, segments: j.raw.segments, legDurations: j.raw.legDurations, connections: j.raw.connections },
         offer: { offerId: o.offerId, pricing: o.pricing, fare: o.fare, terms: o.terms, baggage: o.baggage, expiration: o.expiration, segmentFares: o.segmentFares },
         search: q,

@@ -162,6 +162,7 @@ app.use(express.static(path.join(__dirname, "../public"), {
 const storefront = require("./modules/storefront-routes").registerStorefrontRoutes(app, { apiKey: key, jwt, JWT_SECRET, db });
 require("./modules/engagement-routes").registerEngagementRoutes(app, { db, apiKey: key, jwt, JWT_SECRET, APP_URL });
 require("./modules/guides").registerGuideRoutes(app, { APP_URL });
+require("./modules/seo-pages").registerSeoPages(app, { APP_URL });
 require("./modules/legal").registerLegalRoutes(app);
 const rewards = require("./modules/rewards").createRewards({ db, apiKey: key, jwt, JWT_SECRET });
 rewards.register(app);
@@ -182,6 +183,8 @@ support.register(app);
 require("./modules/saved").createSaved({ db, jwt, JWT_SECRET }).register(app);
 require("./modules/reminders").createReminders({ db, apiKey: () => key, jwt, JWT_SECRET, sendEmail, appUrl: () => APP_URL }).register(app);
 require("./modules/webhooks").createWebhooks({ db, sendEmail }).register(app);
+const growth = require("./modules/growth").createGrowth({ db, jwt, JWT_SECRET, sendEmail, appUrl: () => APP_URL });
+growth.register(app);
 require("./modules/chat").createChat({ port: PORT, support }).register(app);
 // Google Search Console HTML-file verification: set GSC_HTML_FILE=google1234abcd.html on Render
 app.get(/^\/google[0-9a-z]+\.html$/, (req, res, next) => {
@@ -214,6 +217,7 @@ app.post("/api/auth/signup", async (req, res) => {
 
     // Join PlanurStay Rewards (adds the welcome bonus)
     try { rewards.summary(user_id); } catch (e) { console.warn("Rewards signup failed:", e.message); }
+    growth.welcome(email, require("./modules/pricing").memberSavePct());
 
     res.json({ success: true, user: { id: user_id, email } });
   } catch (err) {
@@ -431,6 +435,7 @@ app.post("/api/hotels/book", async (req, res) => {
       // PlanurStay Rewards: points are pending until the stay is over
       const release = new Date(new Date(booking.checkout || Date.now()).getTime() + 86400000).toISOString().slice(0, 10);
       rewards.addPending(user.id, { bookingRef: booking.bookingId, bookingType: "hotel", amount: booking.price, currency: booking.currency, releaseDate: release, note: `Stay at ${booking.hotel?.name || "hotel"}` })
+        .then(() => growth.bookingMade(user.id, booking.bookingId, release, "hotel"))
         .catch(e => console.warn("Rewards pending:", e.message));
     }
     if (req.body.voucherCode) rewards.markVoucherUsed(String(req.body.voucherCode));
@@ -497,12 +502,16 @@ app.post("/api/flights/prebook", async (req, res) => {
 // ─── Attach services to prebook ───
 app.post("/api/flights/prebook/services", async (req, res) => {
   try {
-    const { prebookId, services } = req.body;
-    const result = await flightEngine.attachServices(prebookId, services, db);
+    const { prebookId, selectedServices, voucherCode } = req.body || {};
+    const list = Array.isArray(selectedServices) ? selectedServices.slice(0, 30) : [];
+    if (list.some(s => !s || typeof s.serviceId !== "string" || s.serviceId.length > 600)) return res.status(400).json({ error: "Invalid seat or bag selection" });
+    const result = await flightEngine.attachServices(prebookId, list, voucherCode, db);
     if (!result.success) {
       const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Attach failed", code: e.code, key: e.key });
+      const status = e.status === 409 || e.status === 404 ? e.status : (e.status >= 500 || (e.code >= 500 && e.code < 600)) ? 502 : 400;
+      const unavailable = [44012, 54003].includes(e.code);
+      const expired = e.code === 44013;
+      return res.status(status).json({ error: unavailable ? "One of those seats was just taken. Please pick another." : expired ? "This fare hold has expired. Please search again." : e.message || "We couldn't add those extras", code: e.code, key: e.key });
     }
     res.json({ success: true, data: result.data });
   } catch (err) {
@@ -529,6 +538,7 @@ app.post("/api/flights/book", async (req, res) => {
     if (userId && result.data && !result.alreadyBooked) {
       const ref = result.data.bookingId || result.data.booking_id || req.body.prebookId;
       rewards.addPending(userId, { bookingRef: ref, bookingType: "flight", amount: +req.body.amount || result.data.pricing?.totalAmount || result.data.price, currency: req.body.currency || result.data.pricing?.currency || "USD", releaseDate: req.body.releaseDate, note: "Flight booking" })
+        .then(() => growth.bookingMade(userId, ref, req.body.releaseDate, "flight"))
         .catch(e => console.warn("Rewards pending (flight):", e.message));
     }
     if (RESEND_API_KEY && result.data) {

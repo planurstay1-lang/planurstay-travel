@@ -90,6 +90,14 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
   const pricing = require("./pricing");
   const isMember = (req) => { try { return !!jwt.verify(req.cookies?.token || "", JWT_SECRET); } catch { return false; } };
   function marginFor(req) { return pricing.marginFor(isMember(req)); }
+  // Extra hotel discount for paid members (Essential / Plus), in margin points
+  const paidExtra = (req) => {
+    try {
+      const u = jwt.verify(req.cookies?.token || "", JWT_SECRET);
+      const row = db.prepare("SELECT plan_id FROM user_memberships WHERE user_id = ? AND status = 'active' AND plan_id != 'free'").get(u.id);
+      return row ? pricing.paidExtraPct(row.plan_id) : 0;
+    } catch { return 0; }
+  };
   // Public prices must not be below the hotel's SSP (rate parity). Members are a closed user group.
   function applyParity(o, member) {
     // Prices come from pricing.priceFor, so guests are never below the hotel's price.
@@ -494,10 +502,10 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         };
       }).filter(Boolean);
       await attachBrands(data);
-      const member = isMember(req), pkg = !member && pkgFrom(req);
+      const member = isMember(req), pkg = !member && pkgFrom(req), extra = member ? paidExtra(req) : 0;
       data.forEach(h => {
         const pk = !!pkg && pkgApplies(pkg, h.lat, h.lng, b.checkin, b.checkout);
-        const p = pricing.priceFor(h.total, h.ssp, member || pk);
+        const p = pricing.priceFor(h.total, h.ssp, member || pk, extra);
         h.total = p.total; h.publicTotal = p.publicTotal; h.perNight = p.total / h.nights;
         applyParity(h, member || pk);
         if (pk) h.packagePrice = true;
@@ -728,7 +736,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     const nights = Math.round((co - ci) / day);
     if (!(nights >= 1 && nights <= 30)) return res.status(400).json({ error: "Invalid dates" });
     const today = Date.parse(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
-    const member = isMember(req);
+    const member = isMember(req), extra = member ? paidExtra(req) : 0;
     const iso = (t) => new Date(t).toISOString().slice(0, 10);
     const offsets = [-3, -2, -1, 0, 1, 2, 3].filter(o => ci + o * day >= today);
     try {
@@ -743,7 +751,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           for (const rt of e.roomTypes || []) { const net = rt.offerRetailRate?.amount; if (net != null && (!best || net < best.net)) best = { net, ssp: rt.suggestedSellingPrice?.amount }; }
           if (!best) continue;
           n++;
-          const t = pricing.priceFor(best.net, best.ssp, member).total / nights;
+          const t = pricing.priceFor(best.net, best.ssp, member, extra).total / nights;
           if (low == null || t < low) low = t;
         }
         return { offset: o, checkin: body.checkin, checkout: body.checkout, lowNight: low != null ? Math.round(low * 100) / 100 : null, hotels: n };
@@ -795,14 +803,14 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
       const isMem = isMember(req), pkg = !isMem && pkgFrom(req);
       let pk = false;
       if (pkg) { const meta = await hotelMeta(b.hotelId); pk = pkgApplies(pkg, meta?.lat, meta?.lng, b.checkin, b.checkout); }
-      const member = isMem || pk;
+      const member = isMem || pk, extra = isMem ? paidExtra(req) : 0;
       const base = (r.json.data || [])[0]?.roomTypes || [];
       const baseKeys = keysOf(base);
       const plan = new Map(); // key → { margin, publicTotal }
       base.forEach((rt, i) => {
         const net = rt.offerRetailRate?.amount;
         if (net == null) return;
-        const p = pricing.priceFor(net, rt.suggestedSellingPrice?.amount, member);
+        const p = pricing.priceFor(net, rt.suggestedSellingPrice?.amount, member, extra);
         plan.set(baseKeys[i], { margin: p.margin, publicTotal: p.publicTotal });
       });
       // 2) One bookable request per distinct margin (usually 1-2); offers at a margin we didn't fetch are left out.
