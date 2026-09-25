@@ -8,7 +8,7 @@
  * LITEAPI_WEBHOOK_SECRET (sent by Nuitee in the `authorization` header). Without the env var every
  * call is rejected. Events are deduplicated by event_id (delivery is at-least-once).
  *
- * Handled: booking.book.hotelConfirmationNumber, booking.cancel, booking.cancel_error, booking.refund,
+ * Handled: booking.book (records bookings made outside our checkout), booking.book.hotelConfirmationNumber, booking.cancel, booking.cancel_error, booking.refund,
  * booking.amendment, booking.amendment.relocation, booking.compensation, booking.rebook.*,
  * flight.book.confirmed, flight.book.cancelled, flight.book.failed. Anything that needs a person
  * (relocation, compensation, failed cancel, failed flight) opens a support ticket.
@@ -55,6 +55,18 @@ function createWebhooks({ db, sendEmail }) {
       return { bookingId };
     }
     const row = hotelRow(bookingId);
+    // A booking made outside our checkout (e.g. Nuitee's "Ask AI" chatbot): record it so the Help
+    // assistant, My trips lookup and admin can see it. Bookings from our own checkout already exist.
+    if (name === "booking.book" && !row) {
+      const pick = (keys) => findKey(resp, keys) || findKey(req, keys);
+      const email = pick(["email"]);
+      const first = pick(["firstName"]), last = pick(["lastName"]);
+      db.prepare("INSERT INTO bookings (liteapi_booking_id, liteapi_type, status, hotel_name, checkin, checkout, price, currency, guest_name, guest_email, prebook_id) VALUES (?, 'hotel', ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(bookingId, pick(["status"]) || "CONFIRMED", pick(["hotelName"]) || findKey(resp?.hotel || resp?.data?.hotel, ["name"]) || "Hotel",
+          (pick(["checkin"]) || "").slice(0, 10), (pick(["checkout"]) || "").slice(0, 10), +(pick(["sellingPrice", "price", "totalAmount"]) || 0) || null,
+          pick(["currency"]) || "USD", [first, last].filter(Boolean).join(" ") || null, email ? String(email).toLowerCase() : null, pick(["prebookId"]));
+      return { bookingId };
+    }
     switch (name) {
       case "booking.book.hotelConfirmationNumber": {
         const code = findKey(resp, ["hotelConfirmationCode", "hotelConfirmationNumber"]);
