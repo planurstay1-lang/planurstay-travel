@@ -66,6 +66,9 @@
     if (!images.length && hotel.main_photo) images.push(hotel.main_photo);
     const rating = +hotel.rating || 0;
 
+    // Main photo plays like a slow film: gentle zoom/pan, cross-fading through photos not shown in the side tiles
+    const cineIdx = [0, ...images.map((_, k) => k).slice(5, 9)];
+    if (cineIdx.length < 3) cineIdx.push(...images.map((_, k) => k).slice(1, 4));
     document.getElementById("top").innerHTML = `
       <div class="hd-head">
         <div>
@@ -76,10 +79,24 @@
         ${rating ? `<div class="rating-row" style="margin:0"><span class="score ${rating >= 8.5 ? "great" : ""}" style="min-width:48px;height:38px;font-size:17px">${rating.toFixed(1)}</span><div><b style="display:block">${PS.ratingWord(rating)}</b><small>${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></div>` : ""}
       </div>
       <div class="gallery">
-        ${images.slice(0, 5).map((src, i) => `<button data-i="${i}" aria-label="Open photo ${i + 1}"><img src="${PS.esc(src)}" alt="" ${i ? 'loading="lazy"' : ""}></button>`).join("")}
+        ${images.slice(0, 5).map((src, i) => i === 0
+          ? `<button data-i="0" class="cine" aria-label="Open photos">${cineIdx.map((k, j) => `<img src="${PS.esc(images[k])}" alt="" data-k="${k}" class="${j === 0 ? "on" : ""}" ${j ? 'decoding="async"' : 'fetchpriority="high"'}>`).join("")}</button>`
+          : `<button data-i="${i}" aria-label="Open photo ${i + 1}"><img src="${PS.esc(src)}" alt="" loading="lazy"></button>`).join("")}
         ${images.length > 5 ? `<button class="btn btn-white btn-sm all-photos" data-i="0">${PS.icon("photo", 16)}All ${images.length} photos</button>` : ""}
       </div>`;
-    document.querySelectorAll(".gallery [data-i]").forEach(b => b.onclick = () => lightbox(+b.dataset.i));
+    document.querySelectorAll(".gallery [data-i]").forEach(b => b.onclick = () => lightbox(b.classList.contains("cine") ? +(b.querySelector("img.on")?.dataset.k || 0) : +b.dataset.i));
+    (() => {
+      const cine = document.querySelector(".gallery .cine");
+      const layers = cine ? [...cine.querySelectorAll("img")] : [];
+      if (layers.length < 2 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      let cur = 0;
+      setInterval(() => {
+        if (document.hidden) return;
+        const next = (cur + 1) % layers.length;
+        if (!layers[next].complete) return; // wait until the next photo has loaded
+        layers[cur].classList.remove("on"); layers[next].classList.add("on"); cur = next;
+      }, 6500);
+    })();
 
     function lightbox(i) {
       const lb = document.createElement("div"); lb.className = "lightbox";
@@ -242,7 +259,7 @@
       const first = (o.cancelPolicy || []).find(c => c.amount > 0) || (o.cancelPolicy || [])[0];
       return `<li class="ok">${PS.icon("check", 14, 2.6)}Free cancellation${first ? ` until ${PS.deadline(first.from, first.tz)}` : ""}</li>`;
     };
-    const optTitle = (o) => `${o.refundable ? "Free cancellation" : "Non-refundable"} · ${hasBreakfast(o) ? PS.esc(o.board) : "Room only"}`;
+    const optTitle = (o) => hasBreakfast(o) ? PS.esc(o.board) : "Room only";
     const feesBlock = (o, n) => {
       const fees = PS.hotelFees(o, n);
       if (!fees.length) return `<div class="fee-ok">${PS.icon("check", 14, 2.6)}No extra fees at the hotel</div>`;
@@ -268,7 +285,6 @@
           </div>
           ${rm.description ? `<p style="color:var(--text-2);margin-bottom:16px">${PS.esc(String(rm.description).replace(/<[^>]+>/g, " "))}</p>` : ""}
           ${amen.length ? `<h3 style="font-size:16px;margin-bottom:10px">Room amenities</h3><div class="amen-grid" style="margin-bottom:18px">${amen.map(a => `<div class="amen">${PS.icon("check", 15, 2.6)}${PS.esc(a)}</div>`).join("")}</div>` : ""}
-          ${opts.some(o => (o.taxesExcluded || []).length) ? `<h3 style="font-size:16px;margin-bottom:10px">Paid at the hotel</h3><div class="alert warn" style="margin-bottom:18px">${PS.icon("info", 18)}<div>${opts.find(o => (o.taxesExcluded || []).length).taxesExcluded.map(f => `${PS.esc(f.description)}: <b>${PS.money(f.amount, f.currency, 2)}</b>`).join("<br>")}<br><small>Totals for your whole stay, collected by the hotel at check-in or check-out, on top of the price you pay online.</small></div></div>` : ""}
           ${notes ? `<h3 style="font-size:16px;margin-bottom:8px">Good to know</h3><p style="color:var(--text-2);white-space:pre-line;font-size:14px">${PS.esc(notes)}</p>` : ""}
         </div></div>`;
       const close = () => { back.remove(); document.body.style.overflow = ""; };
@@ -299,9 +315,7 @@
         return `${o.strikeTotal ? `<span class="price-strike">${PS.money(o.strikeTotal, o.currency, 0)}</span>` : ""}
           <span class="price-big">${PS.money(o.total, o.currency, 0)}</span>
           <span class="price-sub">total for ${PS.plural(n, "night")} · ${PS.money(o.total / n, o.currency, 0)}/night</span>
-          ${feesBlock(o, n)}
-          <button class="btn btn-coral btn-block" data-reserve>Reserve</button>
-          <span class="price-sub">${o.refundable ? "Free cancellation, so you can change your mind" : "This option can't be refunded"}</span>`;
+          <button class="btn btn-coral btn-block" data-reserve>Reserve</button>`;
       };
 
       roomsEl.innerHTML = list.map((g, gi) => {
@@ -327,9 +341,7 @@
                 <label class="rchoice ${k === g.pick ? "on" : ""}">
                   ${g.opts.length > 1 ? `<input type="radio" name="rg${gi}" value="${k}" ${k === g.pick ? "checked" : ""}>` : ""}
                   <div class="rc-main"><b>${optTitle(o)}</b>
-                    <ul>${cancelLine(o)}<li class="${hasBreakfast(o) ? "ok" : "no"}">${PS.icon("coffee", 14)}${hasBreakfast(o) ? PS.esc(o.board) : "Breakfast not included"}</li>
-                      ${(o.perks || []).slice(0, 3).map(p => `<li class="ok">${PS.icon("star", 14)}${PS.esc(p)}</li>`).join("")}
-                      ${PS.hotelFees(o, n).length ? `<li class="warn">${PS.icon("info", 14)}+ ${PS.money(feeTotal(o) || PS.hotelFees(o, n)[0].amount, (PS.hotelFees(o, n)[0].currency) || o.currency, 0)} due at hotel</li>` : ""}</ul></div>
+                    <ul>${cancelLine(o)}${hasBreakfast(o) ? `<li class="ok">${PS.icon("coffee", 14)}${PS.esc(o.board)}</li>` : ""}</ul></div>
                   ${g.opts.length > 1 ? `<span class="rc-price">${k === 0 ? PS.money(o.total, o.currency, 0) : "+ " + PS.money(o.total - g.opts[0].total, o.currency, 0)}</span>` : ""}
                 </label>`).join("")}
             </div>

@@ -1312,3 +1312,16 @@ p { margin: 0; }
 .policy-d { margin-top: 6px; border-top: 1px solid var(--line-2); padding-top: 12px; }
 .policy-d summary { cursor: pointer; font-weight: 700; color: var(--blue); font-size: 14px; }
 .policy-d p { margin-top: 8px; color: var(--text-2); font-size: 13.5px; line-height: 1.6; }
+
+/* ─── Cinematic main photo (Ken Burns: slow zoom/pan + crossfade) ─────── */
+.gallery .cine { position: relative; overflow: hidden; }
+.gallery .cine img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.6s ease; transform-origin: 30% 40%; }
+.gallery .cine img.on { opacity: 1; animation: kenburns 9s ease-out both; }
+.gallery .cine img:nth-child(even) { transform-origin: 70% 60%; }
+.gallery .cine img:nth-child(3n) { transform-origin: 50% 30%; }
+@keyframes kenburns { from { transform: scale(1.02) translate(0, 0); } to { transform: scale(1.14) translate(-1.5%, -1%); } }
+.gallery button.cine:hover img { filter: none; }
+/* Result cards: slow drift on hover for the same feel */
+.hcard-img img { transition: transform 6s ease-out; }
+.hcard:hover .hcard-img img { transform: scale(1.1); }
+@media (prefers-reduced-motion: reduce) { .gallery .cine img.on { animation: none; } .hcard:hover .hcard-img img { transform: none; } }
