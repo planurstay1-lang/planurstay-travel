@@ -3,405 +3,141 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Membership — PlanurStay</title>
+  <title>PlanurStay Rewards — member prices and points on every trip</title>
+  <meta name="description" content="Join PlanurStay Rewards free: lower member prices on hotels, points on every hotel and flight booking, and vouchers you can use at checkout.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/ps.css">
-  <style>:root{--primary:#1f5bff;--primary-dark:#1848d6;--primary-light:#eef3ff;--text-secondary:#4a5572;--border:#e4e8f1;--card:#fff;--background:#ffffff;--radius:18px}body{font-family:var(--font)}</style>
-  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    .rw-hero { text-align: center; padding: 48px 0 28px; }
+    .rw-hero .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; color: var(--blue); background: var(--blue-50); padding: 6px 12px; border-radius: 999px; }
+    .rw-hero h1 { font-size: clamp(32px, 5vw, 48px); letter-spacing: -.03em; margin: 14px 0 10px; color: var(--ink); }
+    .rw-hero p { font-size: 18px; color: var(--text-2); max-width: 620px; margin: 0 auto 22px; line-height: 1.55; }
+    .rw-cta { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .rw-status { max-width: 760px; margin: 0 auto 36px; padding: 22px; border-radius: 22px; color: #fff; background: linear-gradient(135deg, #1f5eff, #7b4dff); box-shadow: 0 20px 50px -20px rgba(31,94,255,.55); }
+    .rw-status .row { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+    .rw-status small { opacity: .85; font-weight: 600; }
+    .rw-status .pts { font-size: 40px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+    .rw-status .tier { font-size: 20px; font-weight: 800; }
+    .rw-bar { height: 8px; border-radius: 6px; background: rgba(255,255,255,.25); margin: 16px 0 8px; overflow: hidden; }
+    .rw-bar > div { height: 100%; background: #fff; border-radius: 6px; }
+    .rw-status .btn { background: #fff; color: var(--ink); }
+    .rw-perks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin: 8px 0 44px; }
+    .rw-perk { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+    .rw-perk .ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--blue-50); color: var(--blue); margin-bottom: 12px; }
+    .rw-perk b { display: block; font-size: 16.5px; color: var(--ink); margin-bottom: 6px; }
+    .rw-perk p { color: var(--text-2); font-size: 14.5px; line-height: 1.55; margin: 0; }
+    .rw-h2 { font-size: 26px; letter-spacing: -.02em; color: var(--ink); margin: 0 0 6px; }
+    .rw-sub { color: var(--text-2); margin: 0 0 18px; }
+    .rw-tiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 44px; }
+    .rw-tier { border: 1px solid var(--line); border-radius: 18px; padding: 18px; background: #fff; position: relative; }
+    .rw-tier.on { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
+    .rw-tier .you { position: absolute; top: 12px; right: 12px; font-size: 11px; font-weight: 800; color: var(--blue); background: var(--blue-50); padding: 2px 8px; border-radius: 999px; }
+    .rw-tier b { font-size: 18px; color: var(--ink); }
+    .rw-tier .mult { font-size: 28px; font-weight: 800; color: var(--ink); margin: 10px 0 2px; letter-spacing: -.02em; }
+    .rw-tier small { color: var(--text-2); font-size: 13px; }
+    .rw-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 44px; counter-reset: s; }
+    .rw-step { padding: 18px; border-radius: 18px; background: var(--line-2, #f4f6fa); }
+    .rw-step::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: #fff; font-weight: 800; margin-bottom: 10px; }
+    .rw-step b { display: block; color: var(--ink); margin-bottom: 4px; }
+    .rw-step p { color: var(--text-2); font-size: 14.5px; margin: 0; line-height: 1.5; }
+    .rw-faq { max-width: 760px; margin-bottom: 56px; }
+    .rw-faq details { border-bottom: 1px solid var(--line); padding: 14px 2px; }
+    .rw-faq summary { cursor: pointer; font-weight: 700; color: var(--ink); list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+    .rw-faq summary::after { content: "+"; font-size: 20px; line-height: 1; color: var(--text-2); }
+    .rw-faq details[open] summary::after { content: "–"; }
+    .rw-faq p { color: var(--text-2); line-height: 1.6; margin: 10px 0 0; }
+    @media (max-width: 860px) { .rw-tiers { grid-template-columns: 1fr 1fr; } .rw-steps { grid-template-columns: 1fr; } }
+  </style>
 </head>
 <body>
+  <main class="container">
+    <section class="rw-hero">
+      <span class="eyebrow"><i data-ico="gift" data-s="16"></i>Free to join</span>
+      <h1>PlanurStay Rewards</h1>
+      <p>Lower member prices on hotels, points on every hotel and flight you book, and vouchers you can spend on your next stay.</p>
+      <div class="rw-cta" id="cta"><a class="btn btn-primary btn-lg" href="/login?redirect=%2Fmembership">Join free</a><a class="btn btn-ghost btn-lg" href="/hotels">Browse hotels</a></div>
+    </section>
 
+    <div id="status"></div>
 
-  <main style="max-width:900px;margin:0 auto;padding:32px 16px">
-    <div class="container">
+    <section class="rw-perks" id="perks"></section>
 
-      <div style="text-align:center;margin-bottom:32px">
-        <div style="font-size:48px;margin-bottom:8px">🌟</div>
-        <h1 style="font-size:28px;font-weight:800;margin:0 0 6px">Membership</h1>
-        <p style="color:var(--text-secondary);font-size:15px;margin:0">Unlock better rates, earn more points, and get member-only perks.</p>
-      </div>
+    <h2 class="rw-h2">Tiers</h2>
+    <p class="rw-sub">Your tier grows with the points you've earned in total, and every tier earns faster.</p>
+    <section class="rw-tiers" id="tiers"></section>
 
-      <div id="loader" class="loading-text" style="display:none;text-align:center">
-        <span class="spinner"></span> Loading your membership...
-      </div>
+    <h2 class="rw-h2">How it works</h2>
+    <p class="rw-sub">Three steps, nothing to pay.</p>
+    <section class="rw-steps" id="steps"></section>
 
-      <div id="authBlocked" style="display:none;text-align:center;padding:32px;background:var(--card);border-radius:var(--radius);border:1px solid var(--border)">
-        <p style="color:var(--text-secondary);font-size:14px">You need to sign in to manage your membership.</p>
-        <a href="/login" class="btn-primary" style="margin-top:12px;display:inline-flex">Sign In</a>
-      </div>
-
-      <!-- Current membership (shown when logged in) -->
-      <div id="currentMembership" style="display:none;margin-bottom:24px">
-        <div class="membership-current-card">
-          <div class="membership-current-header">
-            <span style="font-size:13px;color:var(--text-secondary)">Current plan</span>
-            <span id="currentPlanBadge" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:13px;font-weight:600"></span>
-          </div>
-          <div style="margin-top:10px">
-            <div style="font-size:18px;font-weight:700" id="currentPlanName"></div>
-            <div style="font-size:13px;color:var(--text-secondary);margin-top:2px" id="currentPlanPeriod"></div>
-          </div>
-          <div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap">
-            <div style="font-size:13px">
-              <span style="color:var(--text-secondary)">Earn rate:</span>
-              <span style="font-weight:700;color:var(--gold-dark)" id="currentEarnRate"></span>
-            </div>
-            <div style="font-size:13px">
-              <span style="color:var(--text-secondary)">Free cancellations/year:</span>
-              <span style="font-weight:700" id="currentFreeCancels"></span>
-            </div>
-            <div style="font-size:13px">
-              <span style="color:var(--text-secondary)">Monthly bonus:</span>
-              <span style="font-weight:700;color:var(--gold-dark)" id="currentMonthlyBonus"></span>
-            </div>
-          </div>
-          <div id="currentPerks" style="margin-top:10px;display:flex;flex-direction:column;gap:4px"></div>
-          <div style="margin-top:12px;display:flex;gap:8px">
-            <button class="btn-secondary" id="cancelMembershipBtn">Cancel Membership</button>
-            <button class="btn-ghost" id="downgradeBtn">Downgrade</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Pricing cards -->
-      <div id="plansContainer" class="membership-plans-grid">
-        <!-- Free card -->
-        <div class="membership-card" data-plan="free">
-          <div class="membership-card-header">
-            <div class="membership-tier-badge" style="background:#6b7280">Free</div>
-            <div class="membership-card-price">
-              <span class="membership-price-amount">$0</span>
-              <span class="membership-price-period">/ forever</span>
-            </div>
-            <p class="membership-card-desc">Everything you need to start saving</p>
-          </div>
-          <div class="membership-card-features">
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Member pricing (0% margin)
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Earn 5 pts per $1 spent
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Full booking history
-            </div>
-            <div class="membership-feature membership-feature-muted">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              No monthly bonus points
-            </div>
-            <div class="membership-feature membership-feature-muted">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              No free cancellations
-            </div>
-          </div>
-          <button class="membership-select-btn btn-ghost membership-free-btn">Using Free</button>
-        </div>
-
-        <!-- Essential card -->
-        <div class="membership-card membership-best" data-plan="essential">
-          <div class="membership-card-header">
-            <div class="membership-popular-badge">Most popular</div>
-            <div class="membership-tier-badge" style="background:#3b82f6">Essential</div>
-            <div class="membership-card-price">
-              <span class="membership-price-amount">$1.99</span>
-              <span class="membership-price-period">/ month</span>
-              <span class="membership-price-annual">or $14.99/year</span>
-            </div>
-            <p class="membership-card-desc">For travelers who book regularly</p>
-          </div>
-          <ul class="membership-card-features">
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Member pricing (0% margin)
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Earn <strong>7 pts</strong> per $1 spent
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              500 bonus points every month
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              1 free cancellation per year
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Full booking history
-            </div>
-          </ul>
-          <button class="membership-select-btn btn-primary" data-plan="essential" data-interval="monthly">Choose Essential — $1.99/mo</button>
-          <button class="membership-select-btn btn-ghost membership-yearly-btn" data-plan="essential" data-interval="yearly">Choose Essential — $14.99/yr</button>
-        </div>
-
-        <!-- Plus card -->
-        <div class="membership-card" data-plan="plus">
-          <div class="membership-card-header">
-            <div class="membership-tier-badge" style="background:#f59e0b">Plus</div>
-            <div class="membership-card-price">
-              <span class="membership-price-amount">$4.99</span>
-              <span class="membership-price-period">/ month</span>
-              <span class="membership-price-annual">or $39.99/year</span>
-            </div>
-            <p class="membership-card-desc">For frequent travelers who want the best</p>
-          </div>
-          <ul class="membership-card-features">
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Member pricing (0% margin)
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Earn <strong>10 pts</strong> per $1 spent
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              1,000 bonus points every month
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              2 free cancellations per year
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Late checkout requests
-            </div>
-            <div class="membership-feature">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Personal deal alerts
-            </div>
-          </ul>
-          <button class="membership-select-btn btn-secondary" data-plan="plus" data-interval="monthly">Choose Plus — $4.99/mo</button>
-          <button class="membership-select-btn btn-ghost membership-yearly-btn" data-plan="plus" data-interval="yearly">Choose Plus — $39.99/yr</button>
-        </div>
-      </div>
-
-      <!-- Processing note -->
-      <div style="margin-top:24px;padding:12px 16px;background:var(--card);border-radius:var(--radius);border:1px solid var(--border);font-size:12px;color:var(--text-muted);text-align:center">
-        Membership fees are processed securely via Stripe. Standard card processing applies (2.9% + $0.30 per transaction). Cancel anytime.
-      </div>
-
-      <!-- Result message -->
-      <div id="membershipResult" style="display:none;margin-top:16px"></div>
-
-    </div>
+    <h2 class="rw-h2">Questions</h2>
+    <section class="rw-faq" id="faq"></section>
   </main>
 
-
-  <script src="/js/app.js"></script>
   <script src="/js/ps.js"></script>
-  <script>PS.header({ active: "rewards" }); PS.footer();</script>
   <script>
-    document.addEventListener("DOMContentLoaded", async () => {
-      const loader = document.getElementById("loader");
-      const authBlocked = document.getElementById("authBlocked");
-      const currentMembership = document.getElementById("currentMembership");
-      const plansContainer = document.getElementById("plansContainer");
-      const result = document.getElementById("membershipResult");
-      const signInBtn = document.getElementById("signInBtn");
-      const myBookingsBtn = document.getElementById("myBookingsBtn");
+  (async function () {
+    PS.header({ active: "rewards" });
+    PS.footer();
+    const ico = (n, s = 20) => PS.icon(n, s, 2);
+    const [prog, auth] = await Promise.all([
+      fetch("/api/rewards/program").then(r => r.json()).catch(() => null),
+      PS.auth(),
+    ]);
+    const P = prog || { tiers: [{ key: "explorer", label: "Explorer", min: 0, multiplier: 1 }], pointsPerDollar: 1, pointsPerDollarOff: 100, minRedeem: 1000, welcomeBonus: 500, memberSavePct: 8 };
+    const top = P.tiers[P.tiers.length - 1];
+    const n = (x) => Number(x || 0).toLocaleString();
 
-      const auth = await checkAuth();
+    document.getElementById("perks").innerHTML = [
+      ["tag", "Member prices", `About ${P.memberSavePct}% off hotel rates that guests don't see. Just sign in before you search.`],
+      ["star", "Points on every trip", `${P.pointsPerDollar} point per $1 on hotels and flights, up to ${top.multiplier}× as your tier grows.`],
+      ["gift", "Spend them at checkout", `${n(P.pointsPerDollarOff)} points = $1 off. Turn ${n(P.minRedeem)}+ points into a voucher for your next hotel.`],
+      ["bolt", `${n(P.welcomeBonus)} bonus points`, "Added to your account as soon as you join. Free, no card needed."],
+    ].map(([i, t, d]) => `<div class="rw-perk"><span class="ic">${ico(i)}</span><b>${t}</b><p>${d}</p></div>`).join("");
 
-      if (!auth.loggedIn) {
-        authBlocked.style.display = "block";
-        plansContainer.style.display = "none";
-        return;
+    document.getElementById("steps").innerHTML = [
+      ["Join free", "Create an account with your email. Your welcome points land right away."],
+      ["Book signed in", "See member prices and earn points on every hotel and flight. Points arrive after your trip."],
+      ["Redeem", `From ${n(P.minRedeem)} points, create a voucher in My trips and apply it at checkout.`],
+    ].map(([t, d]) => `<div class="rw-step"><b>${t}</b><p>${d}</p></div>`).join("");
+
+    let rw = null;
+    if (auth.loggedIn) rw = await fetch("/api/rewards").then(r => r.ok ? r.json() : null).then(j => j && j.data).catch(() => null);
+
+    document.getElementById("tiers").innerHTML = P.tiers.map(t => `<div class="rw-tier${rw && rw.tier.key === t.key ? " on" : ""}">${rw && rw.tier.key === t.key ? '<span class="you">You</span>' : ""}
+      <b>${PS.esc(t.label)}</b><div class="mult">${t.multiplier}×</div><small>${t.min ? `From ${n(t.min)} lifetime points` : "Where everyone starts"}<br>${P.pointsPerDollar * t.multiplier} pts per $1</small></div>`).join("");
+
+    if (auth.loggedIn) {
+      document.getElementById("cta").innerHTML = `<a class="btn btn-primary btn-lg" href="/hotels">Find a member price</a><a class="btn btn-ghost btn-lg" href="/my-bookings">My trips &amp; vouchers</a>`;
+      if (rw) {
+        const next = rw.nextTier, cur = P.tiers.find(t => t.key === rw.tier.key) || P.tiers[0];
+        const pct = next ? Math.min(100, Math.round(100 * (rw.lifetime - cur.min) / Math.max(1, (rw.lifetime - cur.min) + next.pointsToGo))) : 100;
+        document.getElementById("status").innerHTML = `<section class="rw-status">
+          <div class="row">
+            <div><small>Your points</small><div class="pts">${n(rw.points)}</div><small>Worth $${(rw.valueUsd || 0).toFixed(2)}${rw.pending ? ` · ${n(rw.pending)} arriving after your trips` : ""}</small></div>
+            <div style="text-align:right"><small>Tier</small><div class="tier">${PS.esc(rw.tier.label)} · ${rw.tier.multiplier}×</div></div>
+          </div>
+          <div class="rw-bar"><div style="width:${pct}%"></div></div>
+          <div class="row"><small>${next ? `${n(next.pointsToGo)} points to ${PS.esc(next.label)} (${next.multiplier}×)` : "You're at the top tier"}</small>
+            <a class="btn btn-sm" href="/my-bookings">${rw.points >= P.minRedeem ? "Redeem points" : "View my trips"}</a></div>
+        </section>`;
       }
+    }
 
-      if (signInBtn) signInBtn.textContent = auth.user.email;
-      if (myBookingsBtn) myBookingsBtn.textContent = "🏠 My Bookings";
-
-      loader.style.display = "block";
-
-      try {
-        const [memRes, plansRes] = await Promise.all([
-          fetch("/api/membership/my"),
-          fetch("/api/membership/plans")
-        ]);
-        const memData = await memRes.json();
-        const plansData = await plansRes.json();
-
-        loader.style.display = "none";
-
-        if (!memData.success) throw new Error(memData.error);
-
-        const current = memData.data;
-        const isPaid = current.isPaid && current.plan_id !== "free";
-
-        // Show current membership
-        if (isPaid) {
-          currentMembership.style.display = "block";
-          const tierColor = current.color || "#6b7280";
-          document.getElementById("currentPlanBadge").innerHTML =
-            `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${tierColor}"></span>${current.plan_name || current.plan_id}`;
-          document.getElementById("currentPlanName").textContent = current.plan_name || current.plan_id;
-          document.getElementById("currentPlanPeriod").textContent =
-            current.interval === "month" ? "Bills monthly" : "Bills yearly";
-          document.getElementById("currentEarnRate").textContent = `${current.earn_rate} pts / $1`;
-          document.getElementById("currentFreeCancels").textContent = current.free_cancels_per_year;
-          document.getElementById("currentMonthlyBonus").textContent =
-            current.monthly_bonus_points > 0 ? `${current.monthly_bonus_points} pts` : "None";
-
-          const perksList = document.getElementById("currentPerks");
-          perksList.innerHTML = (current.perks || []).map(p =>
-            `<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              ${p}
-            </div>`
-          ).join("");
-
-          document.getElementById("cancelMembershipBtn").style.display = isPaid ? "inline-block" : "none";
-        } else {
-          currentMembership.style.display = "block";
-          document.getElementById("currentPlanBadge").innerHTML =
-            `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#6b7280"></span>Free`;
-          document.getElementById("currentPlanName").textContent = "Free";
-          document.getElementById("currentPlanPeriod").textContent = "No charge";
-          document.getElementById("currentEarnRate").textContent = "5 pts / $1";
-          document.getElementById("currentFreeCancels").textContent = "0";
-          document.getElementById("currentMonthlyBonus").textContent = "None";
-          document.getElementById("currentPerks").innerHTML =
-            `<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Member pricing (0% margin)
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Earn 5 pts per $1 spent
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Full booking history
-            </div>`;
-          document.getElementById("cancelMembershipBtn").style.display = "none";
-        }
-
-        // Highlight current plan's card
-        plansContainer.querySelectorAll(".membership-card").forEach(card => {
-          const planId = card.dataset.plan;
-          if (planId === current.plan_id && isPaid) {
-            card.style.borderColor = current.color || "#3b82f6";
-            card.style.borderWidth = "2px";
-          }
-          // Disable downgrade button if on free tier
-          if (planId === "free" && !isPaid) {
-            card.querySelector(".membership-select-btn")?.setAttribute("disabled", "true");
-            card.querySelector(".membership-select-btn")?.classList.add("disabled");
-            card.querySelector(".membership-select-btn").textContent = "Current Plan";
-          }
-        });
-
-        // Wire upgrade buttons
-        plansContainer.querySelectorAll(".membership-select-btn:not([disabled])").forEach(btn => {
-          btn.addEventListener("click", async () => {
-            const planId = btn.dataset.plan;
-            const interval = btn.dataset.interval || "monthly";
-            const plan = plansData.data.find(p => p.id === planId);
-
-            if (!plan) return;
-
-            // Show loading on button
-            const originalText = btn.textContent;
-            btn.textContent = "Processing...";
-            btn.disabled = true;
-
-            try {
-              // Step 1: Create Stripe PaymentIntent / subscription
-              const upgradeRes = await fetch("/api/membership/upgrade", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ planId, paymentMethodId: null })
-              });
-              const upgradeData = await upgradeRes.json();
-
-              if (!upgradeData.success) {
-                showResult("error", upgradeData.error);
-                btn.textContent = originalText;
-                btn.disabled = false;
-                return;
-              }
-
-              // If Stripe is not configured, show manual fallback
-              if (!upgradeData.data.clientSecret) {
-                showResult("info", `Membership upgrade requested for ${plan.name}. Stripe is not configured yet — membership will be activated manually. You now have ${plan.earnRate} pts/$1 earn rate.`);
-                btn.textContent = originalText;
-                btn.disabled = false;
-                // Update locally
-                location.reload();
-                return;
-              }
-
-              // Step 2: Confirm payment with Stripe
-              const { clientSecret, subscriptionId } = upgradeData.data;
-              const stripe = window.Stripe(process.env?.STRIPE_PUBLISHABLE_KEY || "pk_test_placeholder");
-
-              if (!stripe) {
-                showResult("error", "Stripe publishable key not configured on frontend.");
-                btn.textContent = originalText;
-                btn.disabled = false;
-                return;
-              }
-
-              const { error: stripeError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
-                payment_method: "pm_card_visa", // Use saved or prompted method
-              });
-
-              if (stripeError) {
-                showResult("error", `Payment failed: ${stripeError.message}`);
-                btn.textContent = originalText;
-                btn.disabled = false;
-                return;
-              }
-
-              showResult("success", `🎉 Welcome to ${plan.name}! Your membership is active. You'll earn ${plan.earnRate} pts per $1 spent starting now.`);
-
-            } catch (err) {
-              showResult("error", `Error: ${err.message}`);
-              btn.textContent = originalText;
-              btn.disabled = false;
-            }
-          });
-        });
-
-        // Wire cancel button
-        document.getElementById("cancelMembershipBtn").addEventListener("click", async () => {
-          if (!confirm("Cancel your membership? You'll keep access until the end of your current billing period.")) return;
-
-          const cancelRes = await fetch("/api/membership/cancel", { method: "POST" });
-          const cancelData = await cancelRes.json();
-
-          if (cancelData.success) {
-            showResult("success", cancelData.data.message);
-            document.getElementById("cancelMembershipBtn").textContent = "Cancellation Requested";
-            document.getElementById("cancelMembershipBtn").disabled = true;
-          } else {
-            showResult("error", cancelData.error);
-          }
-        });
-
-      } catch (err) {
-        loader.style.display = "none";
-        showResult("error", `Could not load membership info: ${err.message}`);
-      }
-
-      function showResult(type, message) {
-        result.style.display = "block";
-        result.innerHTML = `
-          <div class="alert ${type}">
-            ${type === "success" ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' : ''}
-            ${message}
-          </div>`;
-        result.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    });
+    const faq = [
+      ["Does it cost anything?", "No. PlanurStay Rewards is free, with no card needed to join."],
+      ["When do my points arrive?", "Points show as \"arriving\" when you book and are added to your balance after your stay or trip ends. That way points always match completed trips."],
+      ["What if I cancel?", "Points from a cancelled booking aren't added. If you used a voucher on a booking that's refunded, contact us and we'll reissue it."],
+      ["How do I use my points?", `Once you have ${n(P.minRedeem)} points, open My trips and create a voucher (${n(P.pointsPerDollarOff)} points = $1). Apply it in the "Rewards & promo code" box at hotel checkout. Each voucher is single-use, valid for 12 months, on bookings of at least 3× the voucher value.`],
+      ["Why do I see a lower price when I'm signed in?", `Hotels let us offer lower rates to signed-in members that we can't show publicly. It's usually about ${P.memberSavePct}% below the public price.`],
+      ["Do flights earn points?", "Yes. Hotels and flights both earn points on the amount you pay."],
+      ["Can the program change?", "We may improve or change the program. If we ever end it, points you already have stay usable for at least 90 days after we tell you. Full details are in our Terms."],
+    ];
+    document.getElementById("faq").innerHTML = faq.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join("");
+    document.querySelectorAll("i[data-ico]").forEach(el => el.outerHTML = PS.icon(el.dataset.ico, +el.dataset.s || 18, 2.2));
+  })();
   </script>
-
 </body>
 </html>

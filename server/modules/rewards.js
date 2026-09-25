@@ -156,6 +156,17 @@ function createRewards({ db, apiKey, jwt, JWT_SECRET }) {
   function register(app) {
     const user = (req) => { try { return jwt.verify(req.cookies?.token || "", JWT_SECRET); } catch { return null; } };
 
+    // Public program rules for the Rewards page (single source of truth)
+    app.get("/api/rewards/program", (req, res) => {
+      const pricing = require("./pricing");
+      res.json({
+        tiers: TIERS.map(t => ({ key: t.key, label: t.label, min: t.min, multiplier: t.mult })),
+        pointsPerDollar: 1, pointValueUsd: POINT_VALUE_USD, pointsPerDollarOff: Math.round(1 / POINT_VALUE_USD),
+        minRedeem: MIN_REDEEM, redeemStep: REDEEM_STEP, welcomeBonus: WELCOME_BONUS,
+        memberSavePct: pricing.memberSavePct(),
+      });
+    });
+
     app.get("/api/rewards", (req, res) => {
       const u = user(req);
       if (!u) return res.status(401).json({ error: "Sign in to see your rewards" });

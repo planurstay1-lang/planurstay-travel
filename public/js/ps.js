@@ -243,7 +243,7 @@
             <div class="menu hidden" id="acctMenu">
               <div class="menu-email">${PS.esc(email)}</div>
               <a href="/my-bookings">My trips</a>
-              <a href="/membership">Rewards &amp; membership</a>
+              <a href="/membership">Rewards &amp; points</a>
               <button id="logoutBtn">Sign out</button>
             </div>
           </div>`);
@@ -280,7 +280,7 @@
           </div>
           <div class="foot-cols">
             <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/guides">Travel guides</a><a href="/membership">Rewards</a></div>
-            <div><h4>Your account</h4><a href="/my-bookings">My trips</a><a href="/login">Sign in</a><a href="/membership">Membership</a></div>
+            <div><h4>Your account</h4><a href="/my-bookings">My trips</a><a href="/login">Sign in</a><a href="/membership">Your points</a></div>
             <div><h4>Support</h4><a href="/contact">Contact us</a><a href="/cancellation-policy">Cancellations &amp; refunds</a><a href="/my-bookings">Manage a booking</a><a href="/my-bookings">Find a booking</a></div>
           </div>
         </div>
