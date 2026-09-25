@@ -1560,3 +1560,19 @@ a.route:hover .route-go { background: var(--blue); color: #fff; }
 .brand-line { font-size: 12.5px; color: var(--muted); margin-top: 3px; font-weight: 600; }
 .link-btn { border: 0; background: none; color: var(--blue); font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; padding: 6px 0 0; }
 #fBrands .f-check { font-size: 14px; }
+/* Flexible dates strip */
+.flex-dates { background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px 14px; margin-bottom: 12px; }
+.fd-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 14px; }
+.fd-head b { color: var(--ink); }
+.fd-head span { color: var(--text-2); }
+.fd-head span b { color: #0a7d46; }
+.fd-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+.fd-chip { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 4px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink) !important; text-align: center; transition: border-color .2s, background .2s; min-height: 62px; }
+.fd-chip:hover { border-color: var(--blue); }
+.fd-chip small { font-size: 11.5px; color: var(--text-2); white-space: nowrap; }
+.fd-chip b { font-size: 15px; }
+.fd-chip.low { background: #effaf4; border-color: #b9e6cc; }
+.fd-chip.low b { color: #0a7d46; }
+.fd-chip.on { border: 2px solid var(--ink); }
+.fd-chip.skel { background: var(--line-2); border-color: transparent; }
+@media (max-width: 640px) { .fd-row { grid-auto-flow: column; grid-auto-columns: 84px; overflow-x: auto; padding-bottom: 4px; } }

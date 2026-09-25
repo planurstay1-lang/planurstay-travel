@@ -44,6 +44,10 @@
           <label class="f-check"><input type="checkbox" id="fBreakfast">Breakfast included<span class="cnt" id="cBreakfast"></span></label>
           <label class="f-check"><input type="checkbox" id="fDeal">Deals<span class="cnt" id="cDeal"></span></label>
         </div>
+        <div class="f-group hidden" id="amenGroup">
+          <h4>Amenities</h4>
+          <div id="fAmen"></div>
+        </div>
         <div class="f-group">
           <h4>Guest rating</h4>
           <div class="pill-row" id="fRating">
@@ -75,6 +79,7 @@
           </div>
         </div>
         <div class="pill-row" id="quickChips" style="margin-bottom:14px"></div>
+        <div class="flex-dates hidden" id="flexDates"></div>
         <div class="sort-tabs" id="sortTabs">
           <button class="sort-tab active" data-sort="rec"><b>Recommended</b><small id="sRec">—</small></button>
           <button class="sort-tab" data-sort="price"><b>Lowest price</b><small id="sPrice">—</small></button>
@@ -186,6 +191,16 @@
       document.getElementById("cBreakfast").textContent = cnt(h => h.breakfast);
       document.getElementById("cDeal").textContent = cnt(h => h.deal >= 5);
       paintBrands();
+      paintAmen();
+    }
+    // ─── Amenities facet ───
+    const AMEN = [["pool", "Pool"], ["parking", "Parking"], ["wifi", "Free Wi-Fi"], ["pets", "Pet-friendly"], ["gym", "Gym"], ["spa", "Spa"], ["shuttle", "Airport shuttle"], ["restaurant", "Restaurant"], ["ac", "Air conditioning"], ["beach", "Beachfront"], ["accessible", "Wheelchair accessible"], ["ev", "EV charging"]];
+    function paintAmen() {
+      const rows = AMEN.map(([k, l]) => [k, l, all.filter(h => (h.amen || []).includes(k)).length]).filter(r => r[2] > 0);
+      document.getElementById("amenGroup").classList.toggle("hidden", !rows.length);
+      const sel = st ? st.amen : new Set();
+      document.getElementById("fAmen").innerHTML = rows.map(([k, l, n]) => `<label class="f-check"><input type="checkbox" data-amen="${k}" ${sel.has(k) ? "checked" : ""}>${l}<span class="cnt">${n}</span></label>`).join("");
+      document.querySelectorAll("#fAmen input").forEach(i => i.onchange = () => { i.checked ? st.amen.add(i.dataset.amen) : st.amen.delete(i.dataset.amen); st.shown = 20; apply(); });
     }
     // ─── Brands facet ───
     let brandsOpen = false;
@@ -208,7 +223,7 @@
     let st = null;
     refreshFacets();
 
-    st = { sort: "rec", name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20, landmark: null, maxDist: 0, brands: new Set() };
+    st = { sort: "rec", name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20, landmark: null, maxDist: 0, brands: new Set(), amen: new Set() };
 
     function apply() {
       paintChips();
@@ -220,7 +235,8 @@
         (!st.rating || h.rating >= st.rating) &&
         (!st.stars.size || st.stars.has(Math.round(h.stars))) &&
         (!st.maxDist || (h.dist != null && h.dist <= st.maxDist)) &&
-        (!st.brands.size || st.brands.has(h.brand || "")));
+        (!st.brands.size || st.brands.has(h.brand || "")) &&
+        (!st.amen.size || [...st.amen].every(k => (h.amen || []).includes(k))));
       const by = {
         dist: (a, b) => (a.dist ?? 1e9) - (b.dist ?? 1e9),
         rec: (a, b) => b.rec - a.rec,
@@ -297,7 +313,8 @@
     }
 
     function clearAll() {
-      Object.assign(st, { name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20, maxDist: 0, brands: new Set() });
+      Object.assign(st, { name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20, maxDist: 0, brands: new Set(), amen: new Set() });
+      document.querySelectorAll("#fAmen input").forEach(i => i.checked = false);
       setLandmark(null, true);
       document.querySelectorAll("#fBrands input").forEach(i => i.checked = false);
       document.getElementById("fName").value = ""; priceEl.value = pMax;
@@ -554,6 +571,33 @@
     };
 
     apply();
+
+    // ─── Flexible dates strip (loads after the results, never blocks them) ───
+    (async function loadFlex() {
+      const box = document.getElementById("flexDates");
+      // 20 cheapest + 20 top recommended, so "from" lines up with the Lowest price tab
+      const pool = all.filter(h => !h.memberOnly);
+      const ids = [...new Set([...[...pool].sort((a, b) => a.total - b.total).slice(0, 20), ...[...pool].sort((a, b) => b.rec - a.rec).slice(0, 20)].map(h => h.id))];
+      if (ids.length < 3) return;
+      box.classList.remove("hidden");
+      box.innerHTML = `<div class="fd-head"><b>Flexible dates?</b><span>Checking nearby dates…</span></div><div class="fd-row">${Array.from({ length: 7 }, () => `<div class="fd-chip skel"></div>`).join("")}</div>`;
+      try {
+        const r = await PS.api("/api/stays/flex", { method: "POST", body: { hotelIds: ids, checkin: q.checkin, checkout: q.checkout, adults: +q.adults || 2, rooms: +q.rooms || 1, currency: PS.cur() } });
+        const rows = r.data.filter(x => x.lowNight != null);
+        const cur = rows.find(x => x.offset === 0);
+        if (rows.length < 2 || !cur) { box.classList.add("hidden"); return; }
+        const min = Math.min(...rows.map(x => x.lowNight));
+        const best = rows.find(x => x.lowNight === min);
+        const save = cur.lowNight - min;
+        const hint = best.offset !== 0 && save / cur.lowNight >= 0.05
+          ? `Save <b>${PS.money(save, PS.cur(), 0)}/night</b> by checking in ${PS.fmtDay(best.checkin)}`
+          : "Your dates are among the cheapest";
+        box.innerHTML = `<div class="fd-head"><b>Flexible dates?</b><span>${hint}</span></div>
+          <div class="fd-row">${rows.map(x => `<a class="fd-chip${x.offset === 0 ? " on" : ""}${x.lowNight === min ? " low" : ""}" href="${PS.url("/hotels", { ...q, checkin: x.checkin, checkout: x.checkout })}">
+            <small>${PS.fmtDate(x.checkin, { weekday: "short" })} ${PS.fmtDate(x.checkin)}</small>
+            <b>${PS.money(x.lowNight, PS.cur(), 0)}</b><small>from /night</small></a>`).join("")}</div>`;
+      } catch { box.classList.add("hidden"); }
+    })();
   })();
   </script>
 </body>

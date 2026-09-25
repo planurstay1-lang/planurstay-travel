@@ -39,7 +39,15 @@ const MAJOR_AIRPORTS = {
 };
 
 function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
-  async function lite(path, { method = "GET", body, timeoutMs = 45000 } = {}) {
+  // LiteAPI rate-limits bursts (429): wait and retry up to twice before giving up.
+  async function lite(path, opts = {}) {
+    for (let attempt = 0; ; attempt++) {
+      const r = await liteOnce(path, opts);
+      if (r.status !== 429 || attempt >= 2) return r;
+      await new Promise(res => setTimeout(res, 800 * (attempt + 1) + Math.random() * 400));
+    }
+  }
+  async function liteOnce(path, { method = "GET", body, timeoutMs = 45000 } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -117,8 +125,41 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     }
   });
 
-  // ─── Hotel brand (chain) names, cached per hotel for a day ───
-  const brandCache = new Map(); // id → { brand, at }
+  // ─── Amenity groups built from LiteAPI's facility list (820 types → a handful people filter by) ───
+  // [key, include, exclude]; anything starting with "No " never counts.
+  const AMENITY_RULES = [
+    ["pool", /pool/i, /table|umbrella|cabana|lounger|nearby|towel|bar|view|toy|fence|cover|access to|hoist|lift|billiard|ramp|waterfall|wheelchair/i],
+    ["parking", /parking/i, /offsite|wheelchair|rv, bus|truck|van parking/i],
+    ["pets", /^pets? allowed|pet[- ]friendly|pets are allowed/i, /not allowed/i],
+    ["gym", /fitness|\bgym\b/i, /nearby|wheelchair|locker|classes/i],
+    ["spa", /full-service spa|^spa\b|spa services|spa treatment|wellness centre|wellness center/i, /nearby|tub|wheelchair/i],
+    ["wifi", /wi-?fi|wireless internet/i, /paid|surcharge|fee/i],
+    ["shuttle", /airport (shuttle|transportation|transfer)/i, /$^/],
+    ["restaurant", /^restaurant/i, /$^/],
+    ["ac", /^air conditioning/i, /$^/],
+    ["accessible", /wheelchair|accessib/i, /$^/],
+    ["beach", /private beach|beachfront|on the beach|direct access to (the )?beach|beach access/i, /$^/],
+    ["ev", /electric vehicle|ev charg/i, /$^/],
+  ];
+
+  let facilityMap = null, facilityAt = 0; // facility id → amenity key
+  async function loadFacilityMap() {
+    if (facilityMap && Date.now() - facilityAt < 7 * 24 * 3600 * 1000) return facilityMap;
+    const r = await lite("/data/facilities", { timeoutMs: 15000 }).catch(() => null);
+    if (!r?.ok) return facilityMap || new Map();
+    const m = new Map();
+    for (const f of r.json.data || []) {
+      const name = String(f.facility || "");
+      const rule = !/^no\b/i.test(name) && AMENITY_RULES.find(([, inc, exc]) => inc.test(name) && !exc.test(name));
+      if (rule) m.set(f.facility_id, rule[0]);
+    }
+    facilityMap = m; facilityAt = Date.now();
+    return m;
+  }
+  loadFacilityMap();
+
+  // ─── Hotel brand (chain) names, amenities and location, cached per hotel for a day ───
+  const brandCache = new Map(); // id → { brand, amen, lat, lng, at }
   async function attachBrands(hotels) {
     const now = Date.now(), DAY = 24 * 3600 * 1000;
     const missing = hotels.map(h => h.id).filter(id => { const c = brandCache.get(id); return !c || now - c.at > DAY; });
@@ -126,16 +167,18 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     for (let i = 0; i < missing.length; i += 100) chunks.push(missing.slice(i, i + 100));
     const work = Promise.all(chunks.map(async ids => {
       const r = await lite(`/data/hotels?hotelIds=${ids.join(",")}&limit=${ids.length}`, { timeoutMs: 8000 });
+      const fmap = await loadFacilityMap();
       for (const h of r.json?.data || []) {
         const brand = h.chain && !/^not available$/i.test(h.chain) ? String(h.chain).trim() : null;
-        brandCache.set(h.id, { brand, at: now });
+        const amen = [...new Set((h.facilityIds || []).map(id => fmap.get(id)).filter(Boolean))];
+        brandCache.set(h.id, { brand, amen, lat: h.latitude, lng: h.longitude, at: now });
       }
       ids.forEach(id => { if (!brandCache.has(id)) brandCache.set(id, { brand: null, at: now }); });
     })).catch(() => {});
     // Don't hold the results up for brands: wait at most 2.5 s (they're cached for the next search).
     await Promise.race([work, new Promise(r => setTimeout(r, 2500))]);
     if (brandCache.size > 50000) brandCache.clear();
-    hotels.forEach(h => { const c = brandCache.get(h.id); if (c?.brand) h.brand = c.brand; });
+    hotels.forEach(h => { const c = brandCache.get(h.id); if (c?.brand) h.brand = c.brand; if (c?.amen?.length) h.amen = c.amen; });
   }
 
   // ─── Destination autocomplete ───
@@ -522,6 +565,43 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
   }
 
   // ─── All rooms & rates for one hotel ───
+  // ─── Flexible dates: lowest nightly price for the same stay length shifted −3…+3 days ───
+  // Uses the same (≤40) hotels as the visitor's results so every date compares like with like.
+  app.post("/api/stays/flex", async (req, res) => {
+    const b = req.body || {};
+    const ids = (Array.isArray(b.hotelIds) ? b.hotelIds : []).filter(id => /^lp[0-9a-z]+$/i.test(id)).slice(0, 40);
+    if (!ids.length || !/^\d{4}-\d{2}-\d{2}$/.test(b.checkin || "") || !/^\d{4}-\d{2}-\d{2}$/.test(b.checkout || "")) return res.status(400).json({ error: "hotelIds, checkin and checkout are required" });
+    const day = 86400000, ci = Date.parse(b.checkin + "T00:00:00Z"), co = Date.parse(b.checkout + "T00:00:00Z");
+    const nights = Math.round((co - ci) / day);
+    if (!(nights >= 1 && nights <= 30)) return res.status(400).json({ error: "Invalid dates" });
+    const today = Date.parse(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+    const member = isMember(req);
+    const iso = (t) => new Date(t).toISOString().slice(0, 10);
+    const offsets = [-3, -2, -1, 0, 1, 2, 3].filter(o => ci + o * day >= today);
+    try {
+      // At most 2 date searches at a time (LiteAPI rate limit)
+      const limit2 = (fns) => new Promise((resolve) => { const out = []; let i = 0, done = 0; const next = () => { if (i >= fns.length) return; const k = i++; fns[k]().then(v => { out[k] = v; }, () => { out[k] = null; }).finally(() => { if (++done === fns.length) resolve(out); else next(); }); }; if (!fns.length) resolve(out); next(); next(); });
+      const rows = (await limit2(offsets.map((o) => async () => {
+        const body = { hotelIds: [...ids].sort(), checkin: iso(ci + o * day), checkout: iso(co + o * day), occupancies: occupancies(b), currency: b.currency || "USD", guestNationality: "US", margin: 0, maxRatesPerHotel: 1, timeout: 10 };
+        const r = await cached("flex:" + JSON.stringify(body), 3 * 60 * MIN, () => lite("/hotels/rates", { method: "POST", body }));
+        let low = null, n = 0;
+        for (const e of r.ok ? r.json.data || [] : []) {
+          let best = null;
+          for (const rt of e.roomTypes || []) { const net = rt.offerRetailRate?.amount; if (net != null && (!best || net < best.net)) best = { net, ssp: rt.suggestedSellingPrice?.amount }; }
+          if (!best) continue;
+          n++;
+          const t = pricing.priceFor(best.net, best.ssp, member).total / nights;
+          if (low == null || t < low) low = t;
+        }
+        return { offset: o, checkin: body.checkin, checkout: body.checkout, lowNight: low != null ? Math.round(low * 100) / 100 : null, hotels: n };
+      }))).filter(Boolean);
+      res.json({ success: true, nights, data: rows });
+    } catch (err) {
+      console.error("Flex dates error:", err.message);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
   app.post("/api/stays/rooms", async (req, res) => {
     const b = req.body || {};
     if (!b.hotelId || !b.checkin || !b.checkout) return res.status(400).json({ error: "hotelId, checkin and checkout are required" });
