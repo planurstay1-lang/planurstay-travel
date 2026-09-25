@@ -48,7 +48,7 @@ const PLANS = {
     freeCancelsPerYear: 1,
     monthlyBonusPoints: 500,
     perks: [
-      "Member pricing",
+      "Member pricing + extra 2% off hotels",
       "Earn 7 pts per $1",
       "500 bonus points every month",
       "1 free cancellation per year",
@@ -69,7 +69,7 @@ const PLANS = {
     freeCancelsPerYear: 2,
     monthlyBonusPoints: 1000,
     perks: [
-      "Member pricing",
+      "Member pricing + extra 3% off hotels",
       "Earn 10 pts per $1",
       "1,000 bonus points every month",
       "2 free cancellations per year",
@@ -138,6 +138,8 @@ function ensureMembershipSchema(db) {
     insertMany(courses);
     console.log("Membership plans seeded");
   }
+  // Keep stored perk lists in step with the plan definitions above
+  try { const up = db.prepare("UPDATE membership_plans SET perks = ? WHERE id = ?"); for (const p of Object.values(PLANS)) up.run(JSON.stringify(p.perks), p.id); } catch {}
 }
 
 // ─── Membership helpers ───────────────────────────────────────────────────────
