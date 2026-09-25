@@ -1516,3 +1516,29 @@ a.route:hover .route-go { background: var(--blue); color: #fff; }
 }
 .tab-break { display: none; }
 @media (max-width: 560px) { .search-card.sleek .tab-break { display: block; flex-basis: 100%; height: 0; order: 4; } }
+/* Results: price lines + inline price tracker */
+.price-total { font-size: 13px; color: var(--text-2); margin: 2px 0 8px; white-space: nowrap; }
+.price-total b { color: var(--ink); }
+.track-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px 16px; padding: 18px 20px; margin: 0 0 16px; border-radius: 20px;
+  background: linear-gradient(135deg, #fff4ef, #fff); border: 1.5px solid #ffc9b8; box-shadow: 0 10px 30px -18px rgba(255,90,60,.5); }
+.track-card .tc-ic { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: #ff5a3c; color: #fff; }
+.track-card .tc-txt > b { display: block; font-size: 17px; color: var(--ink); margin-bottom: 3px; }
+.track-card .tc-txt span { color: var(--text-2); font-size: 14px; line-height: 1.45; }
+.track-card .tc-form { display: flex; gap: 8px; }
+.track-card .tc-form input { width: 220px; font: inherit; font-size: 15px; padding: 11px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.track-card .tc-form input:focus { outline: none; border-color: #ff5a3c; box-shadow: 0 0 0 3px #ffe3da; }
+.track-card .tc-msg { grid-column: 2 / -1; font-size: 13px; }
+.track-card .tc-msg:empty { display: none; }
+.track-card .bad { color: #c0362c; }
+.track-card.done { grid-template-columns: auto 1fr; background: #effaf4; border-color: #b9e6cc; box-shadow: none; color: #0a7d46; }
+.track-card.done > div > b { display: block; color: #0a7d46; }
+.track-card.done span { color: var(--text-2); font-size: 14px; }
+.track-card.pulse { animation: tcPulse 1.1s ease; }
+@keyframes tcPulse { 0%, 100% { box-shadow: 0 10px 30px -18px rgba(255,90,60,.5); } 40% { box-shadow: 0 0 0 6px rgba(255,90,60,.25); } }
+.btn.track-btn { background: #ff5a3c; color: #fff; border-color: #ff5a3c; }
+.btn.track-btn:hover { background: #e84a2d; }
+@media (max-width: 760px) {
+  .track-card { grid-template-columns: auto 1fr; }
+  .track-card .tc-form { grid-column: 1 / -1; }
+  .track-card .tc-form input { flex: 1; width: auto; min-width: 0; }
+}

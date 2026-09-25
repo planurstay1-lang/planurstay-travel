@@ -210,7 +210,10 @@
       }
       const shown = list.slice(0, st.shown);
       const memberBanner = !pricingInfo.member ? `<a class="member-bar" href="${PS.loginUrl()}">${PS.icon("tag", 16)}<span><b>Member prices are on.</b> Sign in or join free to save about ${Math.floor((1 - (pricingInfo.memberFactor || 1)) * 100)}% on these hotels.</span>${PS.icon("right", 16)}</a>` : "";
-      results.innerHTML = memberBanner + shown.map(card).join("");
+      const cards = shown.map(card);
+      cards.splice(Math.min(3, cards.length), 0, trackerHTML());
+      results.innerHTML = memberBanner + cards.join("");
+      bindTracker();
       moreBtn.classList.toggle("hidden", list.length <= st.shown);
       moreBtn.textContent = `Show ${Math.min(20, list.length - st.shown)} more`;
       drawMap(list);
@@ -233,7 +236,6 @@
             <div class="tags">
               ${h.refundable ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation</span>` : `<span class="tag">Non-refundable</span>`}
               ${h.breakfast ? `<span class="tag amber">${PS.icon("coffee", 13)}${PS.esc(h.board)}</span>` : ""}
-              ${h.roomName ? `<span class="tag">${PS.esc(h.roomName)}</span>` : ""}
             </div>
           </div>
           <div class="price-col">
@@ -243,7 +245,8 @@
             ${h.memberPrice ? `<span class="tag green" style="margin-bottom:4px">${PS.icon("tag", 13)}Member price</span>` : ""}
             ${h.strikeTotal ? `<span class="price-strike">${PS.money(h.strikeTotal / h.nights, h.currency, 0)}</span>` : ""}
             <span class="price-big">${PS.money(h.perNight, h.currency, 0)}</span>
-            <span class="price-sub">per night · <b>${PS.money(h.total, h.currency, 0)}</b> total</span>
+            <span class="price-sub">per night</span>
+            <span class="price-total"><b>${PS.money(h.total, h.currency, 0)}</b> total · ${h.nights} night${h.nights > 1 ? "s" : ""}</span>
             ${!pricingInfo.member && pricingInfo.memberFactor ? `<span class="member-nudge">Lower member price when signed in</span>` : ""}
             <span class="btn btn-primary btn-sm">View rooms</span>`}
           </div>
@@ -407,39 +410,49 @@
     }).catch(() => document.getElementById("miniMapGroup")?.remove());
 
     // ─── Price alert: email me when prices for this search drop ───
-    const alertBtn = document.getElementById("alertBtn");
-    alertBtn.innerHTML = PS.icon("bolt", 16) + "Track prices";
-    alertBtn.classList.remove("hidden");
-    alertBtn.onclick = async () => {
-      const low = Math.min(...all.filter(h => !h.memberOnly).map(h => h.perNight));
-      const a = await PS.auth();
-      const back = document.createElement("div");
-      back.className = "modal-back";
-      back.innerHTML = `<div class="modal" style="width:min(460px,100%)" role="dialog" aria-modal="true" aria-label="Track prices">
-        <div class="modal-head"><h2>${PS.icon("bolt", 22)} Track prices</h2><button class="modal-close" aria-label="Close">${PS.icon("x", 20)}</button></div>
-        <div class="modal-body">
-          <p style="color:var(--text-2);margin-bottom:14px">We'll check hotel prices in <b style="color:var(--ink)">${PS.esc(q.dest || "this area")}</b> for <b style="color:var(--ink)">${PS.fmtDate(q.checkin)} – ${PS.fmtDate(q.checkout)}</b> every day and email you when they drop.</p>
-          ${Number.isFinite(low) ? `<div class="alert info" style="margin-bottom:16px">${PS.icon("tag", 18)}<div>Right now hotels start from <b>${PS.money(low, PS.cur(), 0)}</b>/night.</div></div>` : ""}
-          <form id="alertForm" novalidate><div class="field" style="margin-bottom:12px"><label for="alertEmail">Email</label><input id="alertEmail" type="email" autocomplete="email" required value="${PS.esc(a.loggedIn ? a.user.email : "")}" placeholder="you@example.com"></div>
-          <button class="btn btn-coral btn-block" type="submit">Email me when prices drop</button></form>
-          <div id="alertMsg"></div>
-          <p class="price-sub" style="margin-top:10px">You can stop the alert anytime from the email.</p>
-        </div></div>`;
-      const close = () => { back.remove(); document.body.style.overflow = ""; };
-      back.addEventListener("click", (e) => { if (e.target === back) close(); });
-      back.querySelector(".modal-close").onclick = close;
-      document.body.appendChild(back); document.body.style.overflow = "hidden";
-      back.querySelector("#alertForm").onsubmit = async (e) => {
+    // Inline tracker card in the results (plus the header button, which scrolls to it).
+    const alertKey = "ps_alert:" + [q.placeId, q.checkin, q.checkout, q.adults, q.rooms].join("|");
+    let alertEmail = "";
+    PS.auth().then(a => { if (a.loggedIn) { alertEmail = a.user.email; document.querySelectorAll(".track-card input[type=email]").forEach(i => { if (!i.value) i.value = alertEmail; }); } });
+    const lowNight = () => Math.min(...all.filter(h => !h.memberOnly).map(h => h.perNight));
+    function trackerHTML() {
+      if (PS.local.get(alertKey)) return `<div class="track-card done">${PS.icon("check", 20, 2.6)}<div><b>You're tracking prices for this search</b><span>We'll email you when hotels in ${PS.esc(q.dest || "this area")} get cheaper for ${PS.fmtDate(q.checkin)} – ${PS.fmtDate(q.checkout)}.</span></div></div>`;
+      const low = lowNight();
+      return `<div class="track-card" id="trackCard">
+        <span class="tc-ic">${PS.icon("bolt", 22, 2.2)}</span>
+        <div class="tc-txt"><b>Track prices for ${PS.esc(q.dest || "this search")}</b>
+          <span>${PS.fmtDate(q.checkin)} – ${PS.fmtDate(q.checkout)}${Number.isFinite(low) ? ` · from <b>${PS.money(low, PS.cur(), 0)}</b>/night now` : ""}. We check every day and email you when prices drop.</span></div>
+        <form class="tc-form" novalidate><input type="email" autocomplete="email" required placeholder="Your email" aria-label="Email for price alerts" value="${PS.esc(alertEmail)}"><button class="btn btn-coral" type="submit">Track prices</button></form>
+        <div class="tc-msg"></div>
+      </div>`;
+    }
+    function bindTracker() {
+      const card = document.getElementById("trackCard"); if (!card) return;
+      card.querySelector("form").onsubmit = async (e) => {
         e.preventDefault();
-        const btn = e.target.querySelector("button"), msg = back.querySelector("#alertMsg");
-        btn.disabled = true;
+        const btn = e.target.querySelector("button"), email = e.target.querySelector("input").value.trim(), msg = card.querySelector(".tc-msg");
+        if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) { msg.innerHTML = `<span class="bad">Enter a valid email address.</span>`; return; }
+        btn.disabled = true; btn.textContent = "Setting up…";
         try {
-          const r = await PS.api("/api/alerts", { method: "POST", body: { email: back.querySelector("#alertEmail").value.trim(), placeId: q.placeId, dest: q.dest, destDetail: q.destDetail, checkin: q.checkin, checkout: q.checkout, adults: +q.adults || 2, rooms: +q.rooms || 1, currency: PS.cur(), price: Number.isFinite(low) ? low : null } });
-          back.querySelector("#alertForm").remove();
-          msg.innerHTML = `<div class="alert success">${PS.icon("check", 18)}<div><b>${r.already ? "You're already tracking this search." : "Price alert is on!"}</b> ${r.already ? "" : "Check your inbox for a confirmation."}</div></div>`;
+          const low = lowNight();
+          const r = await PS.api("/api/alerts", { method: "POST", body: { email, placeId: q.placeId, dest: q.dest, destDetail: q.destDetail, checkin: q.checkin, checkout: q.checkout, adults: +q.adults || 2, rooms: +q.rooms || 1, currency: PS.cur(), price: Number.isFinite(low) ? low : null } });
+          PS.local.set(alertKey, 1);
+          PS.track("page", { alert: 1 });
+          card.outerHTML = trackerHTML().replace("You're tracking prices for this search", r.already ? "You're already tracking this search" : "Price alert is on! Check your inbox");
           alertBtn.innerHTML = PS.icon("check", 16, 2.6) + "Tracking prices";
-        } catch (err) { btn.disabled = false; msg.innerHTML = `<div class="alert error" style="margin-top:12px">${PS.icon("alert", 18)}<div>${PS.esc(err.message)}</div></div>`; }
+        } catch (err) { btn.disabled = false; btn.textContent = "Track prices"; msg.innerHTML = `<span class="bad">${PS.esc(err.message)}</span>`; }
       };
+    }
+    const alertBtn = document.getElementById("alertBtn");
+    alertBtn.innerHTML = PS.local.get(alertKey) ? PS.icon("check", 16, 2.6) + "Tracking prices" : PS.icon("bolt", 16) + "Track prices";
+    alertBtn.classList.remove("hidden");
+    alertBtn.classList.add("track-btn");
+    alertBtn.onclick = () => {
+      const c = document.getElementById("trackCard") || document.querySelector(".track-card");
+      if (!c) return;
+      c.scrollIntoView({ behavior: "smooth", block: "center" });
+      c.classList.remove("pulse"); void c.offsetWidth; c.classList.add("pulse");
+      setTimeout(() => c.querySelector("input")?.focus({ preventScroll: true }), 400);
     };
 
     apply();
