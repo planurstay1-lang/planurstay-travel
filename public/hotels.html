@@ -22,50 +22,28 @@
             <span class="btn btn-sm btn-primary mini-map-cta">Show map</span>
           </button>
         </div>
-        <div class="f-group">
-          <h4>Search by hotel name</h4>
-          <div class="field f-search"><span class="f-search-ic" aria-hidden="true"></span><input type="search" id="fName" placeholder="e.g. Hilton, Marriott, Ritz" aria-label="Hotel name"></div>
-        </div>
-        <div class="f-group f-landmark">
-          <h4>Distance from</h4>
-          <div class="field f-search lm-field"><span class="f-search-ic" aria-hidden="true"></span><input type="search" id="fLandmark" placeholder="Landmark, address or station" aria-label="Distance from a landmark" autocomplete="off"></div>
-          <div class="pill-row lm-sugg" id="lmSugg"></div>
-          <div class="lm-active hidden" id="lmActive"></div>
-          <div class="pill-row hidden" id="fDist"></div>
-        </div>
-        <div class="f-group">
-          <h4>Total price</h4>
-          <input type="range" class="range" id="fPrice" min="0" max="100" value="100" aria-label="Maximum price">
-          <div class="range-vals"><span id="fPriceMin">$0</span><span id="fPriceMax">Any</span></div>
-        </div>
-        <div class="f-group">
-          <h4>Popular filters</h4>
-          <label class="f-check"><input type="checkbox" id="fRefund">Free cancellation<span class="cnt" id="cRefund"></span></label>
-          <label class="f-check"><input type="checkbox" id="fBreakfast">Breakfast included<span class="cnt" id="cBreakfast"></span></label>
-          <label class="f-check"><input type="checkbox" id="fDeal">Deals<span class="cnt" id="cDeal"></span></label>
-        </div>
-        <div class="f-group hidden" id="amenGroup">
-          <h4>Amenities</h4>
-          <div id="fAmen"></div>
-        </div>
-        <div class="f-group">
-          <h4>Guest rating</h4>
-          <div class="pill-row" id="fRating">
-            <button class="pill active" data-v="0">Any</button><button class="pill" data-v="7">7+</button><button class="pill" data-v="8">8+</button><button class="pill" data-v="9">9+</button>
+        <div class="fbox">
+          <div class="fbox-head"><h3>Filters</h3><button type="button" class="link-btn" id="clearFilters">Clear filters</button></div>
+          <div class="f-group">
+            <h4>Property name</h4>
+            <div class="field f-search"><span class="f-search-ic" aria-hidden="true"></span><input type="search" id="fName" placeholder="e.g. Hilton, Marriott, Ritz" aria-label="Property name"></div>
           </div>
-        </div>
-        <div class="f-group">
-          <h4>Star rating</h4>
-          <div class="pill-row" id="fStars">
-            <button class="pill" data-v="2">2★</button><button class="pill" data-v="3">3★</button><button class="pill" data-v="4">4★</button><button class="pill" data-v="5">5★</button>
+          <div class="f-group" id="fPriceGroup">
+            <h4>Price per night <span class="f-val" id="fPriceMax">Any</span></h4>
+            <input type="range" class="range" id="fPrice" min="0" max="100" value="100" aria-label="Maximum price per night">
+            <div class="range-vals"><span id="fPriceMin">$0</span><span id="fPriceTop"></span></div>
           </div>
+          <div id="fDynA"></div>
+          <div class="f-group f-landmark">
+            <h4>Distance</h4>
+            <div class="field f-search lm-field"><span class="f-search-ic" aria-hidden="true"></span><input type="search" id="fLandmark" placeholder="Landmark, address or station" aria-label="Distance from a landmark" autocomplete="off"></div>
+            <div class="pill-row lm-sugg" id="lmSugg"></div>
+            <div class="lm-active hidden" id="lmActive"></div>
+            <div class="time-label" id="fDistLabel"></div>
+            <div class="pill-row" id="fDist"></div>
+          </div>
+          <div id="fDynB"></div>
         </div>
-        <div class="f-group hidden" id="brandGroup">
-          <h4>Brands</h4>
-          <div id="fBrands"></div>
-          <button type="button" class="link-btn hidden" id="brandMore"></button>
-        </div>
-        <div class="f-group"><button class="btn btn-ghost btn-sm btn-block" id="clearFilters">Clear all filters</button></div>
         <div class="f-group show-mobile" style="display:none"><button class="btn btn-primary btn-block" id="applyFilters">Show results</button></div>
       </aside>
 
@@ -170,73 +148,124 @@
     // ─── Derive facets ───
     const enrich = (h) => {
       h.deal = h.strikeTotal ? Math.round((1 - h.total / h.strikeTotal) * 100) : 0;
+      h.meals = h.meals || [];
       h.breakfast = /breakfast|half board|full board|all inclusive/i.test(h.board || "");
+      if (h.refundAny == null) h.refundAny = h.refundable;
       h.rec = (h.rating || 6) * 10 + (h.stars || 0) * 2 + Math.min(h.deal, 25) + Math.log10((h.reviews || 0) + 1) * 3 + (h.refundable ? 4 : 0);
     };
     all.forEach(enrich);
     const priceEl = document.getElementById("fPrice");
     let pMin = 0, pMax = 0;
-    // Recomputed when map searches add hotels; a slider left at max means "any price".
+    // Recomputed when map searches add hotels; a slider left at max means "any price". Per night, like the cards.
     function refreshFacets() {
       // Member-only prices are never shown to guests (hotel price rules), so facets use public prices only
       const pubAll = all.filter(h => !h.memberOnly);
-      const prices = (pubAll.length ? pubAll : all).map(h => h.total).sort((a, b) => a - b);
+      const prices = (pubAll.length ? pubAll : all).map(h => h.perNight).sort((a, b) => a - b);
       const wasAny = !st || st.max >= pMax;
       pMin = Math.floor(prices[0]); pMax = Math.ceil(prices[prices.length - 1]);
       priceEl.min = pMin; priceEl.max = pMax; priceEl.step = Math.max(1, Math.round((pMax - pMin) / 100));
       if (wasAny) { if (st) st.max = pMax; priceEl.value = pMax; }
       document.getElementById("fPriceMin").textContent = PS.money(pMin, PS.cur(), 0);
-      const cnt = (f) => all.filter(f).length;
-      document.getElementById("cRefund").textContent = cnt(h => h.refundable);
-      document.getElementById("cBreakfast").textContent = cnt(h => h.breakfast);
-      document.getElementById("cDeal").textContent = cnt(h => h.deal >= 5);
-      paintBrands();
-      paintAmen();
+      document.getElementById("fPriceTop").textContent = PS.money(pMax, PS.cur(), 0) + "+";
     }
-    // ─── Amenities facet ───
-    const AMEN = [["pool", "Pool"], ["parking", "Parking"], ["wifi", "Free Wi-Fi"], ["pets", "Pet-friendly"], ["gym", "Gym"], ["spa", "Spa"], ["shuttle", "Airport shuttle"], ["restaurant", "Restaurant"], ["ac", "Air conditioning"], ["beach", "Beachfront"], ["accessible", "Wheelchair accessible"], ["ev", "EV charging"]];
-    function paintAmen() {
-      const rows = AMEN.map(([k, l]) => [k, l, all.filter(h => (h.amen || []).includes(k)).length]).filter(r => r[2] > 0);
-      document.getElementById("amenGroup").classList.toggle("hidden", !rows.length);
-      const sel = st ? st.amen : new Set();
-      document.getElementById("fAmen").innerHTML = rows.map(([k, l, n]) => `<label class="f-check"><input type="checkbox" data-amen="${k}" ${sel.has(k) ? "checked" : ""}>${l}<span class="cnt">${n}</span></label>`).join("");
-      document.querySelectorAll("#fAmen input").forEach(i => i.onchange = () => { i.checked ? st.amen.add(i.dataset.amen) : st.amen.delete(i.dataset.amen); st.shown = 20; apply(); });
-    }
-    // ─── Brands facet ───
-    let brandsOpen = false;
-    function paintBrands() {
-      const counts = {};
-      all.forEach(h => { if (h.brand) counts[h.brand] = (counts[h.brand] || 0) + 1; });
-      const list = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-      const grp = document.getElementById("brandGroup");
-      grp.classList.toggle("hidden", !list.length);
-      if (!list.length) return;
-      const shown = brandsOpen ? list : list.slice(0, 8);
-      const sel = st ? st.brands : new Set();
-      document.getElementById("fBrands").innerHTML = shown.map(([b, n]) => `<label class="f-check"><input type="checkbox" data-brand="${PS.esc(b)}" ${sel.has(b) ? "checked" : ""}>${PS.esc(b)}<span class="cnt">${n}</span></label>`).join("");
-      document.querySelectorAll("#fBrands input").forEach(i => i.onchange = () => { i.checked ? st.brands.add(i.dataset.brand) : st.brands.delete(i.dataset.brand); st.shown = 20; apply(); });
-      const more = document.getElementById("brandMore");
-      more.classList.toggle("hidden", list.length <= 8);
-      more.textContent = brandsOpen ? "Show fewer" : `Show all ${list.length} brands`;
-      more.onclick = () => { brandsOpen = !brandsOpen; paintBrands(); };
-    }
+
+    // ─── Filter definitions ───
+    const MEALS = [["breakfast", "Breakfast included"], ["half", "Half board"], ["full", "Full board"], ["all", "All inclusive"], ["room", "Room only"]];
+    const hasMeal = (h, m) => m === "breakfast" ? h.meals.some(x => x !== "room") || h.breakfast : h.meals.includes(m);
+    const RATINGS = [[9, "Wonderful"], [8, "Very good"], [7, "Good"], [6, "Pleasant"]];
+    const ROOM_FEAT = [["ac", "Air conditioning"], ["heating", "Heating"], ["coffee", "Coffee/tea maker"], ["nonsmoking", "Non-smoking rooms"], ["family", "Family rooms"], ["roomservice", "Room service"]];
+    const FACIL = [["wifi", "Free Wi-Fi"], ["parking", "Parking"], ["pool", "Pool"], ["gym", "Fitness center"], ["spa", "Spa"], ["restaurant", "Restaurant"], ["bar", "Bar"], ["pets", "Pet-friendly"], ["shuttle", "Airport shuttle"], ["accessible", "Wheelchair accessible"], ["frontdesk", "24-hour front desk"], ["laundry", "Laundry"], ["terrace", "Terrace or garden"], ["sauna", "Sauna"], ["hottub", "Hot tub"], ["beach", "Beachfront"], ["kids", "Kids' club or playground"], ["business", "Business center"], ["ev", "EV charging"], ["elevator", "Elevator"]];
+    const POPULAR = [
+      ["Free cancellation", "refund"], ["Breakfast included", "meals", "breakfast"], ["Deals", "deal"],
+      ["Parking", "amen", "parking"], ["Pool", "amen", "pool"], ["Fitness center", "amen", "gym"], ["Hotels", "types", "Hotel"], ["Apartments", "types", "Apartment"],
+    ];
+    const blank = () => ({ name: "", max: pMax, refund: false, deal: false, rating: 0, stars: new Set(), maxDist: 0, brands: new Set(), amen: new Set(), meals: new Set(), types: new Set(), cities: new Set() });
     let st = null;
     refreshFacets();
+    st = { sort: "rec", shown: 20, landmark: null, ...blank() };
 
-    st = { sort: "rec", name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20, landmark: null, maxDist: 0, brands: new Set(), amen: new Set() };
-
-    function apply() {
-      paintChips();
+    // A hotel passes every filter except `skip` (so each group's counts reflect the other filters).
+    function pass(h, skip) {
       const n = st.name.toLowerCase();
-      let list = all.filter(h =>
-        (st.max >= pMax || h.total <= st.max) &&
+      return (skip === "price" || st.max >= pMax || h.perNight <= st.max) &&
         (!n || (h.name || "").toLowerCase().includes(n)) &&
-        (!st.refund || h.refundable) && (!st.breakfast || h.breakfast) && (!st.deal || h.deal >= 5) &&
-        (!st.rating || h.rating >= st.rating) &&
-        (!st.stars.size || st.stars.has(Math.round(h.stars))) &&
-        (!st.maxDist || (h.dist != null && h.dist <= st.maxDist)) &&
-        (!st.brands.size || st.brands.has(h.brand || "")) &&
-        (!st.amen.size || [...st.amen].every(k => (h.amen || []).includes(k))));
+        (skip === "refund" || !st.refund || h.refundAny) && (skip === "deal" || !st.deal || h.deal >= 5) &&
+        (skip === "rating" || !st.rating || h.rating >= st.rating) &&
+        (skip === "stars" || !st.stars.size || st.stars.has(Math.round(h.stars || 0))) &&
+        (skip === "dist" || !st.maxDist || (h.dist != null && h.dist <= st.maxDist)) &&
+        (skip === "brands" || !st.brands.size || st.brands.has(h.brand || "")) &&
+        (skip === "amen" || [...st.amen].every(k => (h.amen || []).includes(k))) &&
+        (skip === "meals" || !st.meals.size || [...st.meals].some(m => hasMeal(h, m))) &&
+        (skip === "types" || !st.types.size || st.types.has(h.ptype || "Other")) &&
+        (skip === "cities" || !st.cities.size || st.cities.has(h.city || ""));
+    }
+    const count = (group, test) => all.filter(h => pass(h, group) && test(h)).length;
+    const valueTest = { refund: () => h => h.refundAny, deal: () => h => h.deal >= 5,
+      meals: m => h => hasMeal(h, m), amen: k => h => (h.amen || []).includes(k) && [...st.amen].every(x => (h.amen || []).includes(x)),
+      types: t => h => (h.ptype || "Other") === t, brands: b => h => (h.brand || "") === b, stars: v => h => Math.round(h.stars || 0) === v, cities: c => h => (h.city || "") === c };
+    const isOn = (k, v) => v === undefined ? !!st[k] : st[k].has(v);
+    const box = (k, v, label, n) => `<label class="f-check"><input type="checkbox" data-k="${k}" ${v !== undefined ? `data-v="${PS.esc(v)}"` : ""} ${isOn(k, v) ? "checked" : ""} ${n || isOn(k, v) ? "" : "disabled"}><span>${label}</span><span class="cnt">${n}</span></label>`;
+    const optBox = (k, v, label) => box(k, v, label, count(k, valueTest[k](v)));
+    const more = { brands: false, fac: false };
+    const listGroup = (title, key, rows, limit, moreKey) => {
+      if (!rows.length) return "";
+      const shown = more[moreKey] || rows.length <= limit + 1 ? rows : rows.slice(0, limit);
+      return `<div class="f-group"><h4>${title}</h4>${shown.join("")}${rows.length > shown.length || more[moreKey] && rows.length > limit + 1 ? `<button type="button" class="link-btn" data-more="${moreKey}">${more[moreKey] ? "Show less" : `Show all ${rows.length}`}</button>` : ""}</div>`;
+    };
+
+    function renderF() {
+      const has = (k) => all.some(h => (h.amen || []).includes(k));
+      // Group A: sits under the price slider
+      const popular = POPULAR.filter(([, k, v]) => k !== "amen" && k !== "types" || (k === "amen" ? has(v) : all.some(h => h.ptype === v)))
+        .filter(([, k, v]) => isOn(k, v) || count(k, valueTest[k](v))).map(([label, k, v]) => optBox(k, v, label));
+      const ratingRows = [`<label class="f-check"><input type="radio" name="fRating" data-k="rating" data-v="0" ${!st.rating ? "checked" : ""}><span>Any</span></label>`]
+        .concat(RATINGS.map(([v, w]) => { const n = count("rating", h => h.rating >= v);
+          return `<label class="f-check"><input type="radio" name="fRating" data-k="rating" data-v="${v}" ${st.rating === v ? "checked" : ""} ${n ? "" : "disabled"}><span><b class="rt-chip">${v}+</b>${w}</span><span class="cnt">${n}</span></label>`; }));
+      document.getElementById("fDynA").innerHTML =
+        `<div class="f-group"><h4>Popular filters</h4>${popular.join("")}</div>` +
+        `<div class="f-group"><h4>Guest rating</h4>${ratingRows.join("")}</div>` +
+        `<div class="f-group"><h4>Star rating</h4>${[5, 4, 3, 2, 1, 0].filter(v => all.some(h => Math.round(h.stars || 0) === v)).map(v => optBox("stars", v, v ? `<span class="star-lbl">${"★".repeat(v)}</span>${v} star${v > 1 ? "s" : ""}` : "Unrated")).join("")}</div>`;
+
+      // Group B: after distance
+      const brandCounts = {}; all.forEach(h => { const b = h.brand || ""; brandCounts[b] = (brandCounts[b] || 0) + 1; });
+      const brandRows = Object.keys(brandCounts).sort((a, b) => (a === "" ? -1 : b === "" ? 1 : brandCounts[b] - brandCounts[a] || a.localeCompare(b)))
+        .map(b => optBox("brands", b, b ? PS.esc(b) : "Independent hotels"));
+      const types = [...new Set(all.map(h => h.ptype || "Other"))].sort((a, b) => all.filter(h => (h.ptype || "Other") === b).length - all.filter(h => (h.ptype || "Other") === a).length);
+      const cities = [...new Set(all.map(h => h.city).filter(Boolean))];
+      document.getElementById("fDynB").innerHTML =
+        `<div class="f-group"><h4>Reservation policy</h4>${optBox("refund", undefined, "Free cancellation")}</div>` +
+        `<div class="f-group"><h4>Meal plans</h4>${MEALS.filter(([m]) => all.some(h => hasMeal(h, m))).map(([m, l]) => optBox("meals", m, l)).join("")}</div>` +
+        (types.length > 1 ? `<div class="f-group"><h4>Property type</h4>${types.map(t => optBox("types", t, t === "Other" ? "Other" : t + "s")).join("")}</div>` : "") +
+        (Object.keys(brandCounts).length > 1 ? listGroup("Brand", "brands", brandRows, 6, "brands") : "") +
+        listGroup("Room features", "amen", ROOM_FEAT.filter(([k]) => has(k)).map(([k, l]) => optBox("amen", k, l)), 6, "room") +
+        listGroup("Facilities", "amen", FACIL.filter(([k]) => has(k)).map(([k, l]) => optBox("amen", k, l)), 8, "fac") +
+        (cities.length > 1 ? `<div class="f-group"><h4>Neighborhood</h4>${cities.sort((a, b) => all.filter(h => h.city === b).length - all.filter(h => h.city === a).length).map(c => optBox("cities", c, PS.esc(c))).join("")}</div>` : "");
+
+      // Distance pills (from the landmark, or the city centre)
+      const ref = st.landmark || centre;
+      document.getElementById("fDistLabel").textContent = ref ? `From ${st.landmark ? st.landmark.name : "the city centre"}` : "";
+      document.getElementById("fDist").innerHTML = ref ? `<button class="pill ${!st.maxDist ? "active" : ""}" data-dist="0">Any</button>` + DIST_STEPS.map(([v, l]) => { const n = count("dist", h => h.dist != null && h.dist <= v);
+        return `<button class="pill ${Math.abs(st.maxDist - v) < 1e-6 ? "active" : ""}" data-dist="${v}" ${n ? "" : "disabled"}>Under ${l}</button>`; }).join("") : "";
+      const any = st.name || st.max < pMax || st.refund || st.deal || st.rating || st.maxDist || st.landmark || ["stars", "brands", "amen", "meals", "types", "cities"].some(k => st[k].size);
+      document.getElementById("clearFilters").classList.toggle("off", !any);
+    }
+    const filtersPanel = document.getElementById("filters");
+    filtersPanel.addEventListener("change", (e) => {
+      const i = e.target; if (!i.dataset.k) return;
+      const k = i.dataset.k, v = i.dataset.v;
+      if (k === "rating") st.rating = +v;
+      else if (v === undefined) st[k] = i.checked;
+      else { const val = k === "stars" ? +v : v; i.checked ? st[k].add(val) : st[k].delete(val); }
+      st.shown = 20; apply();
+    });
+    filtersPanel.addEventListener("click", (e) => {
+      const m = e.target.closest("[data-more]"); if (m) { more[m.dataset.more] = !more[m.dataset.more]; renderF(); return; }
+      const d = e.target.closest("[data-dist]"); if (d) { st.maxDist = +d.dataset.dist; st.shown = 20; apply(); }
+    });
+
+    function apply() { renderF(); paintChips(); renderList(); }
+    function renderList() {
+      let list = all.filter(h => pass(h));
       const by = {
         dist: (a, b) => (a.dist ?? 1e9) - (b.dist ?? 1e9),
         rec: (a, b) => b.rec - a.rec,
@@ -248,10 +277,11 @@
       document.getElementById("sRec").textContent = lbl(top("rec"));
       document.getElementById("sPrice").textContent = lbl(top("price"));
       document.getElementById("sRating").textContent = lbl(top("rating"));
-      if (st.landmark) { const n = [...list].sort(by.dist)[0]; document.getElementById("sDist").textContent = n && n.dist != null ? `Nearest ${fmtDist(n.dist)}` : "—"; }
+      if (st.landmark || centre) { const n = [...list].sort(by.dist)[0]; document.getElementById("sDist").textContent = n && n.dist != null ? `${fmtDist(n.dist)} ${st.landmark ? "away" : "from centre"}` : "—"; }
       list.sort(by[st.sort]);
       meta.textContent = `${list.length} of ${all.length} properties · ${baseMeta}`;
       document.getElementById("fPriceMax").textContent = st.max >= pMax ? "Any" : "Up to " + PS.money(st.max, PS.cur(), 0);
+      document.getElementById("openFilters").innerHTML = PS.icon("filter", 16) + "Filters" + (list.length < all.length ? ` (${list.length})` : "");
 
       if (!list.length) {
         results.innerHTML = empty("filter", "No stays match your filters", "Try removing a filter or widening your price range.", `<button class="btn btn-primary" id="emptyClear">Clear filters</button>`);
@@ -286,12 +316,12 @@
             <div class="stars">${PS.stars(h.stars)}</div>
             <h3>${PS.esc(h.name)}</h3>
             <div class="addr">${PS.icon("pin", 14)}${PS.esc([h.address, h.city].filter(Boolean).join(", "))}</div>
-            ${st.landmark && h.dist != null ? `<div class="dist-line">${PS.icon("map", 14)}<b>${fmtDist(h.dist)}</b> from ${PS.esc(st.landmark.name)}</div>` : ""}
+            ${h.dist != null && (st.landmark || centre) ? `<div class="dist-line">${PS.icon("map", 14)}<b>${fmtDist(h.dist)}</b> from ${st.landmark ? PS.esc(st.landmark.name) : "centre"}</div>` : ""}
             ${h.brand ? `<div class="brand-line">${PS.esc(h.brand)}</div>` : ""}
             ${h.rating ? `<div class="rating-row"><span class="score ${great ? "great" : ""}">${Number(h.rating).toFixed(1)}</span><b>${PS.ratingWord(h.rating)}</b><small>${h.reviews ? h.reviews.toLocaleString() + " reviews" : ""}</small></div>` : ""}
             <div class="tags">
-              ${h.refundable ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation</span>` : `<span class="tag">Non-refundable</span>`}
-              ${h.breakfast ? `<span class="tag amber">${PS.icon("coffee", 13)}${PS.esc(h.board)}</span>` : ""}
+              ${h.refundable ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation</span>` : h.refundAny ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation available</span>` : `<span class="tag">Non-refundable</span>`}
+              ${h.breakfast ? `<span class="tag amber">${PS.icon("coffee", 13)}${PS.esc(h.board)}</span>` : hasMeal(h, "breakfast") ? `<span class="tag amber">${PS.icon("coffee", 13)}Breakfast available</span>` : ""}
             </div>
           </div>
           <div class="price-col">
@@ -315,14 +345,10 @@
     }
 
     function clearAll() {
-      Object.assign(st, { name: "", max: pMax, refund: false, breakfast: false, deal: false, rating: 0, stars: new Set(), shown: 20, maxDist: 0, brands: new Set(), amen: new Set() });
-      document.querySelectorAll("#fAmen input").forEach(i => i.checked = false);
-      setLandmark(null, true);
-      document.querySelectorAll("#fBrands input").forEach(i => i.checked = false);
+      Object.assign(st, blank(), { shown: 20 });
       document.getElementById("fName").value = ""; priceEl.value = pMax;
-      ["fRefund", "fBreakfast", "fDeal"].forEach(id => document.getElementById(id).checked = false);
-      document.querySelectorAll("#fRating .pill").forEach(p => p.classList.toggle("active", p.dataset.v === "0"));
-      document.querySelectorAll("#fStars .pill").forEach(p => p.classList.remove("active"));
+      document.getElementById("fLandmark").value = "";
+      setLandmark(null, true);
       apply();
     }
 
@@ -343,18 +369,21 @@
     const useMiles = all.filter(h => h.country).every(h => h.country === "US");
     const fmtDist = (d) => useMiles ? `${(d * 0.621371).toFixed(d * 0.621371 < 10 ? 1 : 0)} mi` : `${d.toFixed(d < 10 ? 1 : 0)} km`;
     const DIST_STEPS = useMiles ? [[0.5, "½ mi"], [1, "1 mi"], [3, "3 mi"]].map(([v, l]) => [v / 0.621371, l]) : [[1, "1 km"], [2, "2 km"], [5, "5 km"]];
+    let centre = null; // the searched place's centre (distance filter when no landmark is picked)
+    function setDistances() {
+      const ref = st.landmark || centre;
+      all.forEach(h => { h.dist = ref && h.lat && h.lng ? km(ref.lat, ref.lng, h.lat, h.lng) : null; });
+    }
     function setLandmark(lm, silent) {
       st.landmark = lm; st.maxDist = 0;
-      all.forEach(h => { h.dist = lm && h.lat && h.lng ? km(lm.lat, lm.lng, h.lat, h.lng) : null; });
-      const distTab = document.getElementById("distTab"), act = document.getElementById("lmActive"), dist = document.getElementById("fDist");
-      distTab.classList.toggle("hidden", !lm);
-      act.classList.toggle("hidden", !lm); dist.classList.toggle("hidden", !lm);
+      setDistances();
+      const distTab = document.getElementById("distTab"), act = document.getElementById("lmActive");
+      distTab.classList.toggle("hidden", !lm && !centre);
+      act.classList.toggle("hidden", !lm);
       document.getElementById("lmSugg").classList.toggle("hidden", !!lm);
       if (lm) {
         act.innerHTML = `<span>${PS.icon("map", 14)}${PS.esc(lm.name)}</span><button type="button" aria-label="Clear landmark">${PS.icon("x", 14, 2.6)}</button>`;
         act.querySelector("button").onclick = () => { document.getElementById("fLandmark").value = ""; setLandmark(null); };
-        dist.innerHTML = `<button class="pill active" data-v="0">Any distance</button>` + DIST_STEPS.map(([v, l]) => `<button class="pill" data-v="${v}">Within ${l}</button>`).join("");
-        dist.querySelectorAll(".pill").forEach(p => p.onclick = () => { dist.querySelectorAll(".pill").forEach(x => x.classList.remove("active")); p.classList.add("active"); st.maxDist = +p.dataset.v; st.shown = 20; apply(); });
         document.querySelectorAll(".sort-tab").forEach(x => x.classList.toggle("active", x === distTab));
         st.sort = "dist";
       } else if (st.sort === "dist") {
@@ -363,6 +392,14 @@
       }
       if (!silent) { st.shown = 20; apply(); }
     }
+    // City centre: the searched place's own location (hotel/landmark searches too); falls back to the middle of the results.
+    PS.api(`/api/places/${encodeURIComponent(q.placeId)}/location`).then(r => r.data).catch(() => null).then(loc => {
+      const pts = all.filter(h => h.lat && h.lng);
+      if (!loc?.lat && pts.length) { const mid = (k) => pts.map(h => h[k]).sort((a, b) => a - b)[pts.length >> 1]; loc = { lat: mid("lat"), lng: mid("lng") }; }
+      if (!loc?.lat) return;
+      centre = { lat: loc.lat, lng: loc.lng };
+      if (!st.landmark) { setDistances(); document.getElementById("distTab").classList.remove("hidden"); apply(); }
+    });
     (function initLandmarks() {
       const pts = all.filter(h => h.lat && h.lng);
       const mid = pts.length ? { lat: pts.map(h => h.lat).sort((a, b) => a - b)[pts.length >> 1], lng: pts.map(h => h.lng).sort((a, b) => a - b)[pts.length >> 1] } : null;
@@ -386,21 +423,13 @@
     // ─── Wire filters ───
     let nameT;
     document.getElementById("fName").oninput = (e) => { clearTimeout(nameT); nameT = setTimeout(() => { st.name = e.target.value.trim(); st.shown = 20; apply(); }, 150); };
-    priceEl.oninput = () => { st.max = +priceEl.value; st.shown = 20; apply(); };
-    document.getElementById("fRefund").onchange = (e) => { st.refund = e.target.checked; apply(); };
-    document.getElementById("fBreakfast").onchange = (e) => { st.breakfast = e.target.checked; apply(); };
-    document.getElementById("fDeal").onchange = (e) => { st.deal = e.target.checked; apply(); };
-    document.querySelectorAll("#fRating .pill").forEach(p => p.onclick = () => {
-      document.querySelectorAll("#fRating .pill").forEach(x => x.classList.remove("active")); p.classList.add("active"); st.rating = +p.dataset.v; apply();
-    });
-    document.querySelectorAll("#fStars .pill").forEach(p => p.onclick = () => {
-      const v = +p.dataset.v; st.stars.has(v) ? st.stars.delete(v) : st.stars.add(v); p.classList.toggle("active"); apply();
-    });
+    priceEl.oninput = () => { st.max = +priceEl.value; st.shown = 20; renderList(); };
+    priceEl.onchange = () => apply();
     document.getElementById("clearFilters").onclick = clearAll;
     document.querySelectorAll(".sort-tab").forEach(t => t.onclick = () => {
       document.querySelectorAll(".sort-tab").forEach(x => x.classList.remove("active")); t.classList.add("active"); st.sort = t.dataset.sort; apply();
     });
-    moreBtn.onclick = () => { st.shown += 20; apply(); };
+    moreBtn.onclick = () => { st.shown += 20; renderList(); };
     const filtersEl = document.getElementById("filters");
     document.getElementById("openFilters").onclick = () => filtersEl.classList.add("mobile-open");
     document.getElementById("closeFilters").onclick = () => filtersEl.classList.remove("mobile-open");
@@ -454,7 +483,8 @@
         const fresh = (r.data || []).filter(h => !have.has(h.id));
         fresh.forEach(enrich);
         all.push(...fresh);
-        if (st.landmark) fresh.forEach(h => { h.dist = h.lat && h.lng ? km(st.landmark.lat, st.landmark.lng, h.lat, h.lng) : null; });
+        const ref = st.landmark || centre;
+        if (ref) fresh.forEach(h => { h.dist = h.lat && h.lng ? km(ref.lat, ref.lng, h.lat, h.lng) : null; });
         if (fresh.length) { refreshFacets(); apply(); }
         mapStatus(fresh.length ? `${PS.icon("check", 14, 3)}${fresh.length} more hotel${fresh.length === 1 ? "" : "s"} in this area` : "No other hotels available here");
         setTimeout(() => { if (my === areaSeq) mapStatus(""); }, 2600);
@@ -497,22 +527,17 @@
     // ─── Quick filter chips (drive the same controls as the sidebar) ───
     const chipsEl = document.getElementById("quickChips");
     const starsOn = () => st.stars.has(4) && st.stars.has(5) && st.stars.size === 2;
+    const flip = (k, v) => { st[k].has(v) ? st[k].delete(v) : st[k].add(v); };
     const chipDefs = [
-      { label: "Free cancellation", on: () => st.refund, toggle: () => document.getElementById("fRefund").click() },
-      { label: "Breakfast included", on: () => st.breakfast, toggle: () => document.getElementById("fBreakfast").click() },
-      { label: "Deals", on: () => st.deal, toggle: () => document.getElementById("fDeal").click() },
-      { label: "Rated 8+", on: () => st.rating >= 8, toggle: () => document.querySelector(`#fRating .pill[data-v="${st.rating >= 8 ? 0 : 8}"]`).click() },
-      { label: "4★ & up", on: starsOn, toggle: () => {
-          const want = !starsOn();
-          document.querySelectorAll("#fStars .pill").forEach(p => {
-            const v = +p.dataset.v, should = want && v >= 4;
-            if (st.stars.has(v) !== should) p.click();
-          });
-        } },
+      { label: "Free cancellation", on: () => st.refund, toggle: () => { st.refund = !st.refund; } },
+      { label: "Breakfast included", on: () => st.meals.has("breakfast"), toggle: () => flip("meals", "breakfast") },
+      { label: "Deals", on: () => st.deal, toggle: () => { st.deal = !st.deal; } },
+      { label: "Rated 8+", on: () => st.rating >= 8, toggle: () => { st.rating = st.rating >= 8 ? 0 : 8; } },
+      { label: "4★ & up", on: starsOn, toggle: () => { st.stars = starsOn() ? new Set() : new Set([4, 5]); } },
     ];
     function paintChips() {
       chipsEl.innerHTML = chipDefs.map((c, i) => `<button class="pill ${c.on() ? "active" : ""}" data-chip="${i}">${c.on() ? "✓ " : ""}${c.label}</button>`).join("");
-      chipsEl.querySelectorAll("[data-chip]").forEach(b => b.onclick = () => chipDefs[+b.dataset.chip].toggle());
+      chipsEl.querySelectorAll("[data-chip]").forEach(b => b.onclick = () => { chipDefs[+b.dataset.chip].toggle(); st.shown = 20; apply(); });
     }
 
     // ─── Sidebar map preview ───

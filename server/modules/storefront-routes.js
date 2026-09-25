@@ -140,6 +140,20 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     ["accessible", /wheelchair|accessib/i, /$^/],
     ["beach", /private beach|beachfront|on the beach|direct access to (the )?beach|beach access/i, /$^/],
     ["ev", /electric vehicle|ev charg/i, /$^/],
+    ["bar", /^bar$/i, /$^/],
+    ["roomservice", /^room service/i, /$^/],
+    ["family", /^family rooms/i, /$^/],
+    ["nonsmoking", /^non-smoking/i, /$^/],
+    ["heating", /^heating/i, /$^/],
+    ["coffee", /^coffee\/tea maker/i, /$^/],
+    ["laundry", /^laundry$|coin laundry|laundry facilities|dry cleaning/i, /guidelines/i],
+    ["frontdesk", /^24-hour front desk/i, /$^/],
+    ["elevator", /^elevator$/i, /$^/],
+    ["hottub", /hot tub|jacuzzi/i, /$^/],
+    ["sauna", /^sauna/i, /$^/],
+    ["terrace", /^(sun |rooftop )?terrace|^garden$/i, /$^/],
+    ["kids", /children's (club|playground|games)|kids' (club|outdoor)/i, /$^/],
+    ["business", /business center/i, /$^/],
   ];
 
   let facilityMap = null, facilityAt = 0; // facility id → amenity key
@@ -158,6 +172,14 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
   }
   loadFacilityMap();
 
+  // LiteAPI hotelTypeId → the handful of property types people filter by
+  const HOTEL_TYPES = { 204: "Hotel", 231: "Hotel", 225: "Hotel", 226: "Hotel", 201: "Apartment", 219: "Aparthotel", 207: "Apartment", 229: "Apartment",
+    203: "Hostel", 264: "Hostel", 205: "Motel", 206: "Resort", 233: "Resort", 208: "Bed & breakfast", 216: "Guest house", 222: "Guest house", 247: "Guest house", 262: "Guest house",
+    218: "Inn", 213: "Villa", 220: "Holiday home", 250: "Holiday home", 230: "Holiday home", 228: "Holiday home", 257: "Holiday home", 221: "Lodge", 227: "Riad", 209: "Ryokan" };
+
+  const mealPlan = (b) => { b = String(b || "");
+    return /all.?inclusive/i.test(b) ? "all" : /full board/i.test(b) ? "full" : /half board/i.test(b) ? "half" : /breakfast|^BB$/i.test(b) ? "breakfast" : "room"; };
+
   // ─── Hotel brand (chain) names, amenities and location, cached per hotel for a day ───
   const brandCache = new Map(); // id → { brand, amen, lat, lng, at }
   async function attachBrands(hotels) {
@@ -171,14 +193,14 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
       for (const h of r.json?.data || []) {
         const brand = h.chain && !/^not available$/i.test(h.chain) ? String(h.chain).trim() : null;
         const amen = [...new Set((h.facilityIds || []).map(id => fmap.get(id)).filter(Boolean))];
-        brandCache.set(h.id, { brand, amen, lat: h.latitude, lng: h.longitude, at: now });
+        brandCache.set(h.id, { brand, amen, type: HOTEL_TYPES[h.hotelTypeId] || null, zip: h.zip || null, lat: h.latitude, lng: h.longitude, at: now });
       }
       ids.forEach(id => { if (!brandCache.has(id)) brandCache.set(id, { brand: null, at: now }); });
     })).catch(() => {});
     // Don't hold the results up for brands: wait at most 2.5 s (they're cached for the next search).
     await Promise.race([work, new Promise(r => setTimeout(r, 2500))]);
     if (brandCache.size > 50000) brandCache.clear();
-    hotels.forEach(h => { const c = brandCache.get(h.id); if (c?.brand) h.brand = c.brand; if (c?.amen?.length) h.amen = c.amen; });
+    hotels.forEach(h => { const c = brandCache.get(h.id); if (c?.brand) h.brand = c.brand; if (c?.amen?.length) h.amen = c.amen; if (c?.type) h.ptype = c.type; });
   }
 
   // Location of one hotel (from the same cache as brands; fetched once if we haven't seen it).
@@ -416,7 +438,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           currency: b.currency || "USD",
           guestNationality: b.guestNationality || "US",
           margin: 0, // net + hotel SSP; the visitor's price is computed below (pricing.priceFor)
-          maxRatesPerHotel: 1,
+          maxRatesPerHotel: 5, // enough to know which hotels offer free cancellation / meals, not just the cheapest rate
           includeHotelData: true,
           limit: Math.min(parseInt(b.limit) || 100, 200),
           timeout: 12,
@@ -432,9 +454,11 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         const h = hotelsById.get(entry.hotelId) || {};
         // Cheapest offer across room types
         let best = null;
+        const meals = new Set(); let refundAny = false;
         for (const rt of entry.roomTypes || []) {
           const total = rt.offerRetailRate?.amount;
           if (total == null) continue;
+          for (const rate of rt.rates || []) { meals.add(mealPlan(rate.boardName || rate.boardType)); if (rate.cancellationPolicies?.refundableTag === "RFN") refundAny = true; }
           if (!best || total < best.total) {
             const rate = rt.rates?.[0] || {};
             best = {
@@ -465,6 +489,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           reviews: h.review_count || 0,
           nights,
           ...best,
+          meals: [...meals], refundAny,
           perNight: best.total / nights,
         };
       }).filter(Boolean);

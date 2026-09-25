@@ -16,7 +16,7 @@
     <div class="results-layout">
       <aside class="filters" id="filters" aria-label="Filters">
         <div class="filters-mobile-head"><h3>Filters</h3><button class="btn btn-sm btn-ghost" id="closeFilters">Done</button></div>
-        <div id="filterBody"></div>
+        <div class="fbox"><div class="fbox-head"><h3>Filters</h3><button type="button" class="link-btn" id="clearFilters">Clear filters</button></div><div id="filterBody"></div></div>
       </aside>
 
       <section>
@@ -157,7 +157,9 @@
         airportChange: conns.some(c => c.changeAirport),
         overnight: conns.some(c => c.overnight),
         shortConn: conns.some(c => (c.duration?.minutes || 999) < 60),
-        bag: offers.some(o => o.baggage?.hasCheckedBag), refundable: offers.some(o => o.terms?.refundable), changeable: offers.some(o => o.terms?.changeable),
+        bag: offers.some(o => o.baggage?.hasCheckedBag),
+        carry: offers.some(o => o.baggage?.hasCarryOnBag || (o.baggage?.included || []).some(x => x.bagType === "cabin" || x.bagType === "carry_on")),
+        depAp: lg[0].segs[0].originCode, arrAp: lg[0].segs[lg[0].segs.length - 1].destinationCode, refundable: offers.some(o => o.terms?.refundable), changeable: offers.some(o => o.terms?.changeable),
         outDep: bucket(lg[0].dep), outArr: bucket(lg[0].arr),
         retDep: lg[1] ? bucket(lg[1].dep) : null, retArr: lg[1] ? bucket(lg[1].arr) : null,
       };
@@ -172,23 +174,28 @@
     const dMin = Math.floor(Math.min(...J.map(j => j.minutes)) / 60), dMax = Math.ceil(Math.max(...J.map(j => j.minutes)) / 60);
     const minBy = (list) => list.length ? Math.min(...list.map(j => j.price)) : null;
     const airlines = {}; J.forEach(j => j.carriers.forEach(c => { airlines[c] = Math.min(airlines[c] ?? Infinity, j.price); }));
+    const layMax = Math.ceil(Math.max(0, ...J.map(j => j.maxLayover)) / 60);
+    const apNames = {}; J.forEach(j => { const s0 = j.legs[0].segs; apNames[j.depAp] = s0[0].originName; apNames[j.arrAp] = s0[s0.length - 1].destinationName; });
+    const depAps = [...new Set(J.map(j => j.depAp))], arrAps = [...new Set(J.map(j => j.arrAp))];
     const hubs = {}; J.forEach(j => j.hubs.forEach(h => { hubs[h] = hubs[h] || { min: Infinity, name: "" }; hubs[h].min = Math.min(hubs[h].min, j.price); }));
     J.forEach(j => (j.raw.connections || []).forEach(c => { if (hubs[c.arrivalAirportCode]) hubs[c.arrivalAirportCode].name = c.arrivalAirportName; }));
 
     const defaults = () => ({
       sort: "best", stops: 9, maxPrice: pMax, maxDur: dMax,
       outDep: new Set(), outArr: new Set(), retDep: new Set(), retArr: new Set(),
-      bag: false, refund: false, change: false, noAirportChange: false, noOvernight: false, noShort: false,
+      bag: false, carry: false, maxLay: layMax, depAps: new Set(depAps), arrAps: new Set(arrAps), refund: false, change: false, noAirportChange: false, noOvernight: false, noShort: false,
       airlines: new Set(Object.keys(airlines)), hubs: new Set(Object.keys(hubs)),
       shown: 15, open: null, timeLeg: "out",
     });
     let st = defaults();
+    document.getElementById("clearFilters").onclick = () => { const s = st.sort; st = defaults(); st.sort = s; update(); };
 
     const pass = (j, skip) =>
       (skip === "stops" || j.stops <= st.stops) && j.price <= st.maxPrice && j.minutes <= st.maxDur * 60 &&
       (skip === "outDep" || !st.outDep.size || st.outDep.has(j.outDep)) && (skip === "outArr" || !st.outArr.size || st.outArr.has(j.outArr)) &&
       (skip === "retDep" || !st.retDep.size || j.retDep == null || st.retDep.has(j.retDep)) && (skip === "retArr" || !st.retArr.size || j.retArr == null || st.retArr.has(j.retArr)) &&
-      (!st.bag || j.bag) && (!st.refund || j.refundable) && (!st.change || j.changeable) &&
+      (!st.bag || j.bag) && (!st.carry || j.carry) && (st.maxLay >= layMax || j.maxLayover <= st.maxLay * 60) &&
+      (skip === "depAps" || st.depAps.has(j.depAp)) && (skip === "arrAps" || st.arrAps.has(j.arrAp)) && (!st.refund || j.refundable) && (!st.change || j.changeable) &&
       (!st.noAirportChange || !j.airportChange) && (!st.noOvernight || !j.overnight) && (!st.noShort || !j.shortConn) &&
       (skip === "airlines" || j.carriers.some(c => st.airlines.has(c))) &&
       (skip === "hubs" || !j.hubs.length || j.hubs.every(h => st.hubs.has(h)));
@@ -214,35 +221,40 @@
         <div class="f-group"><h4>Stops</h4><div class="opt-list">
           ${stopOpt(9, "Any number of stops")}${stopOpt(0, "Nonstop only")}${stopOpt(1, "1 stop or fewer")}${stopOpt(2, "2 stops or fewer")}
         </div></div>
+        <div class="f-group"><h4>Included in fare</h4><div class="opt-list">
+          ${check("carry", "Carry-on bag", J.filter(j => j.carry).length)}
+          ${check("bag", "Checked bag", J.filter(j => j.bag).length)}
+        </div></div>
         <div class="f-group"><h4>Times</h4>
           ${roundTrip ? `<div class="seg-toggle"><button type="button" data-leg="out" class="${legKey === "out" ? "active" : ""}">Outbound</button><button type="button" data-leg="ret" class="${legKey === "ret" ? "active" : ""}">Return</button></div>` : ""}
           <div class="time-label">Departs ${PS.esc(legKey === "out" ? q.from : q.to)}</div>${tiles(legKey + "Dep")}
           <div class="time-label">Arrives ${PS.esc(legKey === "out" ? q.to : q.from)}</div>${tiles(legKey + "Arr")}
         </div>
-        <div class="f-group"><h4>Price <span class="link-btn" style="cursor:default;color:var(--ink)">${st.maxPrice >= pMax ? "Any" : "Up to " + PS.money(st.maxPrice, cur, 0)}</span></h4>
+        <div class="f-group"><h4>Price <span class="f-val">${st.maxPrice >= pMax ? "Any" : "Up to " + PS.money(st.maxPrice, cur, 0)}</span></h4>
           <input type="range" class="range" id="fPrice" min="${pMin}" max="${pMax}" value="${st.maxPrice}" aria-label="Maximum price">
           <div class="range-vals"><span>${PS.money(pMin, cur, 0)}</span><span>${PS.money(pMax, cur, 0)}</span></div></div>
-        <div class="f-group"><h4>Total travel time <span class="link-btn" style="cursor:default;color:var(--ink)">${st.maxDur >= dMax ? "Any" : "Under " + st.maxDur + "h"}</span></h4>
+        <div class="f-group"><h4>Total travel time <span class="f-val">${st.maxDur >= dMax ? "Any" : "Under " + st.maxDur + "h"}</span></h4>
           <input type="range" class="range" id="fDur" min="${dMin}" max="${dMax}" value="${st.maxDur}" aria-label="Maximum travel time">
           <div class="range-vals"><span>${dMin}h</span><span>${dMax}h</span></div></div>
-        <div class="f-group"><h4>Connections</h4><div class="opt-list">
-          ${check("noAirportChange", "No airport changes", J.filter(j => !j.airportChange).length)}
-          ${check("noOvernight", "No overnight layovers", J.filter(j => !j.overnight).length)}
-          ${check("noShort", "No tight connections (under 1h)", J.filter(j => !j.shortConn).length)}
-        </div>
-        ${Object.keys(hubs).length ? `<div class="time-label" style="display:flex;justify-content:space-between">Layover airports <button type="button" class="link-btn" data-all="hubs">${st.hubs.size === Object.keys(hubs).length ? "Clear" : "Select all"}</button></div>
+        ${layMax > 0 ? `<div class="f-group"><h4>Layover duration <span class="f-val">${st.maxLay >= layMax ? "Any" : "Up to " + st.maxLay + "h"}</span></h4>
+          <input type="range" class="range" id="fLay" min="1" max="${layMax}" value="${st.maxLay}" aria-label="Maximum layover">
+          <div class="range-vals"><span>1h</span><span>${layMax}h</span></div></div>` : ""}
+        ${depAps.length > 1 || arrAps.length > 1 ? `<div class="f-group"><h4>Airports</h4>
+          ${[["depAps", depAps, "Departing from"], ["arrAps", arrAps, "Arriving at"]].filter(([, l]) => l.length > 1).map(([k, l, t]) => `<div class="time-label">${t}</div><div class="opt-list">${l.map(code => { const m = minBy(J.filter(j => pass(j, k) && (k === "depAps" ? j.depAp : j.arrAp) === code));
+            return `<label class="opt"><input type="checkbox" data-ap="${k}" data-code="${code}" ${st[k].has(code) ? "checked" : ""}><span><b style="color:var(--ink)">${code}</b> <small style="color:var(--muted)">${PS.esc((apNames[code] || "").replace(/ International Airport| Airport/i, ""))}</small></span><span class="cnt">${m != null ? PS.money(m, cur, 0) : "—"}</span></label>`; }).join("")}</div>`).join("")}</div>` : ""}
+        ${Object.keys(hubs).length ? `<div class="f-group"><h4>Connecting airports <button type="button" class="link-btn" data-all="hubs">${st.hubs.size === Object.keys(hubs).length ? "Clear" : "Select all"}</button></h4>
           <div class="opt-list">${Object.entries(hubs).sort((a, b) => a[1].min - b[1].min).map(([code, h]) => { const m = minBy(hBase.filter(j => j.hubs.includes(code)));
-            return `<label class="opt"><input type="checkbox" data-hub="${code}" ${st.hubs.has(code) ? "checked" : ""}><span><b style="color:var(--ink)">${code}</b> <small style="color:var(--muted)">${PS.esc((h.name || "").replace(/ International Airport| Airport/i, ""))}</small></span><button type="button" class="only" data-only-hub="${code}">only</button><span class="cnt">${m != null ? PS.money(m, cur, 0) : "—"}</span></label>`; }).join("")}</div>` : ""}
-        </div>
-        <div class="f-group"><h4>Bags &amp; flexibility</h4><div class="opt-list">
-          ${check("bag", "Checked bag included", J.filter(j => j.bag).length)}
-          ${check("change", "Changeable fares", J.filter(j => j.changeable).length)}
-          ${check("refund", "Refundable fares", J.filter(j => j.refundable).length)}
-        </div></div>
+            return `<label class="opt"><input type="checkbox" data-hub="${code}" ${st.hubs.has(code) ? "checked" : ""}><span><b style="color:var(--ink)">${code}</b> <small style="color:var(--muted)">${PS.esc((h.name || "").replace(/ International Airport| Airport/i, ""))}</small></span><button type="button" class="only" data-only-hub="${code}">only</button><span class="cnt">${m != null ? PS.money(m, cur, 0) : "—"}</span></label>`; }).join("")}</div></div>` : ""}
         <div class="f-group"><h4>Airlines <button type="button" class="link-btn" data-all="airlines">${st.airlines.size === Object.keys(airlines).length ? "Clear" : "Select all"}</button></h4>
           <div class="opt-list">${Object.entries(airlines).sort((a, b) => a[1] - b[1]).map(([name]) => { const m = minBy(aBase.filter(j => j.carriers.includes(name)));
             return `<label class="opt"><input type="checkbox" data-airline="${PS.esc(name)}" ${st.airlines.has(name) ? "checked" : ""}><span>${PS.esc(name)}</span><button type="button" class="only" data-only-airline="${PS.esc(name)}">only</button><span class="cnt">${m != null ? PS.money(m, cur, 0) : "—"}</span></label>`; }).join("")}</div></div>
-        <div class="f-group"><button class="btn btn-ghost btn-sm btn-block" id="clearFilters">Reset all filters</button></div>`;
+        <div class="f-group"><h4>Other</h4><div class="opt-list">
+          ${check("refund", "Refundable only", J.filter(j => j.refundable).length)}
+          ${check("change", "Changeable only", J.filter(j => j.changeable).length)}
+          ${check("noOvernight", "Exclude overnight layovers", J.filter(j => !j.overnight).length)}
+          ${check("noAirportChange", "No airport changes", J.filter(j => !j.airportChange).length)}
+          ${check("noShort", "No tight connections (under 1h)", J.filter(j => !j.shortConn).length)}
+        </div></div>`;
 
       fb.querySelectorAll('input[name="stops"]').forEach(r => r.onchange = () => { st.stops = +r.value; update(); });
       fb.querySelectorAll("[data-leg]").forEach(b => b.onclick = () => { st.timeLeg = b.dataset.leg; renderFilters(); });
@@ -258,7 +270,8 @@
         const k = b.dataset.all, all = Object.keys(k === "airlines" ? airlines : hubs);
         st[k] = st[k].size === all.length ? new Set() : new Set(all); update();
       });
-      fb.querySelector("#clearFilters").onclick = () => { const s = st.sort; st = defaults(); st.sort = s; update(); };
+      const ly = fb.querySelector("#fLay"); if (ly) { ly.oninput = () => { st.maxLay = +ly.value; ly.closest(".f-group").querySelector("h4 span").textContent = st.maxLay >= layMax ? "Any" : "Up to " + st.maxLay + "h"; renderResults(); }; ly.onchange = () => { st.maxLay = +ly.value; update(); }; }
+      fb.querySelectorAll("[data-ap]").forEach(c => c.onchange = () => { const set = st[c.dataset.ap]; c.checked ? set.add(c.dataset.code) : set.delete(c.dataset.code); update(); });
     }
 
     // ─── Active filter chips ───
@@ -274,10 +287,14 @@
       if (st.noOvernight) add("No overnight layovers", () => st.noOvernight = false);
       if (st.noShort) add("No tight connections", () => st.noShort = false);
       if (st.bag) add("Checked bag", () => st.bag = false);
+      if (st.carry) add("Carry-on bag", () => st.carry = false);
+      if (st.maxLay < layMax) add(`Layovers under ${st.maxLay}h`, () => st.maxLay = layMax);
+      [["depAps", depAps, "From"], ["arrAps", arrAps, "To"]].forEach(([k, l, t]) => { if (st[k].size < l.length) add(`${t} ${[...st[k]].join(", ") || "none"}`, () => st[k] = new Set(l)); });
       if (st.change) add("Changeable", () => st.change = false);
       if (st.refund) add("Refundable", () => st.refund = false);
       const na = Object.keys(airlines).length; if (st.airlines.size < na) add(st.airlines.size === 1 ? [...st.airlines][0] + " only" : `${st.airlines.size} of ${na} airlines`, () => st.airlines = new Set(Object.keys(airlines)));
       const nh = Object.keys(hubs).length; if (nh && st.hubs.size < nh) add(`${st.hubs.size} of ${nh} layover airports`, () => st.hubs = new Set(Object.keys(hubs)));
+      document.getElementById("clearFilters").classList.toggle("off", !chips.length);
       const el = document.getElementById("activeChips");
       el.innerHTML = chips.length ? chips.map((c, i) => `<button class="active-chip" data-chip="${i}">${PS.esc(c.label)}${PS.icon("x", 14, 2.6)}</button>`).join("") + `<button class="link-btn" id="chipsClear">Clear all</button>` : "";
       el.querySelectorAll("[data-chip]").forEach(b => b.onclick = () => { chips[+b.dataset.chip].clear(); update(); });

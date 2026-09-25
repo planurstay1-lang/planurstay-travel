@@ -1785,3 +1785,26 @@ a.route:hover .route-go { background: var(--blue); color: #fff; }
 .co-leg { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
 .co-leg img { width: 30px; height: 30px; object-fit: contain; }
 @media (max-width: 560px) { .co-hotel { grid-template-columns: 96px 1fr; } .co-hotel img { width: 96px; height: 80px; } .phone-row { grid-template-columns: 118px 1fr; } .co-who { grid-template-columns: 1fr; } }
+
+/* ─── Boxed filter panel (hotels + flights) ─── */
+.fbox { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 4px 18px 10px; margin-top: 14px; box-shadow: 0 1px 2px rgba(11,27,63,.04); }
+.fbox-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 12px; border-bottom: 1px solid var(--line-2); }
+.fbox-head h3 { font-size: 17px; margin: 0; }
+.fbox-head .link-btn { padding: 0; }
+.fbox-head .link-btn.off { color: var(--muted); pointer-events: none; opacity: .6; }
+.fbox .f-group { padding: 16px 0; }
+.fbox .f-group:first-of-type { padding-top: 14px; }
+.fbox .f-group h4 { font-size: 14px; margin-bottom: 10px; }
+.fbox .f-val { font-weight: 600; font-size: 13px; color: var(--text-2); }
+.fbox .f-check { font-size: 14px; padding: 5px 0; }
+.fbox .f-check > span:first-of-type { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fbox .f-check input:disabled + span { color: var(--muted); }
+.fbox .f-check input[type=radio] { width: 17px; height: 17px; accent-color: var(--blue); margin: 0; }
+.fbox .rt-chip { display: inline-grid; place-items: center; min-width: 30px; height: 22px; padding: 0 5px; border-radius: 6px; background: var(--blue-50); color: var(--blue); font-size: 12px; }
+.fbox .star-lbl { color: #f5a524; letter-spacing: 1px; font-size: 13px; min-width: 64px; }
+.fbox .time-label { font-size: 12.5px; color: var(--muted); font-weight: 600; margin: 12px 0 8px; }
+.fbox .time-label:empty { display: none; }
+.fbox .pill-row .pill { font-size: 12.5px; padding: 6px 11px; }
+.fbox .pill[disabled] { opacity: .45; pointer-events: none; }
+.filters .fbox + .f-group, .filters > .f-group#miniMapGroup { border-bottom: 0; }
+.filters.mobile-open .fbox { border: 0; box-shadow: none; padding: 0; margin: 0; }
