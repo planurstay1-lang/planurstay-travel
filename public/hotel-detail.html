@@ -229,7 +229,7 @@
       roomsEl.innerHTML = `<div class="loading-note" style="margin:0 0 14px"><span class="spinner"></span>Checking live availability…</div>` + Array.from({ length: 2 }, () => `<div class="skel" style="height:160px;border-radius:18px;margin-bottom:14px"></div>`).join("");
       let offers = [];
       try {
-        const r = await PS.api("/api/stays/rooms", { method: "POST", body: { currency: PS.cur(), hotelId, checkin: PS.iso(checkin), checkout: PS.iso(checkout), adults: occ.adults, rooms: occ.rooms, childAges: occ.childAges } });
+        const r = await PS.api("/api/stays/rooms", { method: "POST", body: { currency: PS.cur(), hotelId, checkin: PS.iso(checkin), checkout: PS.iso(checkout), adults: occ.adults, rooms: occ.rooms, childAges: occ.childAges, placeId: q.placeId, dest: q.dest } });
         offers = r.data || [];
         roomPricing = r.pricing || {};
       } catch (e) {
@@ -340,10 +340,10 @@
         const o = g.opts[g.pick];
         if (o.memberOnly) return `<div class="rc-price"><span class="tag green">${PS.icon("tag", 13)}Member price</span><small>Sign in to see this price and book it</small></div>
           <a class="btn btn-primary" href="${PS.loginUrl()}">Sign in</a>`;
-        return `<div class="rc-price">${o.memberPrice ? `<span class="tag green" style="justify-self:start;margin-bottom:2px">${PS.icon("tag", 12)}Member price</span>` : ""}
+        return `<div class="rc-price">${o.memberPrice ? `<span class="tag green" style="justify-self:start;margin-bottom:2px">${PS.icon(o.packagePrice ? "gift" : "tag", 12)}${o.packagePrice ? "Package price" : "Member price"}</span>` : ""}
             ${o.strikeTotal ? `<s>${PS.money(o.strikeTotal, o.currency, 0)}</s>` : ""}<b>${PS.money(o.total, o.currency, 0)}</b>
             <small>${PS.money(o.total / n / R, o.currency, 0)} per room/night · total for ${R > 1 ? PS.plural(R, "room") + ", " : ""}${PS.plural(n, "night")}</small>
-            ${!roomPricing.member && roomPricing.memberFactor ? `<small class="member-nudge"><a href="${PS.loginUrl()}">Lower member price · sign in</a></small>` : ""}
+            ${!roomPricing.member && !roomPricing.package && roomPricing.memberFactor ? `<small class="member-nudge"><a href="${PS.loginUrl()}">Lower member price · sign in</a></small>` : ""}
           </div>
           <button class="btn btn-coral" data-reserve>Reserve</button>`;
       };

@@ -159,7 +159,7 @@ app.use(express.static(path.join(__dirname, "../public"), {
 }));
 
 // ─── Storefront search routes (must precede /api/hotels/:id) ─────────────────
-require("./modules/storefront-routes").registerStorefrontRoutes(app, { apiKey: key, jwt, JWT_SECRET, db });
+const storefront = require("./modules/storefront-routes").registerStorefrontRoutes(app, { apiKey: key, jwt, JWT_SECRET, db });
 require("./modules/engagement-routes").registerEngagementRoutes(app, { db, apiKey: key, jwt, JWT_SECRET, APP_URL });
 require("./modules/guides").registerGuideRoutes(app, { APP_URL });
 require("./modules/legal").registerLegalRoutes(app);
@@ -179,6 +179,7 @@ async function sendEmail({ to, subject, html, replyTo }) {
 }
 const support = require("./modules/support").createSupport({ db, jwt, JWT_SECRET, apiKey: () => key, isSandbox: liveKey.isSandbox, sendEmail, isAdmin: admin.isAdmin });
 support.register(app);
+require("./modules/reminders").createReminders({ db, apiKey: () => key, jwt, JWT_SECRET, sendEmail, appUrl: () => APP_URL }).register(app);
 require("./modules/webhooks").createWebhooks({ db, sendEmail }).register(app);
 require("./modules/chat").createChat({ port: PORT, support }).register(app);
 // Google Search Console HTML-file verification: set GSC_HTML_FILE=google1234abcd.html on Render
@@ -533,7 +534,18 @@ app.post("/api/flights/book", async (req, res) => {
       }
     }
 
-    res.json({ success: true, data: result.data });
+    // Hotel + flight package: unlock package hotel prices near the arrival airport for this trip
+    let pkg = null;
+    try {
+      const row = db.prepare("SELECT segments_json FROM flight_bookings WHERE prebook_id = ? OR booking_id = ? LIMIT 1").get(req.body.prebookId || "", result.data?.bookingId || result.data?.booking_id || "");
+      const issued = row ? await storefront.issuePackage(row.segments_json) : null;
+      if (issued) {
+        res.cookie("pkg", issued.token, { httpOnly: true, sameSite: "lax", secure: req.secure || req.headers["x-forwarded-proto"] === "https", maxAge: 30 * 86400000 });
+        pkg = issued.info;
+      }
+    } catch (e) { console.warn("Package issue:", e.message); }
+
+    res.json({ success: true, data: result.data, package: pkg });
   } catch (err) {
     console.error("Flight book error:", err.message);
     res.status(500).json({ error: "Server error" });

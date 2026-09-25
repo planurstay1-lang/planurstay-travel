@@ -181,6 +181,71 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     hotels.forEach(h => { const c = brandCache.get(h.id); if (c?.brand) h.brand = c.brand; if (c?.amen?.length) h.amen = c.amen; });
   }
 
+  // Location of one hotel (from the same cache as brands; fetched once if we haven't seen it).
+  async function hotelMeta(id) {
+    let c = brandCache.get(id);
+    if (!c) { await attachBrands([{ id }]); c = brandCache.get(id); }
+    return c || null;
+  }
+
+  // ─── Search intents (signed-in members) for "Still thinking about…?" reminders ───
+  if (db) db.exec(`CREATE TABLE IF NOT EXISTS search_intents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, place_id TEXT, dest TEXT, dest_detail TEXT,
+    checkin TEXT, checkout TEXT, adults INTEGER, rooms INTEGER, currency TEXT, low_night REAL,
+    hotel_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, reminded_at DATETIME,
+    UNIQUE(user_id, place_id, checkin, checkout))`);
+  const userIdOf = (req) => { try { return jwt.verify(req.cookies?.token || "", JWT_SECRET).id || null; } catch { return null; } };
+  function recordIntent(req, b, fields) {
+    const uid = userIdOf(req);
+    if (!db || !uid || !b.placeId || !/^\d{4}-\d{2}-\d{2}$/.test(b.checkin || "") || !/^\d{4}-\d{2}-\d{2}$/.test(b.checkout || "")) return;
+    try {
+      db.prepare(`INSERT INTO search_intents (user_id, place_id, dest, dest_detail, checkin, checkout, adults, rooms, currency, low_night, hotel_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, place_id, checkin, checkout) DO UPDATE SET updated_at = CURRENT_TIMESTAMP,
+          dest = COALESCE(excluded.dest, dest), dest_detail = COALESCE(excluded.dest_detail, dest_detail),
+          low_night = COALESCE(excluded.low_night, low_night), hotel_id = COALESCE(excluded.hotel_id, hotel_id)`)
+        .run(uid, b.placeId, fields.dest || null, fields.destDetail || null, b.checkin, b.checkout, +b.adults || 2, +b.rooms || 1, b.currency || "USD", fields.lowNight ?? null, fields.hotelId || null);
+    } catch (e) { console.warn("Intent:", e.message); }
+  }
+
+  // ─── Hotel + flight packages ───
+  // Booking a flight sets a signed `pkg` cookie (30 days). Hotels near the arrival airport, for the trip
+  // dates, are then sold at the member (package) price. Hotels allow lower rates inside a package, and
+  // the price is never shown to anyone without a flight booking.
+  const DAY = 86400000;
+  const kmBetween = (a1, o1, a2, o2) => { const R = 6371, r = Math.PI / 180, dA = (a2 - a1) * r, dO = (o2 - o1) * r; const x = Math.sin(dA / 2) ** 2 + Math.cos(a1 * r) * Math.cos(a2 * r) * Math.sin(dO / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+  function pkgFrom(req) {
+    try { const t = jwt.verify(req.cookies?.pkg || "", JWT_SECRET); return t.p === "pkg" ? t : null; } catch { return null; }
+  }
+  function pkgApplies(pkg, lat, lng, checkin, checkout) {
+    if (!pkg || !(lat != null && lng != null) || !checkin || !checkout) return false;
+    if (kmBetween(pkg.lat, pkg.lng, +lat, +lng) > 80) return false;
+    const ci = Date.parse(checkin), co = Date.parse(checkout), a = Date.parse(pkg.from);
+    if (!(ci >= a - DAY) || !(co > ci)) return false;
+    if (pkg.to) { const d = Date.parse(pkg.to); return ci <= d - DAY && co <= d + DAY; }
+    return ci <= a + 3 * DAY && co - ci <= 14 * DAY;
+  }
+  /** Called after a confirmed flight booking: returns { token, info } or null. */
+  async function issuePackage(segments) {
+    try {
+      const segs = Array.isArray(segments) ? segments : JSON.parse(segments || "[]");
+      const out = segs.filter(x => (x.direction || "OUTBOUND") !== "INBOUND"), inb = segs.filter(x => x.direction === "INBOUND");
+      const last = out[out.length - 1];
+      if (!last?.destinationCode) return null;
+      const ap = (await loadIata()).find(a => a.code === last.destinationCode);
+      if (!ap || ap.latitude == null) return null;
+      const from = String(last.arrivalTime || last.departureTime || "").slice(0, 10);
+      const to = inb[0] ? String(inb[0].departureTime || "").slice(0, 10) : null;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return null;
+      const city = MAJOR_AIRPORTS[ap.code] || String(ap.name || "").replace(/\s*(International\s+)?Airport.*$/i, "");
+      let placeId = null;
+      try { const r = await lite(`/data/places?textQuery=${encodeURIComponent(city)}`, { timeoutMs: 8000 }); placeId = (r.json?.data || []).find(p => (p.types || []).includes("locality"))?.placeId || r.json?.data?.[0]?.placeId || null; } catch {}
+      const token = jwt.sign({ p: "pkg", code: ap.code, lat: ap.latitude, lng: ap.longitude, from, to }, JWT_SECRET, { expiresIn: "30d" });
+      const checkout = to || new Date(Date.parse(from) + 3 * DAY).toISOString().slice(0, 10);
+      return { token, info: { city, airport: ap.code, placeId, checkin: from, checkout } };
+    } catch { return null; }
+  }
+
   // ─── Destination autocomplete ───
   app.get("/api/places", async (req, res) => {
     const q = String(req.query.q || "").trim();
@@ -345,13 +410,16 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         };
       }).filter(Boolean);
       await attachBrands(data);
-      const member = isMember(req);
+      const member = isMember(req), pkg = !member && pkgFrom(req);
       data.forEach(h => {
-        const p = pricing.priceFor(h.total, h.ssp, member);
+        const pk = !!pkg && pkgApplies(pkg, h.lat, h.lng, b.checkin, b.checkout);
+        const p = pricing.priceFor(h.total, h.ssp, member || pk);
         h.total = p.total; h.publicTotal = p.publicTotal; h.perNight = p.total / h.nights;
-        applyParity(h, member);
+        applyParity(h, member || pk);
+        if (pk) h.packagePrice = true;
       });
-      res.json({ success: true, data, pricing: { member, memberFactor: pricing.memberFactor() } });
+      if (member && !b.latitude && data.length) recordIntent(req, b, { dest: String(b.dest || "").slice(0, 120), destDetail: String(b.destDetail || "").slice(0, 160), lowNight: Math.min(...data.map(h => h.perNight)) });
+      res.json({ success: true, data, pricing: { member, package: data.some(h => h.packagePrice), memberFactor: pricing.memberFactor() } });
     } catch (err) {
       console.error("Stays search error:", err.message);
       res.status(500).json({ error: "Server error" });
@@ -614,7 +682,6 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           currency: b.currency || "USD",
           guestNationality: b.guestNationality || "US",
           margin: 0,
-          roomMapping: true,
           timeout: 12,
       };
       const fetchAt = (margin) => {
@@ -622,6 +689,9 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         return cached("rooms:" + JSON.stringify(body), 3 * MIN, () => lite("/hotels/rates", { method: "POST", body }));
       };
       // 1) Net rates + the hotel's own price (SSP at margin 0) for every offer.
+      // roomMapping drops unmapped rooms (sometimes all of them), so rates are loaded without it; a separate
+      // mapped call only lends mappedRoomId (for room photos) to rooms it can match by name.
+      const mappedP = cached("roomsmap:" + JSON.stringify(roomsBody), 3 * MIN, () => lite("/hotels/rates", { method: "POST", body: { ...roomsBody, roomMapping: true } })).catch(() => null);
       const r = await fetchAt(0);
       if (!r.ok) {
         if (r.status === 404 || r.json?.error?.code === 2001) return res.json({ success: true, data: [] });
@@ -637,7 +707,10 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           return k + "#" + n;
         });
       };
-      const member = isMember(req);
+      const isMem = isMember(req), pkg = !isMem && pkgFrom(req);
+      let pk = false;
+      if (pkg) { const meta = await hotelMeta(b.hotelId); pk = pkgApplies(pkg, meta?.lat, meta?.lng, b.checkin, b.checkout); }
+      const member = isMem || pk;
       const base = (r.json.data || [])[0]?.roomTypes || [];
       const baseKeys = keysOf(base);
       const plan = new Map(); // key → { margin, publicTotal }
@@ -655,12 +728,19 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         const rts = results[mi].ok ? (results[mi].json.data || [])[0]?.roomTypes || [] : [];
         keysOf(rts).forEach((k, i) => { const pl = plan.get(k); if (pl && pl.margin === m) chosen.push({ rt: rts[i], publicTotal: pl.publicTotal }); });
       });
+      const mapped = await mappedP;
+      const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const mapIds = new Map();
+      for (const rt of mapped?.ok ? (mapped.json.data || [])[0]?.roomTypes || [] : []) {
+        const rate = rt.rates?.[0] || {}, id = rate.mappedRoomId || rt.mappedRoomId;
+        if (id && !mapIds.has(norm(rate.name))) mapIds.set(norm(rate.name), id);
+      }
       const offers = chosen.map(({ rt, publicTotal }) => {
         const rate = rt.rates?.[0] || {};
         const cp = rate.cancellationPolicies || {};
         return {
           offerId: rt.offerId,
-          mappedRoomId: rate.mappedRoomId || rt.mappedRoomId || null,
+          mappedRoomId: rate.mappedRoomId || rt.mappedRoomId || mapIds.get(norm(rate.name)) || null,
           name: rate.name || "Room",
           board: rate.boardName || rate.boardType,
           maxOccupancy: rate.maxOccupancy,
@@ -681,13 +761,15 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           publicTotal,
         };
       }).filter(o => o.total != null).sort((a, b2) => a.total - b2.total);
-      offers.forEach(o => applyParity(o, member));
-      res.json({ success: true, data: offers, pricing: { member, memberFactor: pricing.memberFactor() } });
+      offers.forEach(o => { applyParity(o, member); if (pk) o.packagePrice = true; });
+      if (isMem && b.placeId) recordIntent(req, b, { hotelId: b.hotelId, dest: b.dest ? String(b.dest).slice(0, 120) : null });
+      res.json({ success: true, data: offers, pricing: { member: isMem, package: pk, memberFactor: pricing.memberFactor() } });
     } catch (err) {
       console.error("Stays rooms error:", err.message);
       res.status(500).json({ error: "Server error" });
     }
   });
+  return { issuePackage };
 }
 
 module.exports = { registerStorefrontRoutes };

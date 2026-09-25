@@ -145,7 +145,7 @@
     let all = [], pricingInfo = {};
     try {
       const r = await PS.api("/api/stays/search", { method: "POST", body: { currency: PS.cur(),
-        placeId: q.placeId, checkin: q.checkin, checkout: q.checkout,
+        placeId: q.placeId, checkin: q.checkin, checkout: q.checkout, dest: q.dest, destDetail: q.destDetail,
         adults: +q.adults || 2, rooms: +q.rooms || 1,
         childAges: q.children ? q.children.split(",").filter(s => s !== "").map(Number) : [],
       }});
@@ -261,7 +261,8 @@
         return;
       }
       const shown = list.slice(0, st.shown);
-      const memberBanner = !pricingInfo.member ? `<a class="member-bar" href="${PS.loginUrl()}">${PS.icon("tag", 16)}<span><b>Member prices are on.</b> Sign in or join free to save about ${Math.floor((1 - (pricingInfo.memberFactor || 1)) * 100)}% on these hotels.</span>${PS.icon("right", 16)}</a>` : "";
+      const memberBanner = pricingInfo.package ? `<div class="member-bar pkg">${PS.icon("gift", 16)}<span><b>Package prices are on.</b> Your flight booking unlocks about ${Math.floor((1 - (pricingInfo.memberFactor || 1)) * 100)}% off hotels marked "Package price" for your trip.</span></div>`
+        : !pricingInfo.member ? `<a class="member-bar" href="${PS.loginUrl()}">${PS.icon("tag", 16)}<span><b>Member prices are on.</b> Sign in or join free to save about ${Math.floor((1 - (pricingInfo.memberFactor || 1)) * 100)}% on these hotels.</span>${PS.icon("right", 16)}</a>` : "";
       const cards = shown.map(card);
       cards.splice(Math.min(3, cards.length), 0, trackerHTML());
       results.innerHTML = memberBanner + cards.join("");
@@ -296,12 +297,12 @@
             ${h.memberOnly ? `<span class="tag green">${PS.icon("tag", 13)}Member price</span>
               <span class="price-sub" style="margin-top:4px">Sign in to see this price</span>
               <span class="btn btn-primary btn-sm">View rooms</span>` : `
-            ${h.memberPrice ? `<span class="tag green" style="margin-bottom:4px">${PS.icon("tag", 13)}Member price</span>` : ""}
+            ${h.memberPrice ? `<span class="tag green" style="margin-bottom:4px">${PS.icon(h.packagePrice ? "gift" : "tag", 13)}${h.packagePrice ? "Package price" : "Member price"}</span>` : ""}
             ${h.strikeTotal ? `<span class="price-strike">${PS.money(h.strikeTotal / h.nights, h.currency, 0)}</span>` : ""}
             <span class="price-big">${PS.money(h.perNight, h.currency, 0)}</span>
             <span class="price-sub">per night</span>
             <span class="price-total"><b>${PS.money(h.total, h.currency, 0)}</b> total · ${h.nights} night${h.nights > 1 ? "s" : ""}</span>
-            ${!pricingInfo.member && pricingInfo.memberFactor ? `<span class="member-nudge">Lower member price when signed in</span>` : ""}
+            ${!pricingInfo.member && !h.packagePrice && pricingInfo.memberFactor ? `<span class="member-nudge">Lower member price when signed in</span>` : ""}
             <span class="btn btn-primary btn-sm">View rooms</span>`}
           </div>
         </div>

@@ -1576,3 +1576,9 @@ a.route:hover .route-go { background: var(--blue); color: #fff; }
 .fd-chip.on { border: 2px solid var(--ink); }
 .fd-chip.skel { background: var(--line-2); border-color: transparent; }
 @media (max-width: 640px) { .fd-row { grid-auto-flow: column; grid-auto-columns: 84px; overflow-x: auto; padding-bottom: 4px; } }
+/* Hotel + flight package */
+.pkg-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 18px; padding: 18px 20px; border-radius: 18px; background: linear-gradient(135deg, #fff4ef, #fff); border: 1.5px solid #ffc9b8; text-align: left; }
+.pkg-cta b { display: block; font-size: 18px; color: var(--ink); margin: 6px 0 4px; }
+.pkg-cta p { color: var(--text-2); font-size: 14px; margin: 0; max-width: 460px; }
+.pkg-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: #c2410c; background: #ffe3da; padding: 3px 10px; border-radius: 999px; }
+.member-bar.pkg { background: #fff4ef; border-color: #ffc9b8; color: #9a3412; }

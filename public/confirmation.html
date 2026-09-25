@@ -72,7 +72,7 @@
         amount: pending.price, currency: pending.currency,
         releaseDate: (pending.sel?.search?.return || pending.sel?.search?.depart || "").slice(0, 10) || undefined,
       }});
-      return r.data;
+      return { ...(r.data || {}), _package: r.package || null };
     }
 
     let attempt = 0;
@@ -144,7 +144,11 @@
             <div class="divider"></div>
             <div class="sum-total"><span>Total paid</span><b>${PS.money(Number(price), cur, 2)}</b></div>
           </div>
-          ${type === "flight" && p.sel?.search?.to ? `<div class="xsell" style="margin-top:18px"><div><b>Need a hotel in ${PS.esc(p.sel.search.toCity || p.sel.search.to)}?</b><p>Book a stay for ${PS.fmtDate(p.sel.search.depart)}${p.sel.search.return ? " – " + PS.fmtDate(p.sel.search.return) : ""}.</p></div><a class="btn btn-white btn-sm" href="${PS.url("/", {})}#stays">${PS.icon("bed", 16)}Find hotels</a></div>` : ""}
+          ${type === "flight" && b._package?.placeId ? `<div class="pkg-cta"><div><span class="pkg-badge">${PS.icon("gift", 14)}Package price unlocked</span>
+            <b>Save about <span data-save-pct>${PS.savePct()}</span>% on hotels in ${PS.esc(b._package.city)}</b>
+            <p>Because you booked this flight, hotels near ${PS.esc(b._package.airport)} for ${PS.fmtDate(b._package.checkin)} – ${PS.fmtDate(b._package.checkout)} are at package prices. Valid for 30 days.</p></div>
+            <a class="btn btn-coral" href="${PS.url("/hotels", { placeId: b._package.placeId, dest: b._package.city, checkin: b._package.checkin, checkout: b._package.checkout, adults: 2, rooms: 1 })}">${PS.icon("bed", 16)}Find a hotel</a></div>`
+          : type === "flight" && p.sel?.search?.to ? `<div class="xsell" style="margin-top:18px"><div><b>Need a hotel in ${PS.esc(p.sel.search.toCity || p.sel.search.to)}?</b><p>Book a stay for ${PS.fmtDate(p.sel.search.depart)}${p.sel.search.return ? " – " + PS.fmtDate(p.sel.search.return) : ""}.</p></div><a class="btn btn-white btn-sm" href="${PS.url("/", {})}#stays">${PS.icon("bed", 16)}Find hotels</a></div>` : ""}
           ${extrasHTML(b, p)}
           <div id="saveTrip"></div>
           <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:22px">
