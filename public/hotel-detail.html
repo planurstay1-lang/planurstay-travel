@@ -65,6 +65,8 @@
     const images = (hotel.hotelImages || []).map(i => i.urlHd || i.url).filter(Boolean);
     if (!images.length && hotel.main_photo) images.push(hotel.main_photo);
     const rating = +hotel.rating || 0;
+    // "…Mumbai-400059, India" already has the city and postcode: don't repeat them
+    const addrLine = [hotel.address, hotel.city, hotel.zip].filter(Boolean).reduce((acc, p) => acc.toLowerCase().includes(String(p).toLowerCase()) ? acc : (acc ? acc + ", " : "") + p, "");
 
     // Main photo plays like a slow film: gentle zoom/pan, cross-fading through photos not shown in the side tiles
     const cineIdx = [0, ...images.map((_, k) => k).slice(5, 9)];
@@ -74,7 +76,7 @@
         <div>
           <div class="stars">${PS.stars(hotel.starRating)}</div>
           <h1>${PS.esc(hotel.name)}</h1>
-          <div class="addr" style="font-size:14.5px;margin-top:8px">${PS.icon("pin", 16)}${PS.esc([hotel.address, hotel.city, hotel.zip].filter(Boolean).join(", "))}${hotel.location?.latitude ? ` · <a class="link" href="#locPanel">View on map</a>` : ""}</div>
+          <div class="addr" style="font-size:13.5px;margin-top:6px">${PS.icon("pin", 16)}${PS.esc(addrLine)}${hotel.location?.latitude ? ` · <a class="link" href="#locPanel">View on map</a>` : ""}</div>
         </div>
         <div class="hd-head-right">
           ${rating ? `<a class="rating-row" href="#reviewsSec" style="margin:0"><span class="score ${rating >= 8.5 ? "great" : ""}" style="min-width:48px;height:38px;font-size:17px">${rating.toFixed(1)}</span><div><b style="display:block">${PS.ratingWord(rating)}</b><small>${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></a>` : ""}
@@ -127,9 +129,9 @@
     const cats = sa.categories || [];
 
     // ─── Sticky section tabs ───
-    const TABS = [["overview", "Overview"], ["facSec", "Facilities"], ["roomsPanel", "Rooms"], ...(rating ? [["reviewsSec", "Reviews"]] : []), ["descSec", "Description"], ["askSec", "Ask AI"]];
+    const TABS = [["overview", "Overview"], ["facSec", "Facilities"], ["roomsPanel", "Rooms"], ...(rating ? [["reviewsSec", "Reviews"]] : []), ["descSec", "Description"]];
     document.getElementById("hdTabs").innerHTML = `<nav class="hd-tabs" aria-label="Hotel sections"><div class="hd-tabs-in">
-      <div class="hd-tab-links">${TABS.map(([id, l], k) => `<a href="#${id}" data-tab="${id}" class="${k === 0 ? "on" : ""}">${l}${id === "askSec" ? ' <em class="beta">Beta</em>' : ""}</a>`).join("")}</div>
+      <div class="hd-tab-links">${TABS.map(([id, l], k) => `<a href="#${id}" data-tab="${id}" class="${k === 0 ? "on" : ""}">${l}</a>`).join("")}</div>
       <div class="hd-tab-book"><span class="hd-from" id="hdFrom"></span><a href="#roomsPanel" class="btn btn-primary">Select rooms</a></div>
     </div></nav>`;
 
@@ -142,7 +144,7 @@
         <div class="rv-sum"><span class="score ${rating >= 8.5 ? "great" : ""}">${rating.toFixed(1)}</span><div><b>${PS.ratingWord(rating)}</b><small>Based on ${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></div>
         ${(sa.pros || []).length ? `<div class="rv-quotes">${sa.pros.slice(0, 3).map(p => `<span>👍 ${PS.esc(p)}</span>`).join("")}</div>` : ""}</section>` : ""}`;
 
-    // ─── After rooms: reviews, description, location, good to know, Ask AI ───
+    // ─── After rooms: reviews, description, location, good to know ───
     document.getElementById("mainCol").innerHTML = `
       ${rating ? `<section class="panel" id="reviewsSec"><div class="sec-head"><h2>Guest reviews</h2><select class="select" id="rvSort" aria-label="Sort reviews"><option value="newest">Newest first</option><option value="highest">Highest score</option><option value="lowest">Lowest score</option></select></div>
         <div class="rv-layout">
@@ -157,7 +159,7 @@
       <section class="panel" id="descSec"><h2>Property description</h2><div class="hd-desc rich clamped" id="desc">${cleanHTML(hotel.hotelDescription) || "<p>No description available.</p>"}</div><button class="link" id="descMore" style="background:none;border:0;padding:0;margin-top:8px">Read more</button></section>
       ${hotel.location?.latitude ? `<section class="panel" id="wxPanel"></section>` : ""}
       ${hotel.location?.latitude ? `<section class="panel" id="locPanel"><h2>Location</h2>
-        <div class="addr" style="font-size:14.5px">${PS.icon("pin", 16)}${PS.esc([hotel.address, hotel.city, hotel.zip].filter(Boolean).join(", "))}</div>
+        <div class="addr" style="font-size:14.5px">${PS.icon("pin", 16)}${PS.esc(addrLine)}</div>
         <div id="hdMap" style="height:340px;border-radius:14px;overflow:hidden;margin-top:14px;background:var(--line-2)"></div>
         <a class="link" style="display:inline-block;margin-top:10px" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${hotel.location.latitude},${hotel.location.longitude}">Open in Google Maps</a>
       </section>` : ""}
@@ -167,12 +169,6 @@
           ${times.checkout ? `<div>${PS.icon("clock", 18)}<div><b>Check-out</b><br><span style="color:var(--text-2)">Until ${PS.esc(times.checkout)}</span></div></div>` : ""}
           ${hotel.hotelImportantInformation ? `<div>${PS.icon("info", 18)}<div><b>Important information</b><br><span style="color:var(--text-2)">${PS.esc(hotel.hotelImportantInformation)}</span></div></div>` : ""}
         </div>
-      </section>
-      <section class="panel ask-sec" id="askSec"><h2>${PS.icon("sparkle", 22)} Ask AI about this hotel <em class="beta">Beta</em></h2>
-        <p style="color:var(--text-2);margin:4px 0 12px">Answers come from the hotel's own information. Check important details with the hotel before you travel.</p>
-        <div class="ask-sugg">${["Is there parking?", "Is breakfast included?", "How far is the airport?", "Is there a pool?", "Are pets allowed?"].map(x => `<button type="button" class="pill">${x}</button>`).join("")}</div>
-        <form class="ask-form" id="askForm"><input id="askIn" maxlength="300" placeholder="Ask anything, e.g. Is there a gym?" aria-label="Ask a question about this hotel"><button class="btn btn-primary" type="submit">Ask</button></form>
-        <div id="askOut"></div>
       </section>`;
     document.getElementById("roomsWrap").innerHTML = `
       <section id="roomsPanel" class="rooms-sec">
@@ -214,7 +210,7 @@
     PS.api(`/api/hotels/${encodeURIComponent(hotelId)}/highlights`).then(r => {
       const list = r.data || []; if (!list.length) return;
       const ic = ["pin", "star", "gift"];
-      document.getElementById("hlGrid").innerHTML = list.map((h, k) => `<div class="hl-card"><b>${PS.icon(ic[k % 3], 20)}${PS.esc(h.title)}</b><p>${PS.esc(h.description)}</p></div>`).join("");
+      document.getElementById("hlGrid").innerHTML = list.map((h, k) => `<div class="hl-card"><b>${PS.icon(ic[k % 3], 16)}${PS.esc(h.title)}</b><p>${PS.esc(h.description)}</p></div>`).join("");
       document.getElementById("hlSec").hidden = false;
     }).catch(() => {});
 
@@ -256,20 +252,6 @@
       const rio = new IntersectionObserver((en) => { if (en.some(x => x.isIntersecting)) { rio.disconnect(); loadReviews(true); } }, { rootMargin: "400px" });
       rio.observe(document.getElementById("reviewsSec"));
     }
-
-    // ─── Ask AI about this hotel ───
-    (() => {
-      const form = document.getElementById("askForm"), input = document.getElementById("askIn"), out = document.getElementById("askOut");
-      const ask = async (text) => {
-        text = String(text || "").trim(); if (text.length < 3) return;
-        input.value = text;
-        out.innerHTML = `<div class="ask-a"><span class="spinner" style="width:16px;height:16px;border-width:2px"></span> Looking that up…</div>`;
-        try { const r = await PS.api(`/api/hotels/${encodeURIComponent(hotelId)}/ask?q=${encodeURIComponent(text)}`); out.innerHTML = `<div class="ask-a"><b>${PS.esc(text)}</b><p>${PS.esc(r.data.answer)}</p></div>`; }
-        catch (e) { out.innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>${PS.esc(e.message)}</div></div>`; }
-      };
-      form.onsubmit = (e) => { e.preventDefault(); ask(input.value); };
-      document.querySelectorAll(".ask-sugg .pill").forEach(b => b.onclick = () => ask(b.textContent));
-    })();
 
     // ─── Weather during the stay ───
     const loadWeather = () => {
