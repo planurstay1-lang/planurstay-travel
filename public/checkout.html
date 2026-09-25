@@ -72,7 +72,8 @@
             ${priceOverride?.voucher ? `<div><span>Voucher</span><span style="color:var(--green)">−${PS.money(priceOverride.voucher, cur, 2)}</span></div>` : ""}
           </div>
           <div class="divider"></div>
-          <div class="sum-total"><span>Total due now</span><b>${PS.money(total, cur, 2)}</b></div>
+          <div class="sum-total"><span>Total due now</span><b>${PS.money(Math.max(0, total - (priceOverride?.voucher || 0)), cur, 2)}</b></div>
+          <div id="earnNote"></div>
           ${tax ? `<div class="sum-lines" style="margin-top:12px">${(offer.taxesExcluded || []).map(f => `<div><span>${PS.esc(f.description)} <small class="muted">(pay at hotel)</small></span><span>${PS.money(f.amount, f.currency || cur, 2)}</span></div>`).join("")}</div>` : ""}
         </div>
         <div class="secure-note">${PS.icon("lock", 14)}Secure, encrypted payment</div>`;
@@ -176,13 +177,47 @@
         <div id="esimBox"></div>
       </div>`;
     html += `<div class="panel">
-        <h2>Promo code</h2>
+        <h2>Rewards &amp; promo code</h2>
+        <div id="rewardsPick"></div>
         <div style="display:flex;gap:10px"><div class="field" style="flex:1"><input id="voucher" placeholder="Enter a voucher code (optional)" aria-label="Voucher code"></div></div>
       </div>
       <div id="formMsg"></div>
       <button class="btn btn-coral btn-lg btn-block" id="continueBtn" style="margin-top:18px">Continue to payment ${PS.icon("arrow", 18)}</button>
       <p class="price-sub" style="text-align:center;margin-top:10px">We'll hold your ${type === "hotel" ? "room" : "seats"} and confirm the final price before you pay.</p>`;
     formCol.innerHTML = memberBanner + html;
+
+    // ─── PlanurStay Rewards: use a voucher, or turn points into one right here ───
+    const paintEarn = (r) => {
+      const el = document.getElementById("earnNote"); if (!el || !r) return;
+      const cur = type === "hotel" ? sel.offer.currency : sel.offer.pricing?.display?.currency;
+      const amt = type === "hotel" ? sel.offer.total : sel.offer.pricing?.display?.total;
+      el.innerHTML = `<div class="earn-note">${PS.icon("star", 14)}${cur === "USD" ? `You'll earn about <b>${Math.floor(amt * r.tier.multiplier).toLocaleString()} points</b>` : "You'll earn points"} after your ${type === "hotel" ? "stay" : "trip"}</div>`;
+    };
+    if (auth.loggedIn) PS.api("/api/rewards").then(r => {
+      r = r.data; paintEarn(r);
+      const box = document.getElementById("rewardsPick");
+      const active = (r.vouchers || []).filter(v => v.status === "active");
+      const paint = () => {
+        box.innerHTML = `<div class="rw-box">
+          <div class="rw-top"><b>${PS.icon("gift", 16)}${r.points.toLocaleString()} points</b><span>worth ${PS.money(r.valueUsd, "USD", 2)}</span></div>
+          ${active.length ? `<div class="pill-row">${active.map(v => `<button type="button" class="pill" data-vc="${PS.esc(v.code)}">Use ${PS.money(v.value, "USD", 0)} reward</button>`).join("")}</div>` : ""}
+          ${r.points >= r.redeem.min ? `<button type="button" class="link" id="rwRedeem" style="background:none;border:0;padding:0;margin-top:8px">Turn ${Math.floor(r.points / r.redeem.step) * r.redeem.step >= r.redeem.min ? (Math.floor(r.points / r.redeem.step) * r.redeem.step).toLocaleString() : r.redeem.min.toLocaleString()} points into ${PS.money(Math.floor(r.points / r.redeem.step) * r.redeem.step * r.redeem.pointValueUsd, "USD", 0)} off</button>` : `<small class="muted">Redeem from ${r.redeem.min.toLocaleString()} points (${PS.money(r.redeem.min * r.redeem.pointValueUsd, "USD", 0)} off).</small>`}
+        </div>`;
+        box.querySelectorAll("[data-vc]").forEach(b => b.onclick = () => { document.getElementById("voucher").value = b.dataset.vc; box.querySelectorAll("[data-vc]").forEach(x => x.classList.toggle("active", x === b)); });
+        box.querySelector("#rwRedeem")?.addEventListener("click", async (e) => {
+          e.target.disabled = true;
+          try {
+            const pts = Math.floor(r.points / r.redeem.step) * r.redeem.step;
+            const v = (await PS.api("/api/rewards/redeem", { method: "POST", body: { points: pts } })).data;
+            r.points = v.points; r.valueUsd = +(v.points * r.redeem.pointValueUsd).toFixed(2);
+            active.unshift({ code: v.code, value: v.value, status: "active" });
+            paint(); document.getElementById("voucher").value = v.code;
+            box.querySelector(`[data-vc="${v.code}"]`)?.classList.add("active");
+          } catch (err) { PS.toast(err.message); e.target.disabled = false; }
+        });
+      };
+      paint();
+    }).catch(() => {});
 
     if (type === "hotel") {
       const repaint = () => { sumCol.innerHTML = summaryHTML(); };
@@ -290,7 +325,7 @@
       }
 
       // Save everything the confirmation page needs to finalize the booking after payment.
-      const pending = { type, prebookId: pb.prebookId, transactionId: pb.transactionId, holder, sel, extras: { ...extras }, price: pb.price, currency: pb.currency, createdAt: Date.now() };
+      const pending = { type, prebookId: pb.prebookId, transactionId: pb.transactionId, holder, sel, extras: { ...extras }, voucherCode, price: pb.price, currency: pb.currency, createdAt: Date.now() };
       PS.local.set("ps_pending_" + pb.prebookId, pending);
       PS.store.set("ps_pending_" + pb.prebookId, pending);
 

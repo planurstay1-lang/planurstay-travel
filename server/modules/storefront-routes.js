@@ -79,10 +79,18 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
   }
 
   // Same pricing rule as the legacy search: members see net rates, guests get a 10% margin.
-  function marginFor(req) {
-    const token = req.cookies?.token;
-    if (!token) return 10;
-    try { jwt.verify(token, JWT_SECRET); return 0; } catch { return 10; }
+  const pricing = require("./pricing");
+  const isMember = (req) => { try { return !!jwt.verify(req.cookies?.token || "", JWT_SECRET); } catch { return false; } };
+  function marginFor(req) { return pricing.marginFor(isMember(req)); }
+  // Public prices must not be below the hotel's SSP (rate parity). Members are a closed user group.
+  const BELOW_SSP_TOLERANCE = 0.995;
+  function applyParity(o, member) {
+    const ssp = o.ssp;
+    const below = ssp && o.total < ssp * BELOW_SSP_TOLERANCE;
+    if (member) { o.memberPrice = true; o.strikeTotal = ssp && ssp > o.total ? ssp : null; }
+    else { o.memberOnly = !!below; o.strikeTotal = null; }
+    delete o.ssp;
+    return o;
   }
 
   function occupancies(b) {
@@ -233,7 +241,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
               offerId: rt.offerId,
               total,
               currency: rt.offerRetailRate.currency,
-              strikeTotal: rt.suggestedSellingPrice?.amount > total ? rt.suggestedSellingPrice.amount : null,
+              ssp: rt.suggestedSellingPrice?.amount || null,
               roomName: rate.name,
               board: rate.boardName,
               refundable: rate.cancellationPolicies?.refundableTag === "RFN",
@@ -260,7 +268,9 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           perNight: best.total / nights,
         };
       }).filter(Boolean);
-      res.json({ success: true, data });
+      const member = isMember(req);
+      data.forEach(h => applyParity(h, member));
+      res.json({ success: true, data, pricing: { member, memberFactor: pricing.memberFactor() } });
     } catch (err) {
       console.error("Stays search error:", err.message);
       res.status(500).json({ error: "Server error" });
@@ -506,7 +516,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           maxOccupancy: rate.maxOccupancy,
           total: rt.offerRetailRate?.amount,
           currency: rt.offerRetailRate?.currency || "USD",
-          strikeTotal: rt.suggestedSellingPrice?.amount > rt.offerRetailRate?.amount ? rt.suggestedSellingPrice.amount : null,
+          ssp: rt.suggestedSellingPrice?.amount || null,
           refundable: cp.refundableTag === "RFN",
           cancelBy: (cp.cancelPolicyInfos || []).map(c => c.cancelTime).sort()[0] || null,
           // Fees are itemized per rate (one rate per room in multi-room searches): merge them by name.
@@ -520,7 +530,9 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           perks: (rate.perks || []).map(p => p.name || p).filter(Boolean),
         };
       }).filter(o => o.total != null).sort((a, b2) => a.total - b2.total);
-      res.json({ success: true, data: offers });
+      const member = isMember(req);
+      offers.forEach(o => applyParity(o, member));
+      res.json({ success: true, data: offers, pricing: { member, memberFactor: pricing.memberFactor() } });
     } catch (err) {
       console.error("Stays rooms error:", err.message);
       res.status(500).json({ error: "Server error" });

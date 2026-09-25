@@ -199,7 +199,7 @@ function registerGuideRoutes(app, { APP_URL }) {
         const from = lf.from && lf.from !== g.airport ? { code: lf.from, city: lf.fromCity, cc: lf.fromCountry } : { code: "YYZ", city: "Toronto", cc: "CA" };
         document.getElementById("ctaFlights").href = PS.url("/flights", { from: from.code, fromCity: from.city, fromCountry: from.cc, to: g.airport, toCity: g.city, depart: PS.iso(ci), return: PS.iso(PS.addDays(ci, 7)), adults: 1 });
         PS.api("/api/stays/search", { method: "POST", body: { currency: PS.cur(), placeId: g.placeId, checkin: PS.iso(ci), checkout: PS.iso(co), adults: 2, rooms: 1, limit: 60 } }).then(r => {
-          const list = (r.data || []).filter(h => h.rating >= 8 && h.photo).sort((a, b) => a.perNight - b.perNight).slice(0, 4);
+          const list = (r.data || []).filter(h => h.rating >= 8 && h.photo && !h.memberOnly).sort((a, b) => a.perNight - b.perNight).slice(0, 4);
           const note = document.getElementById("dealsNote");
           if (!list.length) { note.textContent = "Search hotels to see live prices."; return; }
           note.textContent = "Top-rated hotels for " + PS.fmtDate(ci) + " – " + PS.fmtDate(co) + " (3 nights, 2 guests).";

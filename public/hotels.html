@@ -124,7 +124,7 @@
     filtersBox.insertAdjacentHTML("beforeend", `<div class="sk-wrap"><div class="skel" style="height:130px;border-radius:12px;margin-bottom:18px"></div>${PS.skeleton.filters(4)}</div>`);
     results.prepend(loader.el);
 
-    let all = [];
+    let all = [], pricingInfo = {};
     try {
       const r = await PS.api("/api/stays/search", { method: "POST", body: { currency: PS.cur(),
         placeId: q.placeId, checkin: q.checkin, checkout: q.checkout,
@@ -132,6 +132,7 @@
         childAges: q.children ? q.children.split(",").filter(s => s !== "").map(Number) : [],
       }});
       all = r.data || [];
+      pricingInfo = r.pricing || {};
       loader.done();
       filtersBox.classList.remove("is-loading");
     } catch (e) {
@@ -159,7 +160,9 @@
     let pMin = 0, pMax = 0;
     // Recomputed when map searches add hotels; a slider left at max means "any price".
     function refreshFacets() {
-      const prices = all.map(h => h.total).sort((a, b) => a - b);
+      // Member-only prices are never shown to guests (hotel price rules), so facets use public prices only
+      const pubAll = all.filter(h => !h.memberOnly);
+      const prices = (pubAll.length ? pubAll : all).map(h => h.total).sort((a, b) => a - b);
       const wasAny = !st || st.max >= pMax;
       pMin = Math.floor(prices[0]); pMax = Math.ceil(prices[prices.length - 1]);
       priceEl.min = pMin; priceEl.max = pMax; priceEl.step = Math.max(1, Math.round((pMax - pMin) / 100));
@@ -189,8 +192,8 @@
         price: (a, b) => a.total - b.total,
         rating: (a, b) => (b.rating - a.rating) || (b.reviews - a.reviews),
       };
-      const top = (k) => [...list].sort(by[k])[0];
-      const lbl = (h) => h ? `${PS.money(h.perNight, h.currency, 0)} avg/night` : "—";
+      const top = (k) => [...list].filter(h => !h.memberOnly).sort(by[k])[0];
+      const lbl = (h) => h ? `${PS.money(h.perNight, h.currency, 0)} avg/night` : "Member prices";
       document.getElementById("sRec").textContent = lbl(top("rec"));
       document.getElementById("sPrice").textContent = lbl(top("price"));
       document.getElementById("sRating").textContent = lbl(top("rating"));
@@ -206,7 +209,8 @@
         return;
       }
       const shown = list.slice(0, st.shown);
-      results.innerHTML = shown.map(card).join("");
+      const memberBanner = !pricingInfo.member ? `<a class="member-bar" href="${PS.loginUrl()}">${PS.icon("tag", 16)}<span><b>Member prices are on.</b> Sign in or join free to save about ${Math.floor((1 - (pricingInfo.memberFactor || 1)) * 100)}% on these hotels.</span>${PS.icon("right", 16)}</a>` : "";
+      results.innerHTML = memberBanner + shown.map(card).join("");
       moreBtn.classList.toggle("hidden", list.length <= st.shown);
       moreBtn.textContent = `Show ${Math.min(20, list.length - st.shown)} more`;
       drawMap(list);
@@ -233,11 +237,15 @@
             </div>
           </div>
           <div class="price-col">
+            ${h.memberOnly ? `<span class="tag green">${PS.icon("tag", 13)}Member price</span>
+              <span class="price-sub" style="margin-top:4px">Sign in to see this price</span>
+              <span class="btn btn-primary btn-sm">View rooms</span>` : `
+            ${h.memberPrice ? `<span class="tag green" style="margin-bottom:4px">${PS.icon("tag", 13)}Member price</span>` : ""}
             ${h.strikeTotal ? `<span class="price-strike">${PS.money(h.strikeTotal / h.nights, h.currency, 0)}</span>` : ""}
             <span class="price-big">${PS.money(h.perNight, h.currency, 0)}</span>
-            <span class="price-sub">per night</span>
-            <span class="price-sub"><b>${PS.money(h.total, h.currency, 0)}</b> total${h.taxesExcluded ? " + taxes at property" : ""}</span>
-            <span class="btn btn-primary btn-sm">View rooms</span>
+            <span class="price-sub">per night · <b>${PS.money(h.total, h.currency, 0)}</b> total</span>
+            ${!pricingInfo.member && pricingInfo.memberFactor ? `<span class="member-nudge">Lower member price when signed in</span>` : ""}
+            <span class="btn btn-primary btn-sm">View rooms</span>`}
           </div>
         </div>
       </a>`;
@@ -292,8 +300,8 @@
         const far = fitted && map.getZoom() < 11;
         const m = far
           ? L.circleMarker([h.lat, h.lng], { radius: 6, color: "#fff", weight: 2, fillColor: "#1f5bff", fillOpacity: 1 }).addTo(markers)
-          : L.marker([h.lat, h.lng], { icon: L.divIcon({ className: "", html: `<span class="map-price" data-id="${h.id}">${PS.money(h.perNight, h.currency, 0)}</span>`, iconSize: null }) }).addTo(markers);
-        m.bindPopup(`<a href="${hotelLink(h)}" style="display:block;width:200px">${h.thumb ? `<img src="${PS.esc(h.thumb)}" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:6px">` : ""}<b style="color:#0b1b3f">${PS.esc(h.name)}</b><br><span style="color:#4a5572">${PS.money(h.perNight, h.currency, 0)}/night · ${PS.money(h.total, h.currency, 0)} total</span></a>`);
+          : L.marker([h.lat, h.lng], { icon: L.divIcon({ className: "", html: `<span class="map-price" data-id="${h.id}">${h.memberOnly ? "Member price" : PS.money(h.perNight, h.currency, 0)}</span>`, iconSize: null }) }).addTo(markers);
+        m.bindPopup(`<a href="${hotelLink(h)}" style="display:block;width:200px">${h.thumb ? `<img src="${PS.esc(h.thumb)}" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:6px">` : ""}<b style="color:#0b1b3f">${PS.esc(h.name)}</b><br><span style="color:#4a5572">${h.memberOnly ? "Member price · sign in to see" : `${PS.money(h.perNight, h.currency, 0)}/night · ${PS.money(h.total, h.currency, 0)} total`}</span></a>`);
         pts.push([h.lat, h.lng]);
       });
       // Only frame the results once; after that the user controls the view.
@@ -403,7 +411,7 @@
     alertBtn.innerHTML = PS.icon("bolt", 16) + "Track prices";
     alertBtn.classList.remove("hidden");
     alertBtn.onclick = async () => {
-      const low = Math.min(...all.map(h => h.perNight));
+      const low = Math.min(...all.filter(h => !h.memberOnly).map(h => h.perNight));
       const a = await PS.auth();
       const back = document.createElement("div");
       back.className = "modal-back";

@@ -75,23 +75,27 @@
       </div>`;
     };
 
+    let rw = null;
+    try { rw = (await PS.api("/api/rewards")).data; } catch {}
+    rw = rw || { points: 0, pending: 0, lifetime: 0, valueUsd: 0, tier: { label: "Explorer", multiplier: 1 }, nextTier: null, redeem: { min: 1000, step: 500, pointValueUsd: 0.01 }, vouchers: [] };
+    const steps = []; for (let p = rw.redeem.min; p <= rw.points; p += rw.redeem.step) steps.push(p);
     root.innerHTML = `
       <div class="stat-row">
-        <div class="stat loyal"><small>Points balance</small><b>${(l.points || 0).toLocaleString()}</b><span style="font-size:13px;opacity:.8">${PS.esc(l.tierLabel || "Explorer")} tier · ${l.earnRate || 5} pts per $1</span></div>
-        <div class="stat"><small>Lifetime points</small><b>${(l.lifetime || 0).toLocaleString()}</b></div>
-        <div class="stat"><small>Trips booked</small><b>${trips.length}</b></div>
+        <div class="stat loyal"><small>PlanurStay Rewards</small><b>${rw.points.toLocaleString()} pts</b><span style="font-size:13px;opacity:.85">Worth ${PS.money(rw.valueUsd, "USD", 2)} · ${PS.esc(rw.tier.label)} (${rw.tier.multiplier}× points)</span></div>
+        <div class="stat"><small>Pending</small><b>${rw.pending.toLocaleString()} pts</b><span class="price-sub">Released after your stay</span></div>
+        <div class="stat"><small>${rw.nextTier ? "Next tier" : "Top tier"}</small><b>${rw.nextTier ? PS.esc(rw.nextTier.label) : PS.esc(rw.tier.label)}</b><span class="price-sub">${rw.nextTier ? `${rw.nextTier.pointsToGo.toLocaleString()} points to go (${rw.nextTier.multiplier}×)` : "You earn the most points"}</span></div>
       </div>
       <div class="panel" style="margin-bottom:22px">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-          <div><h2 style="margin:0 0 4px">Redeem points</h2><p style="color:var(--text-2)">Turn 500 points into $5 off your next booking.</p></div>
+          <div><h2 style="margin:0 0 4px">Redeem points</h2><p style="color:var(--text-2)">Earn 1 point per $1 (more as your tier grows). 100 points = $1 off, from ${rw.redeem.min.toLocaleString()} points.</p></div>
           <div style="display:flex;gap:8px;align-items:center">
-            <div class="field"><select id="redeemPts" aria-label="Points to redeem">${[500, 1000, 1500, 2000, 2500, 5000].map(p => `<option value="${p}" ${p > (l.points || 0) ? "disabled" : ""}>${p.toLocaleString()} pts → $${p / 100} off</option>`).join("")}</select></div>
-            <button class="btn btn-primary" id="redeemBtn" ${(l.points || 0) < 500 ? "disabled" : ""}>Redeem</button>
+            ${steps.length ? `<div class="field"><select id="redeemPts" aria-label="Points to redeem">${steps.slice(-8).map(p => `<option value="${p}">${p.toLocaleString()} pts → ${PS.money(p * rw.redeem.pointValueUsd, "USD", 0)} off</option>`).join("")}</select></div>
+            <button class="btn btn-primary" id="redeemBtn">Redeem</button>` : `<span class="price-sub">${(rw.redeem.min - rw.points).toLocaleString()} more points to your first reward</span>`}
           </div>
         </div>
         <div id="redeemMsg"></div>
-      </div>
-      <h2 style="font-size:21px;margin-bottom:12px">Upcoming</h2>
+        ${(rw.vouchers || []).length ? `<div class="pill-row" style="margin-top:14px">${rw.vouchers.map(v => `<span class="tag ${v.status === "active" ? "green" : ""}">${PS.esc(v.code)} · ${PS.money(v.value, "USD", 0)} · ${v.status === "active" ? "ready to use" : PS.esc(v.status)}</span>`).join("")}</div>` : ""}
+      </div>      <h2 style="font-size:21px;margin-bottom:12px">Upcoming</h2>
       ${upcoming.length ? upcoming.map(tripHTML).join("") : `<div class="empty" style="padding:36px 20px"><div class="ei">${PS.icon("globe", 26)}</div><h3>No upcoming trips</h3><p>Your next adventure is a search away.</p><div style="display:flex;gap:8px;justify-content:center"><a class="btn btn-primary" href="/#stays">Find a stay</a><a class="btn btn-ghost" href="/#flights">Find a flight</a></div></div>`}
       ${past.length ? `<h2 style="font-size:21px;margin:28px 0 12px">Past trips</h2>${past.map(tripHTML).join("")}` : ""}
       <div style="margin-top:28px">${findForm("Add a guest booking", "Booked without signing in? Add it to this account with your booking ID and checkout email.", "Add to my trips")}</div>
@@ -109,12 +113,12 @@
     };
 
     const rb = document.getElementById("redeemBtn");
-    rb.onclick = async () => {
+    if (rb) rb.onclick = async () => {
       rb.disabled = true;
       const m = document.getElementById("redeemMsg");
       try {
-        const r = await PS.api("/api/loyalty/redeem", { method: "POST", body: { points: +document.getElementById("redeemPts").value } });
-        m.innerHTML = `<div class="alert success" style="margin-top:14px">${PS.icon("check", 18)}<div><b>Voucher created: <span style="font-family:ui-monospace,Menlo,monospace">${PS.esc(r.data.voucherCode)}</span></b><br>Enter this code at checkout for $${r.data.discountUsd} off. New balance: ${(r.data.newBalance || 0).toLocaleString()} pts.</div></div>`;
+        const r = await PS.api("/api/rewards/redeem", { method: "POST", body: { points: +document.getElementById("redeemPts").value } });
+        m.innerHTML = `<div class="alert success" style="margin-top:14px">${PS.icon("check", 18)}<div><b>Your ${PS.money(r.data.value, "USD", 0)} reward is ready: <span style="font-family:ui-monospace,Menlo,monospace">${PS.esc(r.data.code)}</span></b><br>It appears at checkout automatically. Valid until ${PS.esc(r.data.expiresOn)}.</div></div>`;
       } catch (e) {
         rb.disabled = false;
         m.innerHTML = `<div class="alert error" style="margin-top:14px">${PS.icon("alert", 18)}<div>${PS.esc(e.message)}</div></div>`;

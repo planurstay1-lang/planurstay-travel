@@ -151,6 +151,8 @@ app.use(express.static(path.join(__dirname, "../public"), {
 require("./modules/storefront-routes").registerStorefrontRoutes(app, { apiKey: key, jwt, JWT_SECRET, db });
 require("./modules/engagement-routes").registerEngagementRoutes(app, { db, apiKey: key, jwt, JWT_SECRET, APP_URL });
 require("./modules/guides").registerGuideRoutes(app, { APP_URL });
+const rewards = require("./modules/rewards").createRewards({ db, apiKey: key, jwt, JWT_SECRET });
+rewards.register(app);
 app.get("/checkout", (req, res) => res.sendFile(path.join(__dirname, "../public/checkout.html")));
 app.get("/membership", (req, res) => res.sendFile(path.join(__dirname, "../public/membership.html")));
 
@@ -332,7 +334,7 @@ app.get("/api/hotels/search", async (req, res) => {
     const user = isLoggedIn ? jwt.verify(req.cookies.token, JWT_SECRET) : null;
 
     // Logged-in users get better margin (lower price to them = better deal)
-    const margin = user ? 0 : 10;  // 0% margin for logged-in (net rate), 10% for guests
+    const margin = require("./modules/pricing").marginFor(!!user);
 
     const hotelIdsResult = await liteApi.getHotels(countryCode, city, 0, 50);
     if (hotelIdsResult.status === "failed") {
@@ -456,20 +458,12 @@ app.post("/api/hotels/book", async (req, res) => {
     const row = db.prepare("SELECT id FROM bookings WHERE liteapi_booking_id = ? ORDER BY id DESC LIMIT 1").get(booking.bookingId);
     const bookingId = row ? row.id : null;
     if (user) {
-
-      // Award loyalty points (only to logged-in members, not guests)
-      try {
-        const price = booking.price || 0;
-        const currency = booking.currency || "USD";
-        const earnResult = loyalty.earnPoints(user.id, price, currency, bookingId,
-          `Hotel booking: ${booking.hotel?.name || "Unknown"} (${booking.checkin} → ${booking.checkout})`);
-        if (earnResult.tierUpgraded) {
-          console.log(`Loyalty: user ${user.id} upgraded to ${earnResult.newTier} tier!`);
-        }
-      } catch (loyaltyErr) {
-        console.warn("Loyalty points earn failed:", loyaltyErr.message);
-      }
+      // PlanurStay Rewards: points are pending until the stay is over
+      const release = new Date(new Date(booking.checkout || Date.now()).getTime() + 86400000).toISOString().slice(0, 10);
+      rewards.addPending(user.id, { bookingRef: booking.bookingId, bookingType: "hotel", amount: booking.price, currency: booking.currency, releaseDate: release, note: `Stay at ${booking.hotel?.name || "hotel"}` })
+        .catch(e => console.warn("Rewards pending:", e.message));
     }
+    if (req.body.voucherCode) rewards.markVoucherUsed(String(req.body.voucherCode));
 
     res.json({ success: true, data: booking });
   } catch (err) {
@@ -563,6 +557,12 @@ app.post("/api/flights/book", async (req, res) => {
       return res.status(status).json({ error: e.message || "Booking failed", code: e.code, key: e.key });
     }
 
+    // PlanurStay Rewards for signed-in travelers (released after the travel date)
+    if (userId && result.data && !result.alreadyBooked) {
+      const ref = result.data.bookingId || result.data.booking_id || req.body.prebookId;
+      rewards.addPending(userId, { bookingRef: ref, bookingType: "flight", amount: +req.body.amount || result.data.pricing?.totalAmount || result.data.price, currency: req.body.currency || result.data.pricing?.currency || "USD", releaseDate: req.body.releaseDate, note: "Flight booking" })
+        .catch(e => console.warn("Rewards pending (flight):", e.message));
+    }
     if (RESEND_API_KEY && result.data) {
       const booking = result.data;
       const holder  = booking.holder || (result.data.passengers && result.data.passengers[0]) || {};

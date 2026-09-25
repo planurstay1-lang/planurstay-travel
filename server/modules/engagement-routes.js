@@ -113,7 +113,7 @@ function registerEngagementRoutes(app, { db, apiKey, jwt, JWT_SECRET, APP_URL })
     db.prepare(`INSERT INTO price_alerts (email, user_id, place_id, dest, dest_detail, checkin, checkout, adults, rooms, currency, margin, baseline, last_price, token, last_checked)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(
       email, user ? user.id : null, b.placeId, String(b.dest || "").slice(0, 120), String(b.destDetail || "").slice(0, 160),
-      b.checkin, b.checkout, Math.min(16, Math.max(1, +b.adults || 2)), Math.min(8, Math.max(1, +b.rooms || 1)), currency, user ? 0 : 10, price, price, token);
+      b.checkin, b.checkout, Math.min(16, Math.max(1, +b.adults || 2)), Math.min(8, Math.max(1, +b.rooms || 1)), currency, require("./pricing").marginFor(!!user), price, price, token);
     const a = { place_id: b.placeId, dest: b.dest, dest_detail: b.destDetail, checkin: b.checkin, checkout: b.checkout, adults: +b.adults || 2, rooms: +b.rooms || 1 };
     send(email, `We're watching ${b.dest || "your"} hotel prices`, `
       <h1 style="font-size:22px;color:#0b1b3f;margin:18px 0 6px">Price alert is on</h1>

@@ -17,7 +17,7 @@
       <div class="hero2-shade"></div>
       <div class="hero2-inner">
         <h1 class="sr-only">PlanurStay: hotels and flights at member prices</h1>
-        <p class="hero2-tag">Hotels and flights, all in one place. Members save up to 10%.</p>
+        <p class="hero2-tag">Hotels and flights, all in one place. Members save about 8%.</p>
         <div class="search-card sleek" id="searchCard">
           <div class="tabs" role="tablist">
             <button class="tab active" data-tab="stays" role="tab" aria-selected="true"><i data-ico="bed"></i>Stays</button>
@@ -74,7 +74,7 @@
           <h2>Travel more. <span>Pay less.</span></h2>
           <p class="lead">Join free in seconds. Unlock member-only hotel prices, earn points every time you book, and turn them into money off your next trip.</p>
           <ul class="perks2">
-            <li><span class="p-ico"><i data-ico="tag" data-s="20"></i></span><div><b>Member-only prices</b><small>Up to 10% off hotel rates that guests never see.</small></div></li>
+            <li><span class="p-ico"><i data-ico="tag" data-s="20"></i></span><div><b>Member-only prices</b><small>About 8% off hotel rates that guests never see.</small></div></li>
             <li><span class="p-ico"><i data-ico="star" data-s="20"></i></span><div><b>Points on every booking</b><small>Earn with every stay and climb the tiers as you travel.</small></div></li>
             <li><span class="p-ico"><i data-ico="bolt" data-s="20"></i></span><div><b>Everything in one place</b><small>Your trips and details, ready whenever you are.</small></div></li>
           </ul>
@@ -256,7 +256,7 @@
           const el = row.querySelector(`[data-i="${i}"] .deal-price`);
           try {
             const r = await PS.api("/api/stays/search", { method: "POST", body: { currency: PS.cur(), placeId: d.placeId, checkin: PS.iso(ci), checkout: PS.iso(co), adults: 2, rooms: 1, limit: 60 } });
-            const min = Math.min(...(r.data || []).map(h => h.perNight));
+            const min = Math.min(...(r.data || []).filter(h => !h.memberOnly).map(h => h.perNight));
             el.innerHTML = Number.isFinite(min) ? `Hotels from <b>${PS.money(min, PS.cur(), 0)}</b>/night` : "See stays";
           } catch { el.textContent = "See stays"; }
         }

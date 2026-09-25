@@ -62,12 +62,15 @@
         const r = await PS.api("/api/hotels/book", { method: "POST", body: {
           prebookId, transactionId: transactionId || pending.transactionId,
           guestFirstName: h.firstName, guestLastName: h.lastName, guestEmail: h.email,
+          voucherCode: pending.voucherCode || undefined,
         }});
         return r.data;
       }
       const r = await PS.api("/api/flights/book", { method: "POST", body: {
         prebookId, payment: { method: "TRANSACTION_ID", transactionId: transactionId || pending.transactionId },
         holder: { firstName: h.firstName, lastName: h.lastName, email: h.email },
+        amount: pending.price, currency: pending.currency,
+        releaseDate: (pending.sel?.search?.return || pending.sel?.search?.depart || "").slice(0, 10) || undefined,
       }});
       return r.data;
     }
