@@ -537,6 +537,10 @@ p { margin: 0; }
 .alert.error { background: var(--red-50); color: #a12626; }
 .alert.success { background: var(--green-50); color: #06603d; }
 .pay-box { min-height: 120px; }
+/* The payment SDK's own submit button renders small and red: match our primary button */
+.pay-box button { width: 100% !important; height: 52px !important; margin-top: 14px !important; border: 0 !important; border-radius: 14px !important; background: var(--blue) !important; color: #fff !important; font: 800 16px/1 inherit !important; cursor: pointer; }
+.pay-box button:hover { filter: brightness(1.08); }
+.pay-box button:disabled { opacity: .6; cursor: default; }
 .secure-note { display: flex; gap: 8px; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; margin-top: 14px; }
 .sum-hotel { display: flex; gap: 14px; }
 .sum-hotel img { width: 96px; height: 80px; border-radius: 12px; object-fit: cover; flex: none; background: var(--line-2); }
