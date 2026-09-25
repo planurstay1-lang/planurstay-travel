@@ -128,8 +128,6 @@ app.use(cors({ origin: "*" }));
 app.use(require("compression")());
 
 // ─── Loyalty engine (must load before auth routes) ───────────────────────────
-const loyaltyEngine = require("./modules/loyalty-engine");
-const loyalty = loyaltyEngine.loadLoyaltyEngine(db);
 
 // ─── Membership engine ───────────────────────────────────────────────────────
 const membershipEngine = require("./modules/membership-engine");
@@ -157,6 +155,7 @@ rewards.register(app);
 const admin = require("./modules/admin").createAdmin({ db, apiKey: () => key, jwt, JWT_SECRET });
 admin.register(app);
 require("./modules/analytics").createAnalytics({ db, isAdmin: admin.isAdmin }).register(app);
+require("./modules/chat").createChat({ port: PORT }).register(app);
 // Google Search Console HTML-file verification: set GSC_HTML_FILE=google1234abcd.html on Render
 app.get(/^\/google[0-9a-z]+\.html$/, (req, res, next) => {
   const f = (process.env.GSC_HTML_FILE || "").trim();
@@ -184,13 +183,8 @@ app.post("/api/auth/signup", async (req, res) => {
     const token = jwt.sign({ id: user_id, email }, JWT_SECRET, { expiresIn: "30d" });
     res.cookie("token", token, { httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000, sameSite: "lax" });
 
-    // Initialize loyalty and award signup bonus
-    try {
-      loyalty.initUser(user_id);
-      loyalty.awardSignupBonus(user_id);
-    } catch (loyaltyErr) {
-      console.warn("Loyalty signup bonus failed:", loyaltyErr.message);
-    }
+    // Join PlanurStay Rewards (adds the welcome bonus)
+    try { rewards.summary(user_id); } catch (e) { console.warn("Rewards signup failed:", e.message); }
 
     res.json({ success: true, user: { id: user_id, email } });
   } catch (err) {
@@ -231,7 +225,7 @@ app.get("/api/auth/me", (req, res) => {
     if (!userRow) return res.json({ loggedIn: false });
 
     let loyaltyInfo = null;
-    try { loyaltyInfo = loyalty.getBalance(user.id); } catch (e) {}
+    try { const r = rewards.summary(user.id); loyaltyInfo = { points: r.points, pending: r.pending, tier: r.tier.key, tierLabel: r.tier.label }; } catch (e) {}
 
     let membershipInfo = null;
     try { membershipInfo = membership.getActiveMembership(user.id); } catch (e) {}
@@ -258,80 +252,8 @@ app.get("/api/auth/me", (req, res) => {
 
 // ─── Loyalty API endpoints ──────────────────────────────────────────────────
 
-// GET /api/loyalty/balance
-app.get("/api/loyalty/balance", (req, res) => {
-  try {
-    const userId = req.cookies.token
-      ? (() => { try { return jwt.verify(req.cookies.token, JWT_SECRET).id; } catch { return null; } })()
-      : null;
-    if (!userId) return res.status(401).json({ error: "Not logged in" });
 
-    const balance = loyalty.getBalance(userId);
-    if (!balance) return res.status(404).json({ error: "Loyalty not initialized" });
-    res.json({ success: true, data: balance });
-  } catch (err) {
-    console.error("Loyalty balance error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// POST /api/loyalty/redeem — redeem points → get a one-time voucher code
-app.post("/api/loyalty/redeem", (req, res) => {
-  try {
-    const userId = req.cookies.token
-      ? (() => { try { return jwt.verify(req.cookies.token, JWT_SECRET).id; } catch { return null; } })()
-      : null;
-    if (!userId) return res.status(401).json({ error: "Not logged in" });
-
-    const { points } = req.body;
-    if (!points || points < 500) {
-      return res.status(400).json({ error: "Minimum 500 points required", code: 400 });
-    }
-    // Round down to nearest 500
-    const ptsToUse = Math.floor(points / 500) * 500;
-    if (ptsToUse < 500) return res.status(400).json({ error: "Minimum 500 points required", code: 400 });
-
-    const redeemResult = loyalty.redeemPoints(userId, ptsToUse);
-    if (!redeemResult.success) {
-      return res.status(400).json({ error: redeemResult.error, code: 400 });
-    }
-
-    const discountUsd = redeemResult.discountUsd;
-    const voucher = loyalty.createRedeemVoucher(userId, discountUsd, redeemResult.pointsUsed);
-
-    res.json({
-      success: true,
-      data: {
-        pointsUsed: redeemResult.pointsUsed,
-        discountUsd: discountUsd,
-        newBalance: redeemResult.newBalance,
-        voucherCode: voucher.code,
-        voucherId: voucher.voucherId,
-        message: `Redeemed ${redeemResult.pointsUsed} pts → $${discountUsd} off. Code: ${voucher.code} (valid 7 days, single use)`,
-      },
-    });
-  } catch (err) {
-    console.error("Loyalty redeem error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-// GET /api/loyalty/history
-app.get("/api/loyalty/history", (req, res) => {
-  try {
-    const userId = req.cookies.token
-      ? (() => { try { return jwt.verify(req.cookies.token, JWT_SECRET).id; } catch { return null; } })()
-      : null;
-    if (!userId) return res.status(401).json({ error: "Not logged in" });
-
-    const limit = parseInt(req.query.limit) || 20;
-    const history = loyalty.getHistory(userId, limit);
-    res.json({ success: true, data: history });
-  } catch (err) {
-    console.error("Loyalty history error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
 // ─── Hotel Search ───
 app.get("/api/hotels/search", async (req, res) => {
@@ -509,8 +431,6 @@ flightEngine.ensureFlightSchema(db);
 // ─── Hotel engine ────────────────────────────────────────────────────────────
 const hotelEngine = require("./modules/hotel-engine");
 
-// ─── eSIMply engine ──────────────────────────────────────────────────────────
-const esimplyEngine = require("./modules/esimply-engine");
 
 // ─── Payment SDK helper ──────────────────────────────────────────────────────
 const paymentSdk = require("./modules/payment-sdk");
@@ -592,37 +512,7 @@ app.post("/api/flights/book", async (req, res) => {
   }
 });
 
-// ─── Get Prebook ───
-app.get("/api/flights/prebook/:prebookId", async (req, res) => {
-  try {
-    const result = await flightEngine.getPrebook(req.params.prebookId);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Not found", code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Flight get-prebook error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Get Booking ───
-app.get("/api/flights/booking/:bookingId", async (req, res) => {
-  try {
-    const result = await flightEngine.getBooking(req.params.bookingId);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Not found", code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Flight get-booking error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
 
 // ─── Payment SDK config ────────────────────────────────────────────────────
@@ -645,120 +535,13 @@ app.get("/api/payment-sdk/config", (req, res) => {
   }
 });
 
-// ─── Hotel: Places autocomplete ──────────────────────────────────────────────
-app.get("/api/hotels/places", async (req, res) => {
-  try {
-    const { q } = req.query;
-    if (!q || q.length < 2) return res.status(400).json({ error: "Query must be at least 2 characters" });
-    const result = await hotelEngine.searchPlaces(q);
-    if (!result.success) return res.status(400).json({ error: result.error?.message || "Search failed" });
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Hotel places error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Hotel: Rates search ─────────────────────────────────────────────────────
-app.post("/api/hotels/rates", async (req, res) => {
-  try {
-    const result = await hotelEngine.getRates(req.body);
-    if (!result.success) return res.status(400).json({ error: result.error?.message || "Rates search failed", code: result.error?.code });
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Hotel rates error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Hotel: Prebook ──────────────────────────────────────────────────────────
-app.post("/api/hotels/prebook", async (req, res) => {
-  try {
-    const userId = req.cookies.token ? (() => { try { return jwt.verify(req.cookies.token, JWT_SECRET).id; } catch { return null; } })() : null;
-    const result = await hotelEngine.createPrebook(req.body, userId, db);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Prebook failed", code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Hotel prebook error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Hotel: Book ─────────────────────────────────────────────────────────────
-app.post("/api/hotels/book", async (req, res) => {
-  try {
-    const userId = req.cookies.token ? (() => { try { return jwt.verify(req.cookies.token, JWT_SECRET).id; } catch { return null; } })() : null;
-    const result = await hotelEngine.completeBooking(req.body, userId, db);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Booking failed", code: e.code });
-    }
-    if (RESEND_API_KEY && result.data) {
-      sendConfirmationEmail(result.data, "hotel").catch(err => console.error("Email error:", err.message));
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Hotel book error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Hotel: Get details ──────────────────────────────────────────────────────
-app.get("/api/hotels/:hotelId", async (req, res) => {
-  try {
-    const result = await hotelEngine.getHotelDetails(req.params.hotelId);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Hotel not found", code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Hotel detail error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Loyalty: Get settings ───────────────────────────────────────────────────
-app.get("/api/loyalty/settings", async (req, res) => {
-  try {
-    const result = await loyaltyEngine.getLoyaltySettings();
-    if (!result.success) return res.status(400).json({ error: result.error?.message || "Failed to fetch loyalty settings" });
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Loyalty settings error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Loyalty: Set / enable ───────────────────────────────────────────────────
-app.post("/api/loyalty/settings", requireLogin, async (req, res) => {
-  try {
-    const result = await loyaltyEngine.setLoyalty(req.body);
-    if (!result.success) return res.status(400).json({ error: result.error?.message || "Failed to set loyalty settings", code: result.error?.code });
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Loyalty set error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Loyalty: Update ─────────────────────────────────────────────────────────
-app.put("/api/loyalty/settings", requireLogin, async (req, res) => {
-  try {
-    const result = await loyaltyEngine.updateLoyalty(req.body);
-    if (!result.success) return res.status(400).json({ error: result.error?.message || "Failed to update loyalty settings", code: result.error?.code });
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Loyalty update error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
 // ─── Membership API endpoints ─────────────────────────────────────────────────
 
@@ -849,150 +632,20 @@ app.post("/api/membership/cancel", requireLogin, async (req, res) => {
   }
 });
 
-// ─── eSIMply: List destinations ──────────────────────────────────────────────
-app.get("/api/loyalty/guests", requireLogin, async (req, res) => {
-  try {
-    const result = await loyaltyEngine.listGuests(req.query);
-    if (!result.success) return res.status(400).json({ error: result.error?.message || "Failed to fetch guests" });
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Loyalty guests error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Loyalty: Get guest ──────────────────────────────────────────────────────
-app.get("/api/loyalty/guests/:guestId", requireLogin, async (req, res) => {
-  try {
-    const result = await loyaltyEngine.getGuest(req.params.guestId);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Guest not found", code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Loyalty guest error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Loyalty: Get guest bookings ─────────────────────────────────────────────
-app.get("/api/loyalty/guests/:guestId/bookings", requireLogin, async (req, res) => {
-  try {
-    const result = await loyaltyEngine.getGuestBookings(req.params.guestId, req.query);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Failed to fetch guest bookings", code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Loyalty guest bookings error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── eSIMply: List destinations ──────────────────────────────────────────────
-app.get("/api/esim/destinations", async (req, res) => {
-  try {
-    const result = await esimplyEngine.listDestinations(req.query);
-    if (!result.success) return res.status(400).json({ error: result.error?.message || "Failed to fetch destinations" });
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("eSIM destinations error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── eSIMply: Purchase eSIM ──────────────────────────────────────────────────
-app.post("/api/esim/orders", async (req, res) => {
-  try {
-    const result = await esimplyEngine.purchaseEsim(req.body);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Purchase failed", code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("eSIM purchase error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── eSIMply: List orders ────────────────────────────────────────────────────
-app.get("/api/esim/orders", async (req, res) => {
-  try {
-    const result = await esimplyEngine.listOrders(req.query);
-    if (!result.success) return res.status(400).json({ error: result.error?.message || "Failed to fetch orders" });
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("eSIM orders error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── eSIMply: Get order ──────────────────────────────────────────────────────
-app.get("/api/esim/orders/:orderId", async (req, res) => {
-  try {
-    const result = await esimplyEngine.getOrder(req.params.orderId);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Order not found", code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("eSIM order error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── eSIMply: Top up ─────────────────────────────────────────────────────────
-app.post("/api/esim/orders/:orderId/topup", async (req, res) => {
-  try {
-    const { dataPackageId } = req.body;
-    const result = await esimplyEngine.topUpEsim(req.params.orderId, dataPackageId);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Top-up failed", code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("eSIM topup error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── eSIMply: Usage ──────────────────────────────────────────────────────────
-app.get("/api/esim/orders/:orderId/usage", async (req, res) => {
-  try {
-    const result = await esimplyEngine.getEsimUsage(req.params.orderId);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Failed to fetch usage", code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("eSIM usage error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Confirmation Engine ──────────────────────────────────────────────────────
-const confirmationEngine = require("./confirmation-engine");
 
 // ─── Reference Data Engine ────────────────────────────────────────────────────
 const referenceEngine = require("./reference-engine");
 
-// ─── Voucher Engine ───────────────────────────────────────────────────────────
-const voucherEngine = require("./voucher-engine");
 
-// ─── Add-ons Engine ───────────────────────────────────────────────────────────
-const addonsEngine = require("./addons-engine");
 
 // ─── Reference: IATA Codes ────────────────────────────────────────────────────
 // GET /api/reference/iata?q=JFK  — search airports by code or name
@@ -1170,96 +823,11 @@ app.get("/api/reference/weather", async (req, res) => {
   }
 });
 
-// ─── Add-ons: Uber voucher options ───────────────────────────────────────────
-// GET /api/addons/uber/options  — $10-$100 in $10 increments
-app.get("/api/addons/uber/options", (req, res) => {
-  try {
-    const options = addonsEngine.getUberVoucherOptions();
-    res.json({ success: true, data: options });
-  } catch (err) {
-    console.error("Uber options error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Add-ons: eSIM packages ───────────────────────────────────────────────────
-// GET /api/addons/esim/packages?countryCode=ES  — eSIM packages for a country
-app.get("/api/addons/esim/packages", async (req, res) => {
-  try {
-    const { countryCode } = req.query;
-    if (!countryCode) return res.status(400).json({ error: "countryCode required" });
-    const result = await addonsEngine.getEsimPackages(countryCode.toUpperCase());
-    if (!result.success) return res.status(400).json({ error: result.error?.message || "Failed to fetch eSIM packages" });
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("eSIM packages error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Vouchers: Create ─────────────────────────────────────────────────────────
-// POST /api/vouchers/create  — create a new voucher
-app.post("/api/vouchers/create", requireLogin, async (req, res) => {
-  try {
-    const result = await voucherEngine.createVoucher(req.body);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message, code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Voucher create error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Vouchers: List ───────────────────────────────────────────────────────────
-// GET /api/vouchers/list  — list all vouchers
-app.get("/api/vouchers/list", requireLogin, async (req, res) => {
-  try {
-    const result = await voucherEngine.listVouchers();
-    if (!result.success) return res.status(400).json({ error: result.error?.message || "Failed to fetch vouchers" });
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Voucher list error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Vouchers: Get by ID ──────────────────────────────────────────────────────
-// GET /api/vouchers/:id  — get single voucher
-app.get("/api/vouchers/:id", requireLogin, async (req, res) => {
-  try {
-    const result = await voucherEngine.getVoucherById(req.params.id);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message, code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Voucher get error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// ─── Vouchers: Update ─────────────────────────────────────────────────────────
-// PUT /api/vouchers/:id  — update voucher
-app.put("/api/vouchers/:id", requireLogin, async (req, res) => {
-  try {
-    const result = await voucherEngine.updateVoucher(req.params.id, req.body);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message, code: e.code });
-    }
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Voucher update error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
 // ─── My Bookings ───
 app.get("/api/bookings", requireLogin, (req, res) => {
@@ -1270,46 +838,7 @@ app.get("/api/bookings", requireLogin, (req, res) => {
   res.json(bookings);
 });
 
-// ─── Vouchers ───
-app.post("/api/vouchers", requireLogin, async (req, res) => {
-  try {
-    const { code, discount_type, discount_value, minimum_spend, max_discount, currency, valid_from, valid_until, max_uses } = req.body;
 
-    const result = await liteApi.CreateVoucher({
-      voucher_code: code,
-      discount_type,
-      discount_value,
-      minimum_spend: minimum_spend || 0,
-      maximum_discount_amount: max_discount,
-      currency: currency || "USD",
-      validity_start: valid_from || new Date().toISOString().split("T")[0],
-      validity_end: valid_until || "2027-12-31",
-      usages_limit: max_uses || 999,
-      status: "active"
-    });
-
-    if (result.status === "failed") {
-      return res.status(400).json({ error: result.error });
-    }
-
-    res.json({ success: true, data: result.data });
-  } catch (err) {
-    console.error("Voucher error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.get("/api/vouchers", async (req, res) => {
-  try {
-    const result = await liteApi.getVouchers();
-    if (result.status === "failed") {
-      return res.status(500).json({ error: "Failed to fetch vouchers" });
-    }
-    res.json(result.data);
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
 // ─── Email ───
 // ─── Confirmation email (Resend) ─────────────────────────────────────────────
@@ -1401,108 +930,12 @@ app.get("/login", (req, res) => {
   res.sendFile(path.join(__dirname, "../public/login.html"));
 });
 
-// ─── Start
-app.get("/api/confirmation/:bookingId", async (req, res) => {
-  try {
-    const type = req.query.type || "hotel";
-    const result = type === "flight"
-      ? await confirmationEngine.getFlightConfirmation(req.params.bookingId)
-      : await confirmationEngine.getHotelConfirmation(req.params.bookingId);
-    if (!result.success) {
-      return res.status(400).json({ error: result.error?.message || "Confirmation not found" });
-    }
-    res.json(result);
-  } catch (err) {
-    console.error("Confirmation lookup error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-app.get("/api/confirmation/voucher/:voucherId", (req, res) => {
-  res.json({ message: "Voucher info is included in booking confirmation response" });
-});
 
-// ─── End-to-End Confirmation Flows ────────────────────────────────────────────
-// Hotel: Complete booking with full confirmation (search → prebook → book → confirm)
-app.post("/api/confirmation/hotel", async (req, res) => {
-  try {
-    const userId = req.cookies.token ? (() => { try { return jwt.verify(req.cookies.token, JWT_SECRET).id; } catch { return null; } })() : null;
-    const result = await confirmationEngine.hotelConfirmationFlow(req.body, userId, db);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Confirmation flow failed", code: e.code });
-    }
-    res.json(result);
-  } catch (err) {
-    console.error("Hotel confirmation flow error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// Flight: Complete booking with full confirmation (search → prebook → book → confirm)
-app.post("/api/confirmation/flight", async (req, res) => {
-  try {
-    const userId = req.cookies.token ? (() => { try { return jwt.verify(req.cookies.token, JWT_SECRET).id; } catch { return null; } })() : null;
-    const result = await confirmationEngine.flightConfirmationFlow(req.body, userId, db);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Confirmation flow failed", code: e.code });
-    }
-    res.json(result);
-  } catch (err) {
-    console.error("Flight confirmation flow error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
-// Confirmation polling — called by frontend to check booking status
-app.get("/api/confirmation/:bookingId/poll", async (req, res) => {
-  try {
-    const type = req.query.type || "hotel";
-    const result = type === "flight"
-      ? await confirmationEngine.getFlightConfirmation(req.params.bookingId)
-      : await confirmationEngine.getHotelConfirmation(req.params.bookingId);
-    if (!result.success) {
-      return res.json({ status: "UNKNOWN", bookingId: req.params.bookingId });
-    }
-    res.json(result);
-  } catch (err) {
-    console.error("Poll error:", err.message);
-    res.json({ status: "UNKNOWN", bookingId: req.params.bookingId });
-  }
-});
 
-// Get booking status (lightweight, for polling)
-app.get("/api/bookings/:bookingId", async (req, res) => {
-  try {
-    const booking = db.prepare("SELECT * FROM bookings WHERE liteapi_booking_id = ? OR id = ? LIMIT 1").get(req.params.bookingId, req.params.bookingId);
-    if (booking) {
-      return res.json({ status: booking.status, bookingId: booking.liteapi_booking_id || booking.id, type: booking.liteapi_type });
-    }
-    res.json({ status: "UNKNOWN", bookingId: req.params.bookingId });
-  } catch (err) {
-    res.json({ status: "UNKNOWN", bookingId: req.params.bookingId });
-  }
-});
 
-// Flight: Complete booking with full confirmation (search → prebook → book → confirm)
-app.post("/api/confirmation/flight", async (req, res) => {
-  try {
-    const userId = req.cookies.token ? (() => { try { return jwt.verify(req.cookies.token, JWT_SECRET).id; } catch { return null; } })() : null;
-    const result = await confirmationEngine.flightConfirmationFlow(req.body, userId, db);
-    if (!result.success) {
-      const e = result.error;
-      const status = (e.code >= 500 && e.code < 600) ? 502 : 400;
-      return res.status(status).json({ error: e.message || "Confirmation flow failed", code: e.code });
-    }
-    res.json(result);
-  } catch (err) {
-    console.error("Flight confirmation flow error:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
 // ─── Start ───
 app.listen(PORT, () => {

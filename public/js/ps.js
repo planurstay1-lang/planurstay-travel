@@ -18,6 +18,8 @@
     swap: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4M17 5h4M5 17v4M3 19h4"/>',
+    send: '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>',
     left: '<path d="m15 18-6-6 6-6"/>',
     right: '<path d="m9 18 6-6-6-6"/>',
     arrow: '<path d="M5 12h14M12 5l7 7-7 7"/>',
@@ -202,7 +204,7 @@
 
   // ─── Header / footer ───
   PS.header = ({ active = "", onHero = false } = {}) => {
-    setTimeout(() => { trackPage(); loadSave(); }, 0);
+    setTimeout(() => { trackPage(); loadSave(); PS.chat(); }, 0);
     const el = document.createElement("header");
     el.className = "site-header" + (onHero ? " on-hero" : "");
     el.innerHTML = `
@@ -291,6 +293,108 @@
         msg.innerHTML = `<p class="news-ok">${PS.icon("check", 16, 3)}${r.already ? "You're already subscribed." : "You're subscribed! Check your inbox."}</p>`;
       } catch (err) { btn.disabled = false; msg.innerHTML = `<p class="news-err">${PS.esc(err.message)}</p>`; }
     };
+  };
+
+  // ─── AI travel assistant (floating chat) ───
+  PS.chat = async () => {
+    if (PS._chatInit || /^\/(checkout|confirmation|admin)/.test(location.pathname)) return;
+    PS._chatInit = true;
+    let cfg = PS.store.get("ps_chat_cfg");
+    if (!cfg) {
+      try { cfg = await (await fetch("/api/chat/status")).json(); } catch { cfg = { enabled: false }; }
+      PS.store.set("ps_chat_cfg", cfg);
+    }
+    if (!cfg.enabled) return;
+    if (cfg.provider === "nuitee") {
+      // Nuitee's whitelabel chatbot (branding, personality and guardrails are set in the Nuitee dashboard)
+      if (/^https:\/\/components\.liteapi\.travel\//.test(cfg.src || "")) {
+        const sc = document.createElement("script"); sc.src = cfg.src; sc.async = true; document.body.appendChild(sc);
+      }
+      return;
+    }
+    const KEY = "ps_chat";
+    let state = PS.store.get(KEY) || { open: false, msgs: [] };
+    const save = () => PS.store.set(KEY, { open: state.open, msgs: state.msgs.slice(-30) });
+    const root = document.createElement("div");
+    root.className = "chat-root";
+    root.innerHTML = `
+      <button class="chat-fab" type="button" aria-label="Open the PlanurStay travel assistant">${PS.icon("sparkle", 20, 2)}<span>Ask AI</span></button>
+      <section class="chat-panel" role="dialog" aria-label="PlanurStay travel assistant" hidden>
+        <header class="chat-head">
+          <span class="chat-av">${PS.icon("sparkle", 18, 2)}</span>
+          <div><b>PlanurStay assistant</b><small>Live hotel and flight prices</small></div>
+          <button type="button" class="chat-reset" title="New chat" aria-label="Start a new chat">${PS.icon("refresh", 16)}</button>
+          <button type="button" class="chat-close" aria-label="Close">${PS.icon("x", 18, 2.4)}</button>
+        </header>
+        <div class="chat-log" aria-live="polite"></div>
+        <form class="chat-form" novalidate>
+          <textarea rows="1" maxlength="1200" placeholder="Ask about hotels, flights or your trip…" aria-label="Message"></textarea>
+          <button type="submit" aria-label="Send">${PS.icon("send", 18, 2.2)}</button>
+        </form>
+        <p class="chat-foot">AI can make mistakes. Prices are checked again before you pay.</p>
+      </section>`;
+    document.body.appendChild(root);
+    const fab = root.querySelector(".chat-fab"), panel = root.querySelector(".chat-panel"), log = root.querySelector(".chat-log");
+    const form = root.querySelector(".chat-form"), ta = form.querySelector("textarea"), sendBtn = form.querySelector("button");
+
+    // Minimal, safe formatting: escape first, then **bold**, [text](/local-link), bullets and line breaks.
+    const fmt = (t) => PS.esc(t)
+      .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+      .replace(/\[([^\]]+)\]\((\/[^)\s]*)\)/g, '<a href="$2">$1</a>')
+      .replace(/^[-•] (.*)$/gm, "<li>$1</li>").replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m.replace(/\n/g, "")}</ul>`)
+      .replace(/\n/g, "<br>");
+    const time = (s) => s ? new Date(s).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "";
+    const cardHTML = (c) => c.kind === "hotel"
+      ? `<a class="cc hotel" href="${PS.esc(c.url)}"><img src="${PS.esc(c.photo || "")}" alt="" loading="lazy"><div><b>${PS.esc(c.name)}</b>
+          <small>${c.stars ? PS.stars(c.stars) + " · " : ""}${c.rating ? Number(c.rating).toFixed(1) + " " + PS.ratingWord(c.rating) : "New"}${c.area ? " · " + PS.esc(c.area) : ""}</small>
+          <span class="cc-price"><b>${PS.money(c.perNight, c.currency, 0)}</b>/night · ${PS.money(c.total, c.currency, 0)} total${c.member ? ' <em class="cc-tag">Member price</em>' : ""}${c.refundable ? ' <em class="cc-tag ok">Free cancellation</em>' : ""}</span></div></a>`
+      : `<a class="cc flight" href="${PS.esc(c.url)}">${c.logo ? `<img class="cc-logo" src="${PS.esc(c.logo)}" alt="">` : ""}<div><b>${PS.esc((c.airlines || []).join(", "))}</b>
+          ${[c.outbound && ["Out", c.outbound], c.inbound && ["Back", c.inbound]].filter(Boolean).map(([l, x]) => `<small>${l}: ${time(x.depart)} → ${time(x.arrive)} · ${x.stops ? x.stops + " stop" + (x.stops > 1 ? "s" : "") + (x.via?.length ? " (" + PS.esc(x.via.join(", ")) + ")" : "") : "Nonstop"}</small>`).join("")}
+          <span class="cc-price"><b>${PS.money(c.price, c.currency, 0)}</b> ${c.inbound ? "round trip" : "one way"}</span></div></a>`;
+    const SUGGEST = ["Hotels in Paris next weekend under $200 a night", "Cheapest flight from Toronto to Cancun in December", "What's your cancellation policy?", "Best area to stay in New York?"];
+    function render() {
+      if (!state.msgs.length) {
+        log.innerHTML = `<div class="chat-hi"><b>Hi! Where are you headed?</b><p>I can search live hotel and flight prices and answer questions about booking.</p>
+          <div class="chat-sugg">${SUGGEST.map(q => `<button type="button">${PS.esc(q)}</button>`).join("")}</div></div>`;
+        log.querySelectorAll(".chat-sugg button").forEach(b => b.onclick = () => send(b.textContent));
+        return;
+      }
+      log.innerHTML = state.msgs.map(m => m.role === "user"
+        ? `<div class="cm me">${PS.esc(m.content)}</div>`
+        : `<div class="cm ai${m.error ? " err" : ""}">${fmt(m.content)}</div>${(m.cards || []).length ? `<div class="cc-list">${m.cards.map(cardHTML).join("")}</div>` : ""}${(m.links || []).map(l => `<a class="cc-more" href="${PS.esc(l.url)}">${PS.esc(l.label)} ${PS.icon("arrow", 14)}</a>`).join("")}`).join("");
+      log.scrollTop = log.scrollHeight;
+    }
+    function setOpen(o) {
+      state.open = o; save();
+      panel.hidden = !o; fab.classList.toggle("hidden", o); root.classList.toggle("open", o);
+      if (o) { render(); setTimeout(() => ta.focus(), 50); }
+    }
+    let busy = false;
+    async function send(text) {
+      text = String(text || "").trim();
+      if (!text || busy) return;
+      busy = true; sendBtn.disabled = true;
+      state.msgs.push({ role: "user", content: text }); save(); render();
+      ta.value = ""; ta.style.height = "";
+      log.insertAdjacentHTML("beforeend", `<div class="cm ai typing"><span></span><span></span><span></span></div>`);
+      log.scrollTop = log.scrollHeight;
+      try {
+        const r = await PS.api("/api/chat", { method: "POST", body: { currency: PS.cur(), messages: state.msgs.filter(m => !m.error).map(m => ({ role: m.role, content: m.content })) } });
+        state.msgs.push({ role: "assistant", content: r.reply, cards: r.cards, links: r.links });
+        PS.track("page", { chat: 1 });
+      } catch (err) {
+        state.msgs.push({ role: "assistant", content: err.message || "Something went wrong. Please try again.", error: true });
+      }
+      busy = false; sendBtn.disabled = false; save(); render();
+    }
+    fab.onclick = () => setOpen(true);
+    root.querySelector(".chat-close").onclick = () => setOpen(false);
+    root.querySelector(".chat-reset").onclick = () => { state.msgs = []; save(); render(); ta.focus(); };
+    form.onsubmit = (e) => { e.preventDefault(); send(ta.value); };
+    ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(ta.value); } });
+    ta.addEventListener("input", () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.open) setOpen(false); });
+    setOpen(!!state.open);
   };
 
   // ─── Popover plumbing ───
@@ -675,9 +779,9 @@
     let trip = q.return || !q.depart ? "round" : "oneway";
     let from = q.from ? { code: q.from, city: q.fromCity || q.from, countryCode: q.fromCountry } : null;
     let to = q.to ? { code: q.to, city: q.toCity || q.to } : null;
-    // Box shows the city; the airport code sits next to the label ("FROM · YYZ") so nothing gets cut off
-    const label = (a) => a ? a.city : "";
-    const codeTag = (half, a) => { const t = half.querySelector(".code-tag"); t.textContent = a ? a.code : ""; t.classList.toggle("hidden", !a); };
+    // Box shows "City (CODE)" in one line, so the field never grows taller
+    const label = (a) => a ? (a.city && a.city !== a.code ? `${a.city} (${a.code})` : a.code) : "";
+    const codeTag = () => {};
 
     // Round trip / One way switch: the homepage passes its own (in the tab row, so tabs never shift);
     // elsewhere it's rendered above the fields.
@@ -686,9 +790,9 @@
       ${tripEl ? "" : `<div class="trip-type"><button type="button" class="chip-toggle" data-trip="round">Round trip</button><button type="button" class="chip-toggle" data-trip="oneway">One way</button></div>`}
       <form class="sfields flights" novalidate>
         <div class="sfield route wide">
-          <div class="route-half from">${PS.icon("plane", 20)}<div class="sfield-body"><span class="lbl">From <b class="code-tag hidden"></b></span><input type="text" placeholder="City or airport" autocomplete="off" aria-label="From" value="${PS.esc(label(from))}"></div></div>
+          <div class="route-half from">${PS.icon("plane", 20)}<div class="sfield-body"><span class="lbl">From</span><input type="text" placeholder="City or airport" autocomplete="off" aria-label="From" value="${PS.esc(label(from))}"></div></div>
           <button type="button" class="swap-btn" aria-label="Swap origin and destination">${PS.icon("swap", 16)}</button>
-          <div class="route-half to">${PS.icon("pin", 20)}<div class="sfield-body"><span class="lbl">To <b class="code-tag hidden"></b></span><input type="text" placeholder="City or airport" autocomplete="off" aria-label="To" value="${PS.esc(label(to))}"></div></div>
+          <div class="route-half to">${PS.icon("pin", 20)}<div class="sfield-body"><span class="lbl">To</span><input type="text" placeholder="City or airport" autocomplete="off" aria-label="To" value="${PS.esc(label(to))}"></div></div>
         </div>
         ${fieldHTML("clickable din", "cal", "Depart", `<span class="val"></span>`)}
         ${fieldHTML("clickable dout", "cal", "Return", `<span class="val"></span>`)}
