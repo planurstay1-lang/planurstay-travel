@@ -102,6 +102,8 @@
       heroIdx = (i + HERO.length) % HERO.length;
       const h = HERO[heroIdx];
       const set = () => {
+        // Tiny blurred preview paints instantly; the HD image replaces it when loaded
+        heroImg.style.backgroundImage = `url("${heroSrc(h.id, 48)}")`;
         heroImg.srcset = [1200, 1800, 2400, 3200].map(w => `${heroSrc(h.id, w)} ${w}w`).join(", ");
         heroImg.sizes = "100vw";
         heroImg.src = heroSrc(h.id, 2400);

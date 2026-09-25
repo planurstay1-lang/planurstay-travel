@@ -1002,3 +1002,4 @@ p { margin: 0; }
   .search-card.sleek .tab { padding: 8px 12px; font-size: 14px; }
   .search-card.sleek .trip-type .chip-toggle { padding: 6px 9px; font-size: 12px; }
 }
+.hero2-img { background-size: cover; background-position: center; }
