@@ -162,6 +162,7 @@ app.use(express.static(path.join(__dirname, "../public"), {
 const storefront = require("./modules/storefront-routes").registerStorefrontRoutes(app, { apiKey: key, jwt, JWT_SECRET, db });
 require("./modules/engagement-routes").registerEngagementRoutes(app, { db, apiKey: key, jwt, JWT_SECRET, APP_URL });
 require("./modules/guides").registerGuideRoutes(app, { APP_URL });
+require("./modules/seo-pages").registerSeoPages(app, { APP_URL });
 require("./modules/legal").registerLegalRoutes(app);
 const rewards = require("./modules/rewards").createRewards({ db, apiKey: key, jwt, JWT_SECRET });
 rewards.register(app);
@@ -182,6 +183,8 @@ support.register(app);
 require("./modules/saved").createSaved({ db, jwt, JWT_SECRET }).register(app);
 require("./modules/reminders").createReminders({ db, apiKey: () => key, jwt, JWT_SECRET, sendEmail, appUrl: () => APP_URL }).register(app);
 require("./modules/webhooks").createWebhooks({ db, sendEmail }).register(app);
+const growth = require("./modules/growth").createGrowth({ db, jwt, JWT_SECRET, sendEmail, appUrl: () => APP_URL });
+growth.register(app);
 require("./modules/chat").createChat({ port: PORT, support }).register(app);
 // Google Search Console HTML-file verification: set GSC_HTML_FILE=google1234abcd.html on Render
 app.get(/^\/google[0-9a-z]+\.html$/, (req, res, next) => {
@@ -214,6 +217,7 @@ app.post("/api/auth/signup", async (req, res) => {
 
     // Join PlanurStay Rewards (adds the welcome bonus)
     try { rewards.summary(user_id); } catch (e) { console.warn("Rewards signup failed:", e.message); }
+    growth.welcome(email, require("./modules/pricing").memberSavePct());
 
     res.json({ success: true, user: { id: user_id, email } });
   } catch (err) {
@@ -431,6 +435,7 @@ app.post("/api/hotels/book", async (req, res) => {
       // PlanurStay Rewards: points are pending until the stay is over
       const release = new Date(new Date(booking.checkout || Date.now()).getTime() + 86400000).toISOString().slice(0, 10);
       rewards.addPending(user.id, { bookingRef: booking.bookingId, bookingType: "hotel", amount: booking.price, currency: booking.currency, releaseDate: release, note: `Stay at ${booking.hotel?.name || "hotel"}` })
+        .then(() => growth.bookingMade(user.id, booking.bookingId, release, "hotel"))
         .catch(e => console.warn("Rewards pending:", e.message));
     }
     if (req.body.voucherCode) rewards.markVoucherUsed(String(req.body.voucherCode));
@@ -529,6 +534,7 @@ app.post("/api/flights/book", async (req, res) => {
     if (userId && result.data && !result.alreadyBooked) {
       const ref = result.data.bookingId || result.data.booking_id || req.body.prebookId;
       rewards.addPending(userId, { bookingRef: ref, bookingType: "flight", amount: +req.body.amount || result.data.pricing?.totalAmount || result.data.price, currency: req.body.currency || result.data.pricing?.currency || "USD", releaseDate: req.body.releaseDate, note: "Flight booking" })
+        .then(() => growth.bookingMade(userId, ref, req.body.releaseDate, "flight"))
         .catch(e => console.warn("Rewards pending (flight):", e.message));
     }
     if (RESEND_API_KEY && result.data) {

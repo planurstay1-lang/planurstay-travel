@@ -218,7 +218,7 @@ function registerGuideRoutes(app, { APP_URL }) {
   });
   app.get("/sitemap.xml", (req, res) => {
     const base = hostBase(req);
-    const urls = ["/", "/hotels", "/flights", "/guides", ...GUIDES.map(g => `/guides/${g.slug}`), "/membership", "/terms", "/privacy", "/cancellation-policy", "/contact"];
+    const urls = ["/", "/hotels", "/flights", "/guides", ...GUIDES.map(g => `/guides/${g.slug}`), ...require("./seo-pages").SEO_URLS, "/membership", "/terms", "/privacy", "/cancellation-policy", "/contact"];
     res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map(u => `<url><loc>${base}${u}</loc></url>`).join("")}</urlset>`);
   });
 }

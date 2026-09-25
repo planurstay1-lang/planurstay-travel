@@ -138,6 +138,8 @@
   }
 
   // Member saving shown in copy ("Members save about 8%") follows the live pricing settings.
+  // LiteAPI fare names: "ECONOMY_FLEX" → "Economy Flex"
+  PS.fareName = (v) => { const t = String(v || "").replace(/_/g, " ").trim(); return t && t === t.toUpperCase() ? t.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : t; };
   PS.savePct = () => PS.store.get("ps_save") || 8;
   function fillSave() { document.querySelectorAll("[data-save-pct]").forEach(n => { n.textContent = PS.savePct(); }); }
   function loadSave() {
@@ -304,7 +306,7 @@
             <div id="newsMsg"></div>
           </div>
           <div class="foot-cols">
-            <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/guides">Travel guides</a><a href="/membership">Rewards</a></div>
+            <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/guides">Travel guides</a><a href="/travel">Popular routes</a><a href="/membership">Rewards</a></div>
             <div><h4>Your account</h4><a href="/my-bookings">My trips</a><a href="/login">Sign in</a><a href="/membership">Your points</a></div>
             <div><h4>Support</h4><a href="/contact">Contact us</a><a href="/cancellation-policy">Cancellations &amp; refunds</a><a href="/my-bookings">Manage a booking</a><a href="/my-bookings">Find a booking</a></div>
           </div>

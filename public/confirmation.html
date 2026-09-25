@@ -128,7 +128,7 @@
           <div class="sum-lines" style="margin-top:12px">
             <div><span>Departure</span><b>${PS.fmtDay(s.depart)}</b></div>
             ${s.return ? `<div><span>Return</span><b>${PS.fmtDay(s.return)}</b></div>` : ""}
-            <div><span>Fare</span><b>${PS.esc(sel.offer?.fare?.family || "Economy")}</b></div>
+            <div><span>Fare</span><b>${PS.esc(PS.fareName(sel.offer?.fare?.family) || "Economy")}</b></div>
             <div><span>Lead traveler</span><b>${PS.esc([p.holder?.firstName, p.holder?.lastName].join(" "))}</b></div>
           </div>`;
       }
@@ -153,6 +153,7 @@
             <a class="btn btn-coral" href="${PS.url("/hotels", { placeId: b._package.placeId, dest: b._package.city, checkin: b._package.checkin, checkout: b._package.checkout, adults: 2, rooms: 1 })}">${PS.icon("bed", 16)}Find a hotel</a></div>`
           : type === "flight" && p.sel?.search?.to ? `<div class="xsell" style="margin-top:18px"><div><b>Need a hotel in ${PS.esc(p.sel.search.toCity || p.sel.search.to)}?</b><p>Book a stay for ${PS.fmtDate(p.sel.search.depart)}${p.sel.search.return ? " – " + PS.fmtDate(p.sel.search.return) : ""}.</p></div><a class="btn btn-white btn-sm" href="${PS.url("/", {})}#stays">${PS.icon("bed", 16)}Find hotels</a></div>` : ""}
           ${extrasHTML(b, p)}
+          <div id="partnersBox"></div>
           <div id="saveTrip"></div>
           <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:22px">
             <a class="btn btn-primary" href="/my-bookings">View my trips</a>
@@ -161,6 +162,7 @@
         </div>`;
       PS.track("booked", { type });
       saveTrip(b);
+      partners(p);
     }
 
     // Add-ons bought with the booking. LiteAPI returns the Uber voucher link in the booking;
@@ -172,6 +174,22 @@
       const uberUrl = (json.match(/https?:\/\/[^"\s]*uber[^"\s]*/i) || [])[0];
       return `${ex.uber ? `<div class="voucher-box"><div><b>${PS.money(ex.uber.value, "USD", 0)} Uber ride credit</b><p>${uberUrl ? "Tap to add it to your Uber account before you travel." : "Your voucher link is included in your confirmation email."}</p></div>${uberUrl ? `<a class="btn btn-white btn-sm" href="${PS.esc(uberUrl)}" target="_blank" rel="noopener">${PS.icon("car", 16)}Claim ride credit</a>` : ""}</div>` : ""}
         ${ex.esim ? `<div class="voucher-box" style="background:var(--blue)"><div><b>eSIM data plan added</b><p>${ex.esim.dataGb != null ? ex.esim.dataGb + " GB" : "Data"}${ex.esim.days ? " for " + ex.esim.days + " days" : ""}. Install instructions (QR code) are sent to your email.</p></div></div>` : ""}`;
+    }
+
+    // Complete your trip: insurance, airport transfer, car hire (partner links configured on the server)
+    async function partners(p) {
+      let d = {};
+      try { d = (await PS.api("/api/partners")).data || {}; } catch { return; }
+      const keys = Object.keys(d); if (!keys.length) return;
+      const s = p.sel?.search || {}, h = p.sel?.hotel || {}, st = p.sel?.stay || {};
+      const ctx = type === "hotel"
+        ? { city: h.city || "", country: h.country || "", checkin: st.checkin || "", checkout: st.checkout || "", airport: "" }
+        : { city: s.toCity || s.to || "", country: s.toCountry || "", checkin: s.depart || "", checkout: s.return || "", airport: s.to || "" };
+      const fill = (u) => u.replace(/\{(city|country|checkin|checkout|airport)\}/g, (_, k) => encodeURIComponent(ctx[k] || ""));
+      const ICON = { insurance: "shield", transfers: "car", carHire: "car" };
+      document.getElementById("partnersBox").innerHTML = `<div class="panel partners"><h3>Complete your trip</h3><div class="partner-row">${keys.map(k => `
+        <a class="partner" href="${PS.esc(fill(d[k].url))}" target="_blank" rel="noopener sponsored">${PS.icon(ICON[k] || "gift", 20)}<div><b>${PS.esc(d[k].title)}</b><small>${PS.esc(d[k].text)}</small></div>${PS.icon("right", 16)}</a>`).join("")}</div>
+        <p class="price-sub" style="margin-top:8px">Offered by our partners. We may earn a commission at no extra cost to you.</p></div>`;
     }
 
     // Guests can attach this booking to an account now or later; signed-in users get it attached automatically.
