@@ -1325,3 +1325,53 @@ p { margin: 0; }
 .hcard-img img { transition: transform 6s ease-out; }
 .hcard:hover .hcard-img img { transform: scale(1.1); }
 @media (prefers-reduced-motion: reduce) { .gallery .cine img.on { animation: none; } .hcard:hover .hcard-img img { transform: none; } }
+
+/* ═══ Rooms: Expedia-style vertical cards ═══════════════════════════════ */
+.rooms-sec { margin: 30px 0 8px; }
+.rooms-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.rooms-head h2 { font-size: 24px; font-weight: 800; }
+.rooms-ctrl { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; }
+.rooms-ctrl .sfield { min-height: 52px; padding: 6px 16px; border-radius: 14px; }
+.rooms-ctrl .sfield .val { font-size: 14.5px; }
+.stepbox { display: flex; align-items: center; gap: 12px; padding: 6px 12px 6px 16px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.stepbox .lbl { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.stepbox .stepper { gap: 8px; }
+.stepbox .stepper button { width: 30px; height: 30px; font-size: 16px; }
+#roomFilters { margin-bottom: 16px; }
+.rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.rcard { display: flex; flex-direction: column; border: 1px solid #e6eaf2; border-radius: 18px; overflow: hidden; background: #fff; transition: box-shadow .2s; }
+.rcard:hover { box-shadow: var(--sh-2); }
+.rc-img { position: relative; border: 0; padding: 0; aspect-ratio: 16 / 10; background: var(--line-2); overflow: hidden; cursor: pointer; }
+.rc-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s var(--ease); }
+.rc-img:hover img { transform: scale(1.05); }
+.rc-body { display: flex; flex-direction: column; flex: 1; padding: 14px 16px 16px; }
+.rc-body h3 { font-size: 16.5px; font-weight: 800; line-height: 1.3; text-transform: none; }
+.rc-facts { color: var(--text-2); font-size: 13.5px; margin-top: 4px; }
+.rc-more { align-self: flex-start; display: inline-flex; gap: 2px; align-items: center; margin-top: 4px; padding: 0; border: 0; background: none; color: var(--blue); font-weight: 700; font-size: 13.5px; }
+.rc-opts { display: grid; gap: 6px; margin: 12px 0 14px; }
+.rc-opt { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 9px 11px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 13.5px; }
+.rc-opt.single { grid-template-columns: 1fr; cursor: default; border-style: dashed; }
+.rc-opt.on:not(.single) { border-color: var(--blue); background: var(--blue-50); }
+.rc-opt input { width: 16px; height: 16px; margin: 0; accent-color: var(--blue); }
+.rc-o { display: grid; gap: 1px; color: var(--text); font-weight: 600; }
+.rc-o .ok { color: var(--green); }
+.rc-o small { color: var(--text-2); font-weight: 500; font-size: 12.5px; }
+.rc-d { color: var(--ink); font-weight: 700; font-size: 13px; white-space: nowrap; }
+.rc-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line-2); }
+.rc-price { display: grid; gap: 1px; }
+.rc-price s { color: var(--muted); font-size: 13px; }
+.rc-price b { font-size: 22px; font-weight: 800; color: var(--ink); letter-spacing: -.02em; line-height: 1.1; }
+.rc-price small { color: var(--text-2); font-size: 12.5px; }
+.rc-foot .btn { flex: none; height: 42px; padding: 0 18px; }
+@media (max-width: 760px) { .rooms-head h2 { font-size: 21px; } .rooms-ctrl { width: 100%; } .rooms-ctrl .sfield { flex: 1 1 100%; } .stepbox { flex: 1; justify-content: space-between; } .rgrid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  .rooms-ctrl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .rooms-ctrl .sfield { grid-column: 1 / -1; }
+  .stepbox { padding: 6px 8px 6px 12px; }
+  .stepbox .stepper { gap: 6px; }
+  #roomFilters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  #roomFilters .pill { white-space: nowrap; }
+}
+.rc-price { flex: 1; min-width: 0; }
+.rc-price small { white-space: normal; }
+@media (max-width: 560px) { .rc-foot { flex-direction: column; align-items: stretch; } .rc-foot .btn { width: 100%; height: 46px; } }

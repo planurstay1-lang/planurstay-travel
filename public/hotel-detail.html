@@ -16,6 +16,7 @@
       <div class="skel" style="height:34px;width:45%;margin:10px 0 18px"></div>
       <div class="skel" style="height:428px;border-radius:26px"></div>
     </div>
+    <div id="roomsWrap"></div>
     <div class="hd-layout">
       <div id="mainCol"></div>
       <aside class="sticky-book" id="bookCol"></aside>
@@ -117,17 +118,7 @@
     const times = hotel.checkinCheckoutTimes || {};
     const roomsById = new Map((hotel.rooms || []).map(r => [r.id, r]));
     document.getElementById("mainCol").innerHTML = `
-      <section class="panel" id="roomsPanel">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-          <h2 style="margin:0">Choose your room</h2>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <div class="sfield clickable" id="dDates" style="min-height:48px;padding:6px 14px"><div class="sfield-body"><span class="lbl">Dates</span><span class="val" style="font-size:14.5px"></span></div></div>
-            <div class="sfield clickable" id="dGuests" style="min-height:48px;padding:6px 14px"><div class="sfield-body"><span class="lbl">Travelers</span><span class="val" style="font-size:14.5px"></span></div></div>
-          </div>
-        </div>
-        <div class="pill-row" id="roomFilters" style="margin-bottom:16px;align-items:center"></div>
-        <div id="rooms"></div>
-      </section>
+
       ${hotel.location?.latitude ? `<section class="panel" id="wxPanel"></section>` : ""}
       <section class="panel"><h2>About this property</h2><div class="hd-desc clamped" id="desc">${cleanHTML(hotel.hotelDescription) || "<p>No description available.</p>"}</div><button class="link" id="descMore" style="background:none;border:0;padding:0;margin-top:8px">Read more</button></section>
       ${facilities.length ? `<section class="panel"><h2>Popular amenities</h2><div class="amen-grid">${facilities.slice(0, 24).map(f => `<div class="amen">${PS.icon("check", 16, 2.6)}${PS.esc(f)}</div>`).join("")}</div></section>` : ""}
@@ -150,6 +141,19 @@
           ${times.checkout ? `<div>${PS.icon("clock", 18)}<div><b>Check-out</b><br><span style="color:var(--text-2)">Until ${PS.esc(times.checkout)}</span></div></div>` : ""}
           ${hotel.hotelImportantInformation ? `<div>${PS.icon("info", 18)}<div><b>Important information</b><br><span style="color:var(--text-2)">${PS.esc(hotel.hotelImportantInformation)}</span></div></div>` : ""}
         </div>
+      </section>`;
+    document.getElementById("roomsWrap").innerHTML = `
+      <section id="roomsPanel" class="rooms-sec">
+        <div class="rooms-head">
+          <h2>Choose your room</h2>
+          <div class="rooms-ctrl">
+            <div class="sfield clickable" id="dDates"><div class="sfield-body"><span class="lbl">Dates</span><span class="val"></span></div></div>
+            <div class="stepbox"><span class="lbl">Guests</span><div class="stepper"><button type="button" data-occ="adults" data-d="-1" aria-label="Fewer guests">−</button><output id="oAdults"></output><button type="button" data-occ="adults" data-d="1" aria-label="More guests">+</button></div></div>
+            <div class="stepbox"><span class="lbl">Rooms</span><div class="stepper"><button type="button" data-occ="rooms" data-d="-1" aria-label="Fewer rooms">−</button><output id="oRooms"></output><button type="button" data-occ="rooms" data-d="1" aria-label="More rooms">+</button></div></div>
+          </div>
+        </div>
+        <div class="pill-row" id="roomFilters"></div>
+        <div id="rooms"></div>
       </section>`;
     const desc = document.getElementById("desc"), more = document.getElementById("descMore");
     if (desc.scrollHeight <= 190) more.remove();
@@ -204,7 +208,16 @@
     let reloadT;
     const reload = () => { clearTimeout(reloadT); reloadT = setTimeout(() => { loadRooms(); loadWeather(); }, 250); };
     PS.datePicker(document.getElementById("dDates"), { start: checkin, end: checkout, onChange: (s, e) => { if (s && e) { checkin = s; checkout = e; syncUrl(); reload(); } } });
-    PS.guestsPicker(document.getElementById("dGuests"), { ...occ, onChange: (st) => { Object.assign(occ, st); syncUrl(); reload(); } });
+    const paintOcc = () => { document.getElementById("oAdults").textContent = occ.adults + occ.childAges.length; document.getElementById("oRooms").textContent = occ.rooms;
+      document.querySelectorAll("[data-occ]").forEach(b => { const k = b.dataset.occ, d = +b.dataset.d;
+        b.disabled = k === "adults" ? (d < 0 ? occ.adults <= occ.rooms : occ.adults >= 16) : (d < 0 ? occ.rooms <= 1 : occ.rooms >= 9); }); };
+    document.querySelectorAll("[data-occ]").forEach(b => b.onclick = () => {
+      const k = b.dataset.occ, d = +b.dataset.d;
+      occ[k] += d;
+      if (k === "rooms" && occ.adults < occ.rooms) occ.adults = occ.rooms; // at least one adult per room
+      paintOcc(); syncUrl(); reload();
+    });
+    paintOcc();
     function syncUrl() {
       history.replaceState(null, "", PS.url(location.pathname, { ...q, checkin: PS.iso(checkin), checkout: PS.iso(checkout), adults: occ.adults, rooms: occ.rooms, children: occ.childAges.join(",") }));
     }
@@ -243,7 +256,7 @@
       if (!allOffers.length) { bar.innerHTML = ""; return; }
       const c = (f) => allOffers.filter(f).length;
       const chip = (k, label, n) => `<button class="pill ${rf[k] ? "active" : ""}" data-rf="${k}" ${n ? "" : "disabled style=\"opacity:.45\""}>${label} <span style="opacity:.7">(${n})</span></button>`;
-      bar.innerHTML = `<span style="font-weight:700;font-size:14px;color:var(--text-2);margin-right:4px">Filter rooms:</span>
+      bar.innerHTML = `
         ${chip("refund", "Free cancellation", c(o => o.refundable))}
         ${chip("breakfast", "Breakfast included", c(hasBreakfast))}
         ${chip("sleeps3", "Sleeps 3+", c(o => (o.maxOccupancy || 0) >= 3))}
@@ -300,6 +313,7 @@
         return;
       }
       const n = PS.nights(PS.iso(checkin), PS.iso(checkout));
+      const R = occ.rooms;
       const groups = new Map();
       offers.forEach(o => {
         const rm = roomsById.get(o.mappedRoomId) || {};
@@ -307,57 +321,64 @@
         if (!groups.has(key)) groups.set(key, { rm, opts: [] });
         groups.get(key).opts.push(o);
       });
-      const list = [...groups.values()].map(g => ({ ...g, opts: g.opts.sort((a, b) => a.total - b.total), min: Math.min(...g.opts.map(o => o.total)), pick: 0 }))
+      // Options that look the same to a guest (same cancellation deadline, meal plan and perks) → keep only the cheapest
+      const sameKey = (o) => {
+        const first = (o.cancelPolicy || []).find(c => c.amount > 0) || (o.cancelPolicy || [])[0];
+        return [o.refundable, o.refundable && first ? String(first.from).slice(0, 10) : "", hasBreakfast(o) ? (o.board || "").toLowerCase() : "", (o.perks || []).join("|")].join("~");
+      };
+      const dedupe = (opts) => { const seen = new Set(); return opts.filter(o => { const k = sameKey(o); if (seen.has(k)) return false; seen.add(k); return true; }); };
+      const list = [...groups.values()].map(g => { const opts = dedupe(g.opts.sort((a, b) => a.total - b.total)); return { ...g, opts, min: opts[0].total, pick: 0 }; })
         .sort((a, b) => rf.sort === "high" ? b.min - a.min : a.min - b.min);
 
-      const buyHTML = (g) => {
+      const optLabel = (o) => {
+        const first = (o.cancelPolicy || []).find(c => c.amount > 0) || (o.cancelPolicy || [])[0];
+        const canc = o.refundable ? `Free cancellation${first ? ` until ${PS.deadline(first.from, first.tz).replace(/,? \d{1,2}:\d{2}.*$/, "")}` : ""}` : "Non-refundable";
+        return { canc, meal: hasBreakfast(o) ? PS.esc(o.board) : "" };
+      };
+      const footHTML = (g) => {
         const o = g.opts[g.pick];
-        return `${o.strikeTotal ? `<span class="price-strike">${PS.money(o.strikeTotal, o.currency, 0)}</span>` : ""}
-          <span class="price-big">${PS.money(o.total, o.currency, 0)}</span>
-          <span class="price-sub">total for ${PS.plural(n, "night")} · ${PS.money(o.total / n, o.currency, 0)}/night</span>
-          <button class="btn btn-coral btn-block" data-reserve>Reserve</button>`;
+        return `<div class="rc-price">
+            ${o.strikeTotal ? `<s>${PS.money(o.strikeTotal, o.currency, 0)}</s>` : ""}<b>${PS.money(o.total, o.currency, 0)}</b>
+            <small>${PS.money(o.total / n / R, o.currency, 0)} per room/night · total for ${R > 1 ? PS.plural(R, "room") + ", " : ""}${PS.plural(n, "night")}</small>
+          </div>
+          <button class="btn btn-coral" data-reserve>Reserve</button>`;
       };
 
-      roomsEl.innerHTML = list.map((g, gi) => {
+      roomsEl.innerHTML = `<div class="rgrid">${list.map((g, gi) => {
         const rm = g.rm, o0 = g.opts[0];
         const photos = (rm.photos || []).map(p => p.hd_url || p.url).filter(Boolean);
-        const beds = (rm.bedTypes || []).map(b => `${b.quantity} ${b.bedType}`).join(", ");
-        const amen = (rm.roomAmenities || []).map(a => a.name).filter(Boolean).slice(0, 6);
-        return `<div class="rgroup fade-in" data-g="${gi}">
-          <div class="rg-top">
-            <button type="button" class="rg-img" data-rd="${gi}" aria-label="See room photos and details">
-              ${photos[0] ? `<img src="${PS.esc(photos[0])}" alt="" loading="lazy" onerror="this.remove()">` : (images[gi + 1] ? `<img src="${PS.esc(images[gi + 1])}" alt="" loading="lazy">` : "")}
-              ${photos.length > 1 ? `<span class="rg-count">${PS.icon("photo", 13)}${photos.length}</span>` : ""}
-            </button>
-            <div class="rg-info">
-              <h3>${PS.esc(rm.roomName || o0.name)}</h3>
-              <button type="button" class="link rg-more" data-rd="${gi}">Room details &amp; photos ${PS.icon("right", 14)}</button>
+        const bed = (rm.bedTypes || []).map(b => `${b.quantity} ${b.bedType}`)[0];
+        const facts = [o0.maxOccupancy ? `Sleeps ${o0.maxOccupancy}` : "", bed || ""].filter(Boolean).join(" · ");
+        return `<article class="rcard" data-g="${gi}">
+          <button type="button" class="rc-img" data-rd="${gi}" aria-label="Room photos and details">
+            ${photos[0] ? `<img src="${PS.esc(photos[0])}" alt="" loading="lazy" onerror="this.remove()">` : (images[gi + 1] ? `<img src="${PS.esc(images[gi + 1])}" alt="" loading="lazy">` : "")}
+            ${photos.length > 1 ? `<span class="rg-count">${PS.icon("photo", 13)}${photos.length}</span>` : ""}
+          </button>
+          <div class="rc-body">
+            <h3>${PS.esc(rm.roomName || o0.name)}</h3>
+            ${facts ? `<p class="rc-facts">${PS.esc(facts)}</p>` : ""}
+            <button type="button" class="rc-more" data-rd="${gi}">More details ${PS.icon("right", 13)}</button>
+            <div class="rc-opts" role="radiogroup" aria-label="Options">
+              ${g.opts.map((o, k) => { const L = optLabel(o); return `
+                <label class="rc-opt ${k === g.pick ? "on" : ""} ${g.opts.length === 1 ? "single" : ""}">
+                  ${g.opts.length > 1 ? `<input type="radio" name="rc${gi}" value="${k}" ${k === g.pick ? "checked" : ""}>` : ""}
+                  <span class="rc-o"><span class="${o.refundable ? "ok" : ""}">${L.canc}</span>${L.meal ? `<small>${L.meal}</small>` : ""}</span>
+                  ${g.opts.length > 1 ? `<span class="rc-d">${k === 0 ? "" : "+" + PS.money(o.total - g.opts[0].total, o.currency, 0)}</span>` : ""}
+                </label>`; }).join("")}
             </div>
+            <div class="rc-foot">${footHTML(g)}</div>
           </div>
-          <div class="rg-body">
-            <div class="rg-choices" role="radiogroup" aria-label="Choose an option">
-              ${g.opts.length > 1 ? `<div class="rg-choose">Choose your option</div>` : ""}
-              ${g.opts.map((o, k) => `
-                <label class="rchoice ${k === g.pick ? "on" : ""}">
-                  ${g.opts.length > 1 ? `<input type="radio" name="rg${gi}" value="${k}" ${k === g.pick ? "checked" : ""}>` : ""}
-                  <div class="rc-main"><b>${optTitle(o)}</b>
-                    <ul>${cancelLine(o)}${hasBreakfast(o) ? `<li class="ok">${PS.icon("coffee", 14)}${PS.esc(o.board)}</li>` : ""}</ul></div>
-                  ${g.opts.length > 1 ? `<span class="rc-price">${k === 0 ? PS.money(o.total, o.currency, 0) : "+ " + PS.money(o.total - g.opts[0].total, o.currency, 0)}</span>` : ""}
-                </label>`).join("")}
-            </div>
-            <div class="rg-buy">${buyHTML(g)}</div>
-          </div>
-        </div>`;
-      }).join("");
+        </article>`;
+      }).join("")}</div>`;
 
-      const bindBuy = (el, g) => el.querySelector("[data-reserve]").onclick = () => reserve(g.opts[g.pick], g.rm);
-      roomsEl.querySelectorAll(".rgroup").forEach(el => {
+      const bind = (el, g) => el.querySelector("[data-reserve]").onclick = () => reserve(g.opts[g.pick], g.rm);
+      roomsEl.querySelectorAll(".rcard").forEach(el => {
         const g = list[+el.dataset.g];
-        bindBuy(el, g);
+        bind(el, g);
         el.querySelectorAll('input[type="radio"]').forEach(r => r.onchange = () => {
           g.pick = +r.value;
-          el.querySelectorAll(".rchoice").forEach((c, k) => c.classList.toggle("on", k === g.pick));
-          const buy = el.querySelector(".rg-buy"); buy.innerHTML = buyHTML(g); bindBuy(el, g);
+          el.querySelectorAll(".rc-opt").forEach((c, k) => c.classList.toggle("on", k === g.pick));
+          el.querySelector(".rc-foot").innerHTML = footHTML(g); bind(el, g);
         });
       });
       roomsEl.querySelectorAll("[data-rd]").forEach(b => b.onclick = () => {
