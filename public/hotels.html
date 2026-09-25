@@ -56,7 +56,6 @@
             <button class="btn btn-sm btn-ghost" id="mapToggle"></button>
           </div>
         </div>
-        <div class="pill-row" id="quickChips" style="margin-bottom:14px"></div>
         <div class="flex-dates hidden" id="flexDates"></div>
         <div class="sort-tabs" id="sortTabs">
           <button class="sort-tab active" data-sort="rec"><b>Recommended</b><small id="sRec">—</small></button>
@@ -263,7 +262,7 @@
       const d = e.target.closest("[data-dist]"); if (d) { st.maxDist = +d.dataset.dist; st.shown = 20; apply(); }
     });
 
-    function apply() { renderF(); paintChips(); renderList(); }
+    function apply() { renderF(); renderList(); }
     function renderList() {
       let list = all.filter(h => pass(h));
       const by = {
@@ -523,22 +522,6 @@
       const c = e.target.closest(".hcard"); if (!c || !mapOn) return;
       document.querySelectorAll(".map-price").forEach(m => m.classList.toggle("hl", m.dataset.id === c.dataset.id));
     });
-
-    // ─── Quick filter chips (drive the same controls as the sidebar) ───
-    const chipsEl = document.getElementById("quickChips");
-    const starsOn = () => st.stars.has(4) && st.stars.has(5) && st.stars.size === 2;
-    const flip = (k, v) => { st[k].has(v) ? st[k].delete(v) : st[k].add(v); };
-    const chipDefs = [
-      { label: "Free cancellation", on: () => st.refund, toggle: () => { st.refund = !st.refund; } },
-      { label: "Breakfast included", on: () => st.meals.has("breakfast"), toggle: () => flip("meals", "breakfast") },
-      { label: "Deals", on: () => st.deal, toggle: () => { st.deal = !st.deal; } },
-      { label: "Rated 8+", on: () => st.rating >= 8, toggle: () => { st.rating = st.rating >= 8 ? 0 : 8; } },
-      { label: "4★ & up", on: starsOn, toggle: () => { st.stars = starsOn() ? new Set() : new Set([4, 5]); } },
-    ];
-    function paintChips() {
-      chipsEl.innerHTML = chipDefs.map((c, i) => `<button class="pill ${c.on() ? "active" : ""}" data-chip="${i}">${c.on() ? "✓ " : ""}${c.label}</button>`).join("");
-      chipsEl.querySelectorAll("[data-chip]").forEach(b => b.onclick = () => { chipDefs[+b.dataset.chip].toggle(); st.shown = 20; apply(); });
-    }
 
     // ─── Sidebar map preview ───
     document.getElementById("miniMapBtn").onclick = () => mapBtn.click();
