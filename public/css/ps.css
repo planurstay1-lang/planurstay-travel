@@ -10,7 +10,8 @@
   --muted: #7a849c;
   --line: #e4e8f1;
   --line-2: #eef1f7;
-  --bg: #f6f8fc;
+  --bg: #ffffff;
+  --soft: #f6f8fc;
   --surface: #ffffff;
   --blue: #1f5bff;
   --blue-600: #1848d6;
@@ -483,7 +484,7 @@ p { margin: 0; }
 .sticky-book { position: sticky; top: 90px; }
 .book-box .from { color: var(--text-2); font-size: 14px; }
 .book-box .price-big { font-size: 32px; }
-.book-summary { display: grid; gap: 8px; margin: 16px 0; padding: 14px; background: var(--bg); border-radius: var(--r); font-size: 14px; }
+.book-summary { display: grid; gap: 8px; margin: 16px 0; padding: 14px; background: var(--soft); border-radius: var(--r); font-size: 14px; }
 .book-summary div { display: flex; justify-content: space-between; gap: 10px; }
 .book-summary span { color: var(--text-2); }
 .book-summary b { color: var(--ink); text-align: right; }
@@ -558,7 +559,7 @@ p { margin: 0; }
 .confirm-hero p { color: var(--text-2); margin-top: 8px; font-size: 16.5px; }
 .confirm-card { max-width: 720px; margin: 28px auto 0; }
 .ref-box { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
-.ref-box div { background: var(--bg); border-radius: var(--r); padding: 14px; }
+.ref-box div { background: var(--soft); border-radius: var(--r); padding: 14px; }
 .ref-box small { display: block; color: var(--muted); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
 .ref-box b { font-size: 17px; color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
 
@@ -786,7 +787,7 @@ p { margin: 0; }
 @media (max-width: 560px) { .sfields.stays, .sfields.flights { grid-template-columns: 1fr 1fr; } .sfields .wide, .sfields .from, .sfields .to { grid-column: 1 / -1; } }
 .sfield.cal-on { border-color: var(--blue); box-shadow: 0 0 0 4px var(--blue-50); }
 .sfield.muted .val { color: #a3abbf; font-weight: 600; }
-.sfield.muted { background: var(--bg); }
+.sfield.muted { background: var(--soft); }
 
 .cal { position: absolute; z-index: 400; width: 720px; max-width: calc(100vw - 24px); background: #fff; border-radius: 22px; box-shadow: 0 30px 70px -20px rgba(11, 27, 63, .35), 0 8px 24px -10px rgba(11, 27, 63, .15); padding: 26px 30px 18px; animation: popInC .15s; }
 .cmonths { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
@@ -895,7 +896,7 @@ p { margin: 0; }
 .wx-head b { font-size: 18px; color: var(--ink); }
 .wx-head span { color: var(--text-2); font-size: 14px; }
 .wx-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(88px, 1fr); gap: 10px; overflow-x: auto; scrollbar-width: thin; padding-bottom: 4px; }
-.wx-day { display: grid; justify-items: center; gap: 2px; padding: 12px 8px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line-2); text-align: center; }
+.wx-day { display: grid; justify-items: center; gap: 2px; padding: 12px 8px; border-radius: 14px; background: var(--soft); border: 1px solid var(--line-2); text-align: center; }
 .wx-day small { color: var(--text-2); font-size: 12px; font-weight: 600; }
 .wx-day small.dt { color: var(--muted); font-weight: 500; }
 .wx-day b { font-size: 18px; color: var(--ink); }
@@ -991,7 +992,7 @@ p { margin: 0; }
 }
 @media (max-width: 980px) {
   .search-card.sleek #searchHost { background: #fff; border-radius: 22px; padding: 10px; box-shadow: 0 20px 50px -18px rgba(8,18,45,.45); }
-  .search-card.sleek .sfield { border-color: var(--line-2); background: var(--bg); min-height: 60px; }
+  .search-card.sleek .sfield { border-color: var(--line-2); background: var(--soft); min-height: 60px; }
   .search-card.sleek .tabs { justify-content: flex-start; }
 }
 .search-card.sleek .trip-type.tab-trip { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; position: static; }
@@ -1144,3 +1145,8 @@ p { margin: 0; }
 .faq details[open] summary::after { transform: translateY(-50%) rotate(45deg); }
 .faq details p { color: var(--text-2); padding: 0 0 16px; }
 @media (max-width: 900px) { .faq-wrap { grid-template-columns: 1fr; gap: 18px; } }
+
+/* Bright white site: cards keep definition with a soft border + shadow */
+.hcard, .fcard, .panel, .room, .trip, .stat, .resume-card, .route, .faq details, .sort-tabs, .empty, .loading-note, .sload, .sk-card, .sk-fcard { border-color: #e6eaf2; }
+.hcard, .fcard, .panel, .room, .sort-tabs { box-shadow: 0 1px 3px rgba(11,27,63,.05); }
+.searchbar-wrap { background: var(--ink); }
