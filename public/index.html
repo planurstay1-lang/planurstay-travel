@@ -31,53 +31,22 @@
     </div>
   </section>
 
-  <div class="trust-strip">
-    <div class="container trust-grid">
-      <div class="trust-item"><span class="ti"><i data-ico="globe" data-s="22"></i></span><div><b>2M+ hotels</b><small>From boutique stays to resorts</small></div></div>
-      <div class="trust-item"><span class="ti"><i data-ico="plane" data-s="22"></i></span><div><b>Hundreds of airlines</b><small>Compare fares in one search</small></div></div>
-      <div class="trust-item"><span class="ti"><i data-ico="shield" data-s="22"></i></span><div><b>Secure checkout</b><small>Card payments are encrypted</small></div></div>
-      <div class="trust-item"><span class="ti"><i data-ico="headset" data-s="22"></i></span><div><b>Real support</b><small>Help before and after you book</small></div></div>
-    </div>
-  </div>
-
-  <section class="section">
+  <section class="deals">
     <div class="container">
-      <div class="sec-head">
-        <div><div class="eyebrow">Trending now</div><h2>Where travelers are heading</h2><p>Tap a destination to see live prices.</p></div>
+      <div class="deals-head">
+        <div><h2>Deals for top destinations</h2><p id="dealsSub">Live hotel prices for a 3-night stay</p></div>
+        <div class="deals-nav"><button type="button" class="dn" data-dir="-1" aria-label="Scroll left"></button><button type="button" class="dn" data-dir="1" aria-label="Scroll right"></button></div>
       </div>
-      <div class="dest-grid" id="destGrid"></div>
+      <div class="deals-row" id="dealsRow"></div>
     </div>
   </section>
 
-  <section class="section-sm">
+  <section class="trust-line">
     <div class="container">
-      <div class="feature-band">
-        <div style="position:relative">
-          <div class="eyebrow" style="color:#ffb39f">PlanurStay Rewards</div>
-          <h2>Sign in and unlock member prices.</h2>
-          <p>Members book hotels at our lowest prices, earn points on every stay and keep every trip in one place. It's free to join.</p>
-          <div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap">
-            <a href="/login?mode=signup" class="btn btn-coral btn-lg" id="joinBtn">Join for free</a>
-            <a href="/membership" class="btn btn-lg" style="color:#fff;border:1px solid rgba(255,255,255,.3)">See the perks</a>
-          </div>
-        </div>
-        <div class="perk-list">
-          <div class="perk"><span class="pi"><i data-ico="tag" data-s="20"></i></span><div><b>Member prices</b><small>Save up to 10% compared with guest prices on hotels.</small></div></div>
-          <div class="perk"><span class="pi"><i data-ico="star" data-s="20"></i></span><div><b>Earn on every booking</b><small>Collect points and move up tiers as you travel.</small></div></div>
-          <div class="perk"><span class="pi"><i data-ico="bolt" data-s="20"></i></span><div><b>Faster checkout</b><small>Your trips and details stay in one place.</small></div></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="section">
-    <div class="container">
-      <div class="sec-head"><div><div class="eyebrow">How it works</div><h2>Booked in three steps</h2></div></div>
-      <div class="steps">
-        <div class="step"><div class="step-n">1</div><h3>Search live prices</h3><p>We check rooms and fares in real time, so the price you see is available right now.</p></div>
-        <div class="step"><div class="step-n">2</div><h3>Pick with confidence</h3><p>Filter by price, rating and free cancellation. Clear totals, with taxes shown up front.</p></div>
-        <div class="step"><div class="step-n">3</div><h3>Pay securely</h3><p>Your room or seat is held while you pay, and your confirmation arrives right away.</p></div>
-      </div>
+      <span><i data-ico="shield" data-s="18"></i>Secure checkout</span>
+      <span><i data-ico="tag" data-s="18"></i>Member prices on hotels</span>
+      <span><i data-ico="refresh" data-s="18"></i>Free cancellation on many rooms</span>
+      <span><i data-ico="headset" data-s="18"></i>Real people ready to help</span>
     </div>
   </section>
 
@@ -137,15 +106,38 @@
     tabs.forEach(b => b.onclick = () => setTab(b.dataset.tab));
     setTab(location.hash === "#flights" ? "flights" : location.hash === "#stays" ? "stays" : PS.local.get("ps_tab") || "stays");
 
+    // ─── Deals for top destinations: photo cards with live "from" prices (loaded when scrolled into view) ───
     const ci = PS.addDays(PS.today(), 21), co = PS.addDays(ci, 3);
-    const dests = PS.DESTS.filter(d => d.img).slice(0, 7);
-    document.getElementById("destGrid").innerHTML = dests.map((d, i) => `
-      <a class="dest-card ${i === 0 ? "big" : ""}" href="${PS.url("/hotels", { placeId: d.placeId, dest: d.name, destDetail: d.detail, checkin: PS.iso(ci), checkout: PS.iso(co), adults: 2, rooms: 1 })}">
-        <img src="${PS.img(d.img, i === 0 ? 1200 : 700)}" alt="${PS.esc(d.name)}" loading="lazy">
-        <div class="dest-info"><div><h3>${PS.esc(d.name)}</h3><small>${PS.esc(d.detail)}</small></div><span class="dest-go">${PS.icon("arrow", 18)}</span></div>
+    document.getElementById("dealsSub").textContent = `Live hotel prices for ${PS.fmtDate(ci)} – ${PS.fmtDate(co)} · 3 nights, 2 guests`;
+    const dests = PS.DESTS.filter(d => d.img);
+    const row = document.getElementById("dealsRow");
+    row.innerHTML = dests.map((d, i) => `
+      <a class="deal" data-i="${i}" href="${PS.url("/hotels", { placeId: d.placeId, dest: d.name, destDetail: d.detail, checkin: PS.iso(ci), checkout: PS.iso(co), adults: 2, rooms: 1 })}">
+        <div class="deal-img"><img src="${PS.img(d.img, 800)}" alt="${PS.esc(d.name)}" loading="lazy"></div>
+        <div class="deal-body"><b>${PS.esc(d.name)}</b><small>${PS.esc(d.detail)}</small><span class="deal-price"><span class="skel" style="display:inline-block;width:110px;height:14px"></span></span></div>
       </a>`).join("");
-
-    PS.auth().then(a => { if (a.loggedIn) { const j = document.getElementById("joinBtn"); j.textContent = "View your rewards"; j.href = "/membership"; } });
+    document.querySelectorAll(".deals-nav .dn").forEach(b => {
+      b.innerHTML = PS.icon(b.dataset.dir === "1" ? "right" : "left", 18, 2.4);
+      b.onclick = () => row.scrollBy({ left: +b.dataset.dir * row.clientWidth * .8, behavior: "smooth" });
+    });
+    let dealsLoaded = false;
+    new IntersectionObserver(async (ents, obs) => {
+      if (dealsLoaded || !ents.some(e => e.isIntersecting)) return;
+      dealsLoaded = true; obs.disconnect();
+      const queue = dests.map((d, i) => ({ d, i }));
+      const worker = async () => {
+        while (queue.length) {
+          const { d, i } = queue.shift();
+          const el = row.querySelector(`[data-i="${i}"] .deal-price`);
+          try {
+            const r = await PS.api("/api/stays/search", { method: "POST", body: { placeId: d.placeId, checkin: PS.iso(ci), checkout: PS.iso(co), adults: 2, rooms: 1, limit: 60 } });
+            const min = Math.min(...(r.data || []).map(h => h.perNight));
+            el.innerHTML = Number.isFinite(min) ? `Hotels from <b>${PS.money(min, "USD", 0)}</b>/night` : "See stays";
+          } catch { el.textContent = "See stays"; }
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+    }, { rootMargin: "200px" }).observe(row);
   </script>
 </body>
 </html>

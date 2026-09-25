@@ -1003,3 +1003,38 @@ p { margin: 0; }
   .search-card.sleek .trip-type .chip-toggle { padding: 6px 9px; font-size: 12px; }
 }
 .hero2-img { background-size: cover; background-position: center; }
+
+/* ─── Homepage: deals row, trust line, slim footer ────────────────────── */
+.deals { padding: 44px 0 20px; }
+.deals-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 18px; }
+.deals-head h2 { font-size: clamp(22px, 2.6vw, 28px); font-weight: 800; }
+.deals-head p { color: var(--text-2); font-size: 14.5px; margin-top: 4px; }
+.deals-nav { display: flex; gap: 8px; }
+.deals-nav .dn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: #fff; display: grid; place-items: center; color: var(--ink); }
+.deals-nav .dn:hover { border-color: var(--ink); }
+.deals-row { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 3 * 18px) / 4); gap: 18px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding-bottom: 6px; }
+.deals-row::-webkit-scrollbar { display: none; }
+.deal { scroll-snap-align: start; display: block; }
+.deal-img { aspect-ratio: 4 / 3; border-radius: 18px; overflow: hidden; background: var(--line-2); }
+.deal-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s var(--ease); }
+.deal:hover .deal-img img { transform: scale(1.05); }
+.deal-body { padding: 12px 2px 0; display: grid; gap: 2px; }
+.deal-body b { font-size: 16.5px; color: var(--ink); }
+.deal-body small { color: var(--text-2); font-size: 13.5px; }
+.deal-price { font-size: 14px; color: var(--text-2); margin-top: 4px; }
+.deal-price b { font-size: 14px; color: var(--ink); }
+@media (max-width: 980px) { .deals-row { grid-auto-columns: calc((100% - 18px) / 2.3); } }
+@media (max-width: 560px) { .deals-row { grid-auto-columns: 72%; gap: 14px; } .deals-nav { display: none; } }
+.trust-line { padding: 26px 0 10px; }
+.trust-line .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 30px; color: var(--text-2); font-size: 14px; font-weight: 600; }
+.trust-line span { display: inline-flex; align-items: center; gap: 8px; }
+.trust-line svg { color: var(--blue); }
+.site-footer.slim { padding: 22px 0; margin-top: 24px; }
+.foot-slim { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.foot-slim .brand { font-size: 17px; }
+.foot-slim .brand-mark { width: 28px; height: 28px; border-radius: 8px; }
+.foot-slim nav { display: flex; gap: 22px; flex-wrap: wrap; }
+.foot-slim nav a { color: var(--text-2); font-size: 14px; font-weight: 600; }
+.foot-slim nav a:hover { color: var(--ink); }
+.foot-slim .copy { color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) { .foot-slim { justify-content: center; text-align: center; } .foot-slim nav { justify-content: center; gap: 16px; } }
