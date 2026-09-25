@@ -49,7 +49,7 @@
 
       <section id="listCol">
         <div class="res-toolbar">
-          <div class="res-title"><h1 id="resTitle">Hotels</h1><p id="resMeta">Searching live prices…</p></div>
+          <div class="res-title"><h1 id="resTitle" class="sr-only">Hotels</h1><p id="resMeta"></p></div>
           <div class="res-actions">
             <button class="btn btn-sm btn-ghost show-mobile" id="openFilters"></button>
             <button class="btn btn-sm btn-ghost hidden" id="alertBtn"></button>
@@ -110,7 +110,7 @@
     title.textContent = q.dest ? `Stays in ${q.dest}` : "Hotels";
     document.title = `${q.dest || "Hotels"} hotels — PlanurStay`;
     const baseMeta = `${PS.fmtDate(q.checkin)} – ${PS.fmtDate(q.checkout)} · ${PS.plural(nights, "night")} · ${PS.plural(guests, "guest")}`;
-    meta.textContent = baseMeta;
+    meta.textContent = ""; // dates and guests are already in the search bar above
 
     const loader = PS.searchLoader("hotels", { place: q.dest });
     results.innerHTML = PS.skeleton.hotels(3);
@@ -133,7 +133,7 @@
     } catch (e) {
       filtersBox.classList.add("hidden"); document.getElementById("layout").style.gridTemplateColumns = "1fr";
       results.innerHTML = empty("alert", "We couldn't load hotels", PS.esc(e.message || "Please try again in a moment."), `<button class="btn btn-primary" onclick="location.reload()">Try again</button>`);
-      meta.textContent = baseMeta;
+      meta.textContent = "";
       return;
     }
 
@@ -278,7 +278,7 @@
       document.getElementById("sRating").textContent = lbl(top("rating"));
       if (st.landmark || centre) { const n = [...list].sort(by.dist)[0]; document.getElementById("sDist").textContent = n && n.dist != null ? `${fmtDist(n.dist)} ${st.landmark ? "away" : "from centre"}` : "—"; }
       list.sort(by[st.sort]);
-      meta.textContent = `${list.length} of ${all.length} properties · ${baseMeta}`;
+      meta.textContent = list.length === all.length ? PS.plural(all.length, "property", "properties") : `${list.length} of ${all.length} properties`;
       document.getElementById("fPriceMax").textContent = st.max >= pMax ? "Any" : "Up to " + PS.money(st.max, PS.cur(), 0);
       document.getElementById("openFilters").innerHTML = PS.icon("filter", 16) + "Filters" + (list.length < all.length ? ` (${list.length})` : "");
 
@@ -493,6 +493,7 @@
       mapOn = !mapOn;
       document.getElementById("mapCol").classList.toggle("hidden", !mapOn);
       document.getElementById("layout").classList.toggle("with-map", mapOn);
+      document.getElementById("layout").parentElement.classList.toggle("wide", mapOn);
       mapBtn.innerHTML = mapOn ? PS.icon("list", 16) + "Hide map" : PS.icon("map", 16) + "Map";
       if (mapOn && !map) {
         try { await PS.leaflet(); } catch { PS.toast("Map couldn't load"); return; }
@@ -602,10 +603,10 @@
         const hint = best.offset !== 0 && save / cur.lowNight >= 0.05
           ? `Save <b>${PS.money(save, PS.cur(), 0)}/night</b> by checking in ${PS.fmtDay(best.checkin)}`
           : "Your dates are among the cheapest";
-        box.innerHTML = `<div class="fd-head"><b>Flexible dates?</b><span>${hint}</span></div>
+        box.innerHTML = `<div class="fd-head"><b>Flexible dates?</b><span>${hint}</span><span class="fd-note">Lowest price per night</span></div>
           <div class="fd-row">${rows.map(x => `<a class="fd-chip${x.offset === 0 ? " on" : ""}${x.lowNight === min ? " low" : ""}" href="${PS.url("/hotels", { ...q, checkin: x.checkin, checkout: x.checkout })}">
             <small>${PS.fmtDate(x.checkin, { weekday: "short" })} ${PS.fmtDate(x.checkin)}</small>
-            <b>${PS.money(x.lowNight, PS.cur(), 0)}</b><small>from /night</small></a>`).join("")}</div>`;
+            <b>${PS.money(x.lowNight, PS.cur(), 0)}</b></a>`).join("")}</div>`;
       } catch { box.classList.add("hidden"); }
     })();
   })();
