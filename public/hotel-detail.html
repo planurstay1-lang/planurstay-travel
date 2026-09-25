@@ -126,9 +126,23 @@
       [/non-smoking|smoke/i, "shield"], [/terrace|garden|beach/i, "sun"], [/elevator|lift/i, "arrow"], [/safe|security/i, "lock"]];
     const facIcon = (f) => (FAC_ICON.find(([re]) => re.test(f)) || [0, "check"])[1];
     const cats = sa.categories || [];
+    const hasFac = (re) => facilities.find(f => re.test(f));
+    const catScore = (re) => { const c = cats.find(x => re.test(x.name || "")); return c && +c.rating ? +c.rating : null; };
+    const chain = [hotel.chain, hotel.brand].find(c => c && !/^(not available|n\/a|none|independent)$/i.test(String(c).trim()));
+    const nightsN = PS.nights(PS.iso(checkin), PS.iso(checkout));
+    // Property highlights: only facts we actually have for this hotel
+    const propHL = [];
+    const locScore = catScore(/location/i);
+    if (rating >= 8) propHL.push(["star", `Great for a ${nightsN}-night stay`, `Guests rate it ${rating.toFixed(1)} overall`]);
+    if (locScore >= 8) propHL.push(["pin", "Top location", `Rated ${locScore.toFixed(1)} by guests`]);
+    const bfast = hasFac(/breakfast/i); if (bfast) propHL.push(["coffee", "Breakfast", bfast]);
+    const park = hasFac(/parking|valet|garage/i); if (park) propHL.push(["car", "Parking", park]);
+    const shuttle = hasFac(/airport shuttle|airport transfer/i); if (shuttle) propHL.push(["plane", "Airport transfer", shuttle]);
+    const wifi = hasFac(/wi-?fi|internet/i); if (wifi && propHL.length < 5) propHL.push(["wifi", wifi, ""]);
+    if (chain) propHL.push(["landmark", "Hotel chain / brand", String(chain)]);
 
     // ─── Sticky section tabs ───
-    const TABS = [["overview", "Overview"], ["facSec", "Facilities"], ["roomsPanel", "Rooms"], ...(rating ? [["reviewsSec", "Reviews"]] : []), ["descSec", "Description"]];
+    const TABS = [["overview", "Overview"], ["facSec", "Facilities"], ["roomsPanel", "Rooms"], ...(rating ? [["reviewsSec", "Reviews"]] : []), ["descSec", "Description"], ["faqSec", "FAQs"]];
     document.getElementById("hdTabs").innerHTML = `<nav class="hd-tabs" aria-label="Hotel sections"><div class="hd-tabs-in">
       <div class="hd-tab-links">${TABS.map(([id, l], k) => `<a href="#${id}" data-tab="${id}" class="${k === 0 ? "on" : ""}">${l}</a>`).join("")}</div>
       <div class="hd-tab-book"><span class="hd-from" id="hdFrom"></span><a href="#roomsPanel" class="btn btn-primary">Select rooms</a></div>
@@ -137,8 +151,12 @@
     // ─── Overview: smart highlights, popular facilities, review highlights ───
     document.getElementById("overview").innerHTML = `
       <section class="hd-sec" id="hlSec" hidden><h2>Smart highlights</h2><div class="hl-grid" id="hlGrid"></div></section>
+      <div class="hd-fac-row">
       ${facilities.length ? `<section class="hd-sec" id="facSec"><div class="sec-head"><h2>Popular facilities</h2>${facilities.length > 16 ? `<button type="button" class="link-btn u" id="allFac">See all ${facilities.length} facilities</button>` : ""}</div>
         <div class="fac-row">${facilities.slice(0, 16).map(f => `<span class="fac">${PS.icon(facIcon(f), 18)}${PS.esc(f)}</span>`).join("")}</div></section>` : `<span id="facSec"></span>`}
+      ${propHL.length ? `<aside class="prop-hl"><h3>Property highlights</h3>${propHL.map(([ic, t, s]) => `<div class="ph-row">${PS.icon(ic, 18)}<div><b>${PS.esc(t)}</b>${s ? `<small>${PS.esc(s)}</small>` : ""}</div></div>`).join("")}
+        <button type="button" class="save-btn prop-save" data-label="1" data-save="${PS.esc(JSON.stringify({ hotelId, name: hotel.name, photo: images[0] || "", city: hotel.city || "", stars: hotel.starRating || 0, rating }))}"></button></aside>` : ""}
+      </div>
       ${rating ? `<section class="hd-sec"><div class="sec-head"><h2>Review highlights</h2><a class="link-btn u" href="#reviewsSec">Read all reviews</a></div>
         <div class="rv-sum"><span class="score ${rating >= 8.5 ? "great" : ""}">${rating.toFixed(1)}</span><div><b>${PS.ratingWord(rating)}</b><small>Based on ${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></div>
         ${(sa.pros || []).length ? `<div class="rv-quotes">${sa.pros.slice(0, 3).map(p => `<span>👍 ${PS.esc(p)}</span>`).join("")}</div>` : ""}</section>` : ""}`;
@@ -162,6 +180,7 @@
         <div id="hdMap" style="height:340px;border-radius:14px;overflow:hidden;margin-top:14px;background:var(--line-2)"></div>
         <a class="link" style="display:inline-block;margin-top:10px" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${hotel.location.latitude},${hotel.location.longitude}">Open in Google Maps</a>
       </section>` : ""}
+      <section class="panel faq" id="faqSec"><h2>FAQs about ${PS.esc(hotel.name)}</h2><div class="hd-faq" id="faqList"></div></section>
       <section class="panel"><h2>Good to know</h2>
         <div class="info-list">
           ${times.checkin_start ? `<div>${PS.icon("clock", 18)}<div><b>Check-in</b><br><span style="color:var(--text-2)">From ${PS.esc(times.checkin_start)}${times.checkin_end ? " until " + PS.esc(times.checkin_end) : ""}</span></div></div>` : ""}
@@ -189,6 +208,7 @@
 
     // ─── Save (♥) ───
     PS.saved.bind(document.getElementById("top"));
+    const ov = document.getElementById("overview"); if (ov.querySelector(".prop-save")) PS.saved.bind(ov);
 
     // ─── Tabs follow the scroll position ───
     (() => {
@@ -279,12 +299,43 @@
     function paintBookBox(from) {
       const n = PS.nights(PS.iso(checkin), PS.iso(checkout));
       document.getElementById("hdFrom").innerHTML = from ? `from <b>${PS.money(from.total / n, from.currency, 0)}</b> / night` : "";
+      if (from && typeof paintFaq === "function") { faqPrice = PS.money(from.total / n, from.currency, 0); paintFaq(); }
       PS.auth().then(a => {
         const el = document.getElementById("memberNudge");
         if (el) el.innerHTML = !a.loggedIn && !roomPricing.package ? `<div class="alert info" style="margin-bottom:12px">${PS.icon("tag", 18)}<div><b>Members see lower prices.</b> <a class="link" href="${PS.loginUrl()}">Sign in or join free</a> to unlock member prices (about <span data-save-pct>${PS.savePct()}</span>% off) on this hotel.</div></div>` : "";
       });
     }
     paintBookBox(null);
+
+    // ─── FAQs: answered only from this hotel's data (plus the live price once rooms load) ───
+    const faqBase = () => {
+      const q = [];
+      const name = hotel.name;
+      if (times.checkin_start || times.checkout) q.push([`What are the check-in and check-out times at ${name}?`, `${times.checkin_start ? `Check-in is from ${times.checkin_start}${times.checkin_end ? ` until ${times.checkin_end}` : ""}.` : ""} ${times.checkout ? `Check-out is until ${times.checkout}.` : ""}`.trim()]);
+      if (faqPrice) q.push([`How much does it cost to stay at ${name}?`, `For your dates, prices start from ${faqPrice} per night, including taxes and fees we know about. Members see lower prices.`]);
+      if (bfast) q.push([`Is breakfast available at ${name}?`, `Yes: ${bfast}. Rooms that include breakfast are marked in the room list.`]);
+      const rest = hasFac(/restaurant/i); q.push([`Does ${name} have a restaurant on site?`, rest ? `Yes, the hotel lists: ${rest}.` : "The hotel doesn't list a restaurant. Check the facilities or ask the hotel before you travel."]);
+      if (park) q.push([`Is there parking at ${name}?`, `Yes: ${park}. Charges may apply at the hotel.`]);
+      const pool = hasFac(/pool/i); if (pool) q.push([`Does ${name} have a pool?`, `Yes: ${pool}.`]);
+      const pets = hasFac(/pet/i); if (pets) q.push([`Are pets allowed at ${name}?`, `The hotel lists: ${pets}. Contact the hotel to confirm before you travel.`]);
+      if (shuttle) q.push([`Does ${name} offer an airport shuttle?`, `Yes: ${shuttle}. Charges and times may apply; arrange it with the hotel.`]);
+      if (rating) q.push([`How do guests rate ${name}?`, `${rating.toFixed(1)} out of 10 (${PS.ratingWord(rating)}) from ${(hotel.reviewCount || 0).toLocaleString()} reviews${locScore ? `, and ${locScore.toFixed(1)} for location` : ""}.`]);
+      if (chain) q.push([`Which hotel chain is ${name} part of?`, `${chain}.`]);
+      return q;
+    };
+    let faqPrice = "";
+    function paintFaq() {
+      const list = faqBase();
+      const box = document.getElementById("faqList"); if (!box) return;
+      if (!list.length) { document.getElementById("faqSec").remove(); return; }
+      const open = new Set([...box.querySelectorAll("details[open] summary")].map(s => s.textContent));
+      box.innerHTML = list.map(([qq, a]) => `<details${open.has(qq) ? " open" : ""}><summary>${PS.esc(qq)}</summary><p>${PS.esc(a)}</p></details>`).join("");
+      // FAQ rich results in Google search
+      let ld = document.getElementById("faqLd");
+      if (!ld) { ld = document.createElement("script"); ld.type = "application/ld+json"; ld.id = "faqLd"; document.head.appendChild(ld); }
+      ld.textContent = JSON.stringify({ "@context": "https://schema.org", "@type": "FAQPage", mainEntity: list.map(([qq, a]) => ({ "@type": "Question", name: qq, acceptedAnswer: { "@type": "Answer", text: a } })) });
+    }
+    paintFaq();
 
     // Date / guest controls re-query rooms
     let reloadT;
