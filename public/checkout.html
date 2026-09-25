@@ -302,11 +302,40 @@
       window.scrollTo({ top: 0, behavior: "smooth" });
       const expected = type === "hotel" ? sel.offer.total + extrasTotal() : sel.offer.pricing?.display?.total;
       const changed = pb.price != null && expected != null && Math.abs(pb.price - expected) > 0.5;
+      // Hotels: use the fees and cancellation terms confirmed by the hold (prebook), not the earlier search.
+      let confirmedFees = null, confirmedCancel = null;
+      if (type === "hotel" && Array.isArray(pb.roomTypes)) {
+        const rates = pb.roomTypes.flatMap(rt => rt.rates || []);
+        const map = new Map();
+        rates.flatMap(r => (r.retailRate?.taxesAndFees || []).filter(t => !t.included && t.amount > 0)).forEach(t => {
+          const raw = String(t.description || "").trim();
+          const label = !raw || /^\$?[\d.,]+\s*[a-z]{3}\b/i.test(raw) || /^usd per/i.test(raw) ? "Local taxes and fees" : raw.replace(/\s*\b(per|\/)\s*(night|nights|stay|room|person|day)\b.*$/i, "").trim().replace(/^./, c => c.toUpperCase());
+          const k = label.toLowerCase() + (t.currency || "");
+          const cur = map.get(k) || { description: label, amount: 0, currency: t.currency || pb.currency };
+          cur.amount = Math.round((cur.amount + t.amount) * 100) / 100; map.set(k, cur);
+        });
+        confirmedFees = [...map.values()];
+        sel.offer.taxesExcluded = confirmedFees;
+        const cp = rates[0]?.cancellationPolicies;
+        if (cp) confirmedCancel = { refundable: cp.refundableTag === "RFN", infos: cp.cancelPolicyInfos || [] };
+      }
+      const nightsN = type === "hotel" ? PS.nights(sel.stay.checkin, sel.stay.checkout) : 1;
+      const dueFees = type === "hotel" ? PS.hotelFees(sel.offer, nightsN) : [];
       sumCol.innerHTML = summaryHTML({ total: pb.price ?? expected, currency: pb.currency, voucher: pb.voucherTotalAmount });
       formCol.innerHTML = `
         ${changed ? `<div class="alert warn" style="margin-bottom:16px">${PS.icon("alert", 18)}<div><b>The price changed</b> from ${PS.money(expected, pb.currency, 2)} to <b>${PS.money(pb.price, pb.currency, 2)}</b> while we held your ${type === "hotel" ? "room" : "seats"}. The new total is shown on the right.</div></div>` : ""}
         ${pb.cancellationChanged ? `<div class="alert warn" style="margin-bottom:16px">${PS.icon("alert", 18)}<div>The cancellation policy was updated by the ${type === "hotel" ? "hotel" : "airline"}. Please review it before paying.</div></div>` : ""}
-        <div class="panel">
+        ${type === "hotel" ? `<div class="panel">
+          <h2>Before you pay</h2>
+          <div class="sum-lines" style="margin-bottom:14px">
+            <div><span>Pay now</span><b>${PS.money(pb.price, pb.currency, 2)}</b></div>
+            ${dueFees.length ? dueFees.map(f => `<div><span>${PS.esc(f.description)} <small class="muted">(pay at hotel${f.perNight ? `, ≈ ${PS.money(f.perNight, f.currency, 0)}/night` : ""})</small></span><b>${PS.money(f.amount, f.currency, 2)}</b></div>`).join("") : `<div><span>Due at the hotel</span><b style="color:var(--green)">Nothing extra</b></div>`}
+            <div><span>Cancellation</span><b style="text-align:right">${confirmedCancel ? (confirmedCancel.refundable ? `Free until ${PS.deadline((confirmedCancel.infos.find(c => c.amount > 0) || confirmedCancel.infos[0] || {}).cancelTime, (confirmedCancel.infos[0] || {}).timezone)}` : "Non-refundable") : (sel.offer.refundable ? "Free cancellation" : "Non-refundable")}</b></div>
+          </div>
+          ${sel.hotel.info ? `<details class="policy-d"><summary>Hotel policies &amp; important information</summary><p>${PS.esc(sel.hotel.info)}</p></details>` : ""}
+          ${dueFees.length ? `<label class="ack"><input type="checkbox" id="ackFees"><span>I understand <b>${dueFees.map(f => PS.money(f.amount, f.currency, 2)).join(" + ")}</b> is charged by the hotel at check-in or check-out, in addition to today's payment.</span></label>` : ""}
+        </div>` : ""}
+        <div class="panel" id="payPanel">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px"><h2 style="margin:0">Payment</h2><span class="tag green">${PS.icon("lock", 13)}Held for you</span></div>
           <div id="sandboxNote"></div>
           <div id="paymentPortal" class="pay-box"><div class="loading-note" style="border:0;padding:0"><span class="spinner"></span>Loading secure payment…</div></div>
@@ -319,6 +348,13 @@
       if (typeof LiteAPIPayment !== "function") {
         document.getElementById("paymentPortal").innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>The payment form didn't load. Check your connection or disable ad blockers, then <a class="link" href="javascript:location.reload()">reload</a>.</div></div>`;
         return;
+      }
+      // No surprises: the card form only appears once the guest acknowledges fees due at the hotel.
+      const ack = document.getElementById("ackFees");
+      if (ack && !ack.checked) {
+        document.getElementById("paymentPortal").innerHTML = `<div class="alert warn">${PS.icon("info", 18)}<div>Please confirm the fees due at the hotel above to continue to payment.</div></div>`;
+        await new Promise(res => ack.addEventListener("change", () => ack.checked && res(), { once: false }));
+        ack.disabled = true;
       }
       document.getElementById("paymentPortal").innerHTML = "";
       window.liteAPIPayment = new LiteAPIPayment({

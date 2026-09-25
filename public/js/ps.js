@@ -556,6 +556,17 @@
     </div>`;
   };
 
+  // Cancellation deadlines from LiteAPI are in GMT ("2026-11-09 16:00:00"); show them in the visitor's local time.
+  PS.deadline = (from, tz) => {
+    if (!from) return "";
+    const iso = String(from).replace(" ", "T") + (/(GMT|UTC)/i.test(tz || "GMT") && !/[zZ]|[+-]\d\d:?\d\d$/.test(from) ? "Z" : "");
+    const d = new Date(iso);
+    if (isNaN(d)) return String(from);
+    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+  };
+  // Fees collected by the hotel: amounts from LiteAPI are totals for the whole stay.
+  PS.hotelFees = (o, nights) => [...(o.taxesExcluded || []).map(f => ({ ...f, perNight: nights > 1 ? f.amount / nights : null })), ...(o.nameFees || [])];
+
   PS.img = (id, w = 900) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${w}&q=70`;
   const POPULAR_AIRPORTS = [
     { code: "YYZ", city: "Toronto", name: "Toronto Pearson International Airport", countryCode: "CA" },

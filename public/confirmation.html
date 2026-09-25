@@ -112,8 +112,9 @@
             <div><span>Check-out</span><b>${PS.fmtDay(b.checkout || stay.checkout)}</b></div>
             <div><span>Room</span><b style="text-align:right">${PS.esc(offer.roomName || offer.name || "Room")}</b></div>
             <div><span>Lead guest</span><b>${PS.esc([p.holder?.firstName, p.holder?.lastName].join(" "))}</b></div>
-            <div><span>Cancellation</span><b>${offer.refundable ? "Free cancellation" + (offer.cancelBy ? " before " + PS.fmtDate(new Date(offer.cancelBy)) : "") : "Non-refundable"}</b></div>
-          </div>`;
+            <div><span>Cancellation</span><b>${offer.refundable ? "Free cancellation" : "Non-refundable"}</b></div>
+          </div>
+          ${(offer.taxesExcluded || []).length ? `<div class="pay-hotel"><b>${PS.icon("info", 15)}Due at the hotel</b>${offer.taxesExcluded.map(f => `<div><span>${PS.esc(f.description)}</span><span>${PS.money(f.amount, f.currency, 2)}</span></div>`).join("")}<small>Charged by the hotel at check-in or check-out, not included in the amount you paid.</small></div>` : ""}`;
       } else {
         const sel = p.sel || {}, s = sel.search || {};
         details = `

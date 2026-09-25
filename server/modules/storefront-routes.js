@@ -449,6 +449,14 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     }
   });
 
+  function feesFromText(text) {
+    const out = [];
+    const re = /(\d+(?:\.\d+)?)\s*(USD|EUR|CAD|GBP|AUD|AED|MXN)?\s*(RSRT|RESORT|FACILITY|DESTINATION|URBAN|AMENITY)\s*(CHG|CHARGE|FEE)/gi;
+    let m;
+    while ((m = re.exec(text || ""))) out.push({ description: `${m[3].toUpperCase() === "RSRT" ? "Resort" : m[3][0].toUpperCase() + m[3].slice(1).toLowerCase()} charge mentioned by the hotel`, amount: +m[1], currency: (m[2] || "USD").toUpperCase(), unit: "listed by the hotel, may be per night" });
+    return out;
+  }
+
   // Merge fee lines with the same name/currency and give them a readable label.
   function mergeFees(list) {
     const out = new Map();
@@ -456,7 +464,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
       if (!(t.amount > 0)) continue;
       const raw = String(t.description || "").trim();
       const label = !raw || /^\$?[\d.,]+\s*[a-z]{3}\b/i.test(raw) || /^usd per/i.test(raw) ? "Local taxes and fees"
-        : raw.replace(/\s+/g, " ").replace(/^./, c => c.toUpperCase());
+        : raw.replace(/\s+/g, " ").replace(/\s*\b(per|\/)\s*(night|nights|stay|room|person|day)\b.*$/i, "").trim().replace(/^./, c => c.toUpperCase()) || "Local taxes and fees";
       const key = label.toLowerCase() + "|" + (t.currency || "");
       const cur = out.get(key) || { description: label, amount: 0, currency: t.currency || "USD" };
       cur.amount = Math.round((cur.amount + t.amount) * 100) / 100;
@@ -504,7 +512,10 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           // Fees are itemized per rate (one rate per room in multi-room searches): merge them by name.
           taxesExcluded: mergeFees((rt.rates || []).flatMap(r => (r.retailRate?.taxesAndFees || []).filter(t => !t.included))),
           taxesIncluded: mergeFees((rt.rates || []).flatMap(r => (r.retailRate?.taxesAndFees || []).filter(t => t.included))),
-          cancelPolicy: (cp.cancelPolicyInfos || []).map(c => ({ from: c.cancelTime, amount: c.amount, currency: c.currency, type: c.type })).sort((a, b2) => String(a.from).localeCompare(String(b2.from))),
+          cancelPolicy: (cp.cancelPolicyInfos || []).map(c => ({ from: c.cancelTime, tz: c.timezone || "GMT", amount: c.amount, currency: c.currency, type: c.type })).sort((a, b2) => String(a.from).localeCompare(String(b2.from))),
+          hotelRemarks: (cp.hotelRemarks || []).filter(Boolean),
+          // Some suppliers only mention a charge inside the rate name (e.g. "28 USD RSRT CHG"); surface it so it's never a surprise.
+          nameFees: feesFromText((rt.rates || []).map(r => r.name).join(" ")),
           remarks: rate.remarks || "",
           perks: (rate.perks || []).map(p => p.name || p).filter(Boolean),
         };

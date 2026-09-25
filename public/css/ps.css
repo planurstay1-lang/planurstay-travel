@@ -1280,3 +1280,35 @@ p { margin: 0; }
 .term-link:hover { text-decoration: underline; }
 .bag-note { display: flex; gap: 8px; align-items: flex-start; color: var(--text-2); font-size: 13px; line-height: 1.45; margin-top: 4px; }
 .bag-note svg { flex: none; margin-top: 2px; color: var(--muted); }
+
+/* ─── Room card: choose option → one Reserve (clean) ──────────────────── */
+.rg-top { grid-template-columns: 150px 1fr; align-items: center; }
+.rg-img { height: 100px; }
+.rg-body { display: grid; grid-template-columns: 1fr 260px; gap: 18px; padding: 16px; }
+.rg-choose { font-size: 12.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.rchoice { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; cursor: pointer; transition: border-color .15s, background .15s; }
+.rchoice + .rchoice { margin-top: 8px; }
+.rchoice:hover { border-color: #c9d1e3; }
+.rchoice.on { border-color: var(--blue); background: var(--blue-50); }
+.rchoice input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--blue); }
+.rchoice:not(:has(input)) { grid-template-columns: 1fr; cursor: default; }
+.rc-main b { color: var(--ink); font-size: 14.5px; }
+.rc-main ul { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; font-size: 13.5px; }
+.rc-main li { display: flex; gap: 7px; align-items: center; }
+.rc-main li.ok { color: var(--green); } .rc-main li.no { color: var(--text-2); } .rc-main li.warn { color: #a66a00; font-weight: 700; }
+.rc-price { font-weight: 800; color: var(--ink); font-size: 14.5px; white-space: nowrap; }
+.rg-buy { display: flex; flex-direction: column; gap: 3px; align-self: start; position: sticky; top: 90px; padding: 16px; border-radius: 16px; background: var(--soft); }
+.rg-buy .btn { margin-top: 10px; }
+.fee-box { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--amber-50); color: #7a4d00; font-size: 13.5px; display: grid; gap: 5px; }
+.fee-box b { display: flex; gap: 6px; align-items: center; color: #5c3a00; }
+.fee-box div { display: flex; justify-content: space-between; gap: 10px; }
+.fee-box div > span:last-child { text-align: right; font-weight: 700; }
+.fee-box small { display: block; font-weight: 500; color: #9a6a1e; font-size: 12px; }
+.fee-box em { font-style: normal; color: #9a6a1e; font-size: 12px; }
+.fee-ok { display: flex; gap: 6px; align-items: center; margin-top: 8px; color: var(--green); font-weight: 700; font-size: 13.5px; }
+@media (max-width: 760px) { .rg-top { grid-template-columns: 96px 1fr; } .rg-img { height: 72px; } .rg-body { grid-template-columns: 1fr; } .rg-buy { position: static; } }
+.ack { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; padding: 14px; border-radius: 12px; background: var(--amber-50); color: #5c3a00; font-size: 14.5px; cursor: pointer; }
+.ack input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--blue); flex: none; }
+.policy-d { margin-top: 6px; border-top: 1px solid var(--line-2); padding-top: 12px; }
+.policy-d summary { cursor: pointer; font-weight: 700; color: var(--blue); font-size: 14px; }
+.policy-d p { margin-top: 8px; color: var(--text-2); font-size: 13.5px; line-height: 1.6; }

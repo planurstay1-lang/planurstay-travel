@@ -1328,6 +1328,10 @@ async function sendConfirmationEmail(booking, type, to = {}) {
   // Uber ride credit bought as an add-on: LiteAPI includes the voucher link in the booking
   const uberUrl = (JSON.stringify(booking).match(/https?:\/\/[^"\s]*uber[^"\s]*/i) || [])[0];
   if (money) rows.push(["Total paid", money]);
+  // Fees the hotel collects on site (from the booked rate), so the guest isn't surprised at check-in
+  const dueAtHotel = [];
+  for (const rt of booking.bookedRooms || []) for (const r of [rt.rate || {}, ...(rt.rates || [])]) for (const t of (r.retailRate?.taxesAndFees || [])) if (t && !t.included && t.amount > 0) dueAtHotel.push(t);
+  for (const t of dueAtHotel) rows.push([`Due at hotel: ${String(t.description || "Local taxes and fees").replace(/\s*\b(per|\/)\s*(night|stay|room|person|day)\b.*$/i, "")}`, `${Number(t.amount).toFixed(2)} ${t.currency || ""}`]);
   const table = rows.filter(r => r[1]).map(([k, v]) =>
     `<tr><td style="padding:8px 0;color:#4a5572">${k}</td><td style="padding:8px 0;text-align:right;font-weight:700;color:#0b1b3f">${escHtml(v)}</td></tr>`).join("");
 
