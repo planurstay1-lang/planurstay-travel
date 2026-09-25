@@ -88,7 +88,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     const ssp = o.ssp;
     const below = ssp && o.total < ssp * BELOW_SSP_TOLERANCE;
     if (member) { o.memberPrice = true; o.strikeTotal = ssp && ssp > o.total ? ssp : null; }
-    else { o.memberOnly = !!below; o.strikeTotal = null; }
+    else { o.memberOnly = process.env.PARITY_GATE === "on" && !!below; o.strikeTotal = null; }
     delete o.ssp;
     return o;
   }

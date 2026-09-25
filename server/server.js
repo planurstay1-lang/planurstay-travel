@@ -153,6 +153,8 @@ require("./modules/engagement-routes").registerEngagementRoutes(app, { db, apiKe
 require("./modules/guides").registerGuideRoutes(app, { APP_URL });
 const rewards = require("./modules/rewards").createRewards({ db, apiKey: key, jwt, JWT_SECRET });
 rewards.register(app);
+require("./modules/admin").createAdmin({ db, apiKey: () => key, jwt, JWT_SECRET }).register(app);
+app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "../public/admin.html")));
 app.get("/checkout", (req, res) => res.sendFile(path.join(__dirname, "../public/checkout.html")));
 app.get("/membership", (req, res) => res.sendFile(path.join(__dirname, "../public/membership.html")));
 

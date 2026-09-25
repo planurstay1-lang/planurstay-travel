@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Revenue — PlanurStay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/ps.css">
+  <style>
+    .ad-bar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:18px}
+    .ad-bar .field{margin:0}
+    .ad-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+    .ad-kpi{background:#fff;border:1px solid var(--line,#e6e8ee);border-radius:14px;padding:14px 16px}
+    .ad-kpi small{display:block;color:var(--text-2);font-size:12.5px;font-weight:600}
+    .ad-kpi b{display:block;font-size:22px;margin-top:4px}
+    .ad-kpi span{color:var(--text-2);font-size:12px}
+    .ad-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+    @media (max-width:860px){.ad-grid{grid-template-columns:1fr}}
+    .ad-card{background:#fff;border:1px solid var(--line,#e6e8ee);border-radius:14px;padding:16px;margin-bottom:14px;overflow-x:auto}
+    .ad-card h3{font-size:15px;margin-bottom:10px}
+    .ad-t{width:100%;border-collapse:collapse;font-size:13.5px}
+    .ad-t th{text-align:left;color:var(--text-2);font-weight:600;font-size:12px;padding:6px 8px;border-bottom:1px solid var(--line,#e6e8ee)}
+    .ad-t td{padding:7px 8px;border-bottom:1px solid #f1f2f5;white-space:nowrap}
+    .ad-t td.n,.ad-t th.n{text-align:right}
+    .bars{display:flex;align-items:end;gap:6px;height:130px;padding-top:6px}
+    .bars div{flex:1;background:var(--brand,#0b6bcb);border-radius:6px 6px 0 0;min-height:2px;position:relative}
+    .bars div span{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--text-2)}
+    .good{color:#0a7d46}.bad{color:#c0362c}
+  </style>
+</head>
+<body>
+  <main class="container" style="padding-bottom:40px">
+    <div class="page-head"><h1>Revenue</h1><p>Bookings, commission and pricing headroom.</p></div>
+    <div id="root"><div class="skel" style="height:96px;border-radius:18px"></div></div>
+  </main>
+
+  <script src="/js/ps.js"></script>
+  <script>
+  (async function () {
+    PS.header({});
+    PS.footer();
+    const root = document.getElementById("root");
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const me = await fetch("/api/admin/me").then(r => r.json()).catch(() => ({}));
+    if (!me.admin) {
+      root.innerHTML = `<div class="empty"><h3>Admins only</h3><p>Sign in with an admin account.</p><a class="btn btn-primary" href="${PS.loginUrl()}">Sign in</a></div>`;
+      return;
+    }
+    const iso = (d) => d.toISOString().slice(0, 10);
+    root.innerHTML = `
+      <div class="ad-bar">
+        <div class="field"><label>From</label><input type="date" id="from" value="${iso(new Date(Date.now() - 30 * 864e5))}"></div>
+        <div class="field"><label>To</label><input type="date" id="to" value="${iso(new Date())}"></div>
+        <button class="btn btn-primary" id="go">Update</button>
+      </div>
+      <div id="ov"></div>
+      <div class="ad-card"><h3>Pricing headroom</h3>
+        <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Compares the net rate, the hotel's suggested selling price (SSP) and our public price. SSP ÷ net shows how much markup is possible before public prices undercut the hotel.</p>
+        <div class="ad-bar"><div class="field"><label>City</label><input id="pq" value="New York"></div><button class="btn" id="pgo">Run probe</button></div>
+        <div id="probe"></div>
+      </div>`;
+    const money = (n, c) => PS.money(+n || 0, c || "USD");
+
+    async function load() {
+      const ov = document.getElementById("ov");
+      ov.innerHTML = `<div class="skel" style="height:96px;border-radius:14px"></div>`;
+      const q = new URLSearchParams({ from: document.getElementById("from").value, to: document.getElementById("to").value });
+      const d = await fetch("/api/admin/overview?" + q).then(r => r.json()).catch(() => null);
+      if (!d || !d.success) { ov.innerHTML = `<div class="panel">Could not load analytics.</div>`; return; }
+      const L = d.liteapi, S = d.site, cur = L.totals.currency || "USD";
+      const take = L.totals.sales ? (100 * L.totals.commission / L.totals.sales).toFixed(1) + "% of sales" : "";
+      const maxW = Math.max(1, ...L.weekly.map(w => w.sales));
+      ov.innerHTML = `
+        <div class="ad-kpis">
+          <div class="ad-kpi"><small>Sales</small><b>${money(L.totals.sales, cur)}</b><span>${L.totals.bookings} bookings</span></div>
+          <div class="ad-kpi"><small>Commission earned</small><b class="good">${money(L.totals.commission, cur)}</b><span>${take}</span></div>
+          <div class="ad-kpi"><small>Avg booking</small><b>${money(L.totals.bookings ? L.totals.sales / L.totals.bookings : 0, cur)}</b><span>per booking</span></div>
+          <div class="ad-kpi"><small>Rewards owed</small><b class="bad">${money(S.rewards.liabilityUsd)}</b><span>${S.rewards.pointsAvailable.toLocaleString()} pts + ${S.rewards.pointsPending.toLocaleString()} pending</span></div>
+          <div class="ad-kpi"><small>Members</small><b>${S.users}</b><span>${S.memberBookings} member bookings</span></div>
+          <div class="ad-kpi"><small>Audience</small><b>${S.newsletter}</b><span>newsletter · ${S.priceAlerts} price alerts</span></div>
+        </div>
+        <div class="ad-card"><h3>Pricing now</h3><p style="font-size:13.5px">Guests: <b>${d.pricing.publicMargin}%</b> margin · Members: <b>${d.pricing.memberMargin}%</b> · Below-SSP gate: <b>${d.pricing.parityGate ? "on" : "off"}</b></p></div>
+        <div class="ad-grid">
+          <div class="ad-card"><h3>Weekly sales</h3><div class="bars">${L.weekly.map(w => `<div style="height:${(100 * w.sales / maxW).toFixed(1)}%" title="${esc(w.weeks)}: ${money(w.sales, cur)}"><span>${esc(String(w.weeks).replace("week ", "W"))}</span></div>`).join("")}</div><div style="height:18px"></div></div>
+          <div class="ad-card"><h3>Markets</h3><table class="ad-t"><tr><th>Guest country</th><th class="n">Bookings</th><th class="n">Sales</th></tr>
+            ${L.markets.map(m => `<tr><td>${esc(m.nationality)}</td><td class="n">${m.totalBooking}</td><td class="n">${money(m.sales, m.currency)}</td></tr>`).join("") || `<tr><td colspan="3">No data</td></tr>`}</table></div>
+        </div>
+        <div class="ad-grid">
+          <div class="ad-card"><h3>Top hotels</h3><table class="ad-t"><tr><th>Hotel</th><th>City</th><th class="n">Bookings</th><th class="n">Sales</th></tr>
+            ${L.hotels.map(h => `<tr><td>${esc(h.name)}</td><td>${esc(h.city)}</td><td class="n">${h.total}</td><td class="n">${money(h.sales, h.currency)}</td></tr>`).join("") || `<tr><td colspan="4">No data</td></tr>`}</table></div>
+          <div class="ad-card"><h3>Daily</h3><table class="ad-t"><tr><th>Date</th><th class="n">Bookings</th><th class="n">Sales</th><th class="n">Commission</th></tr>
+            ${L.daily.map(x => `<tr><td>${x.date}</td><td class="n">${x.bookings}</td><td class="n">${money(x.sales, cur)}</td><td class="n">${money(x.commission, cur)}</td></tr>`).join("") || `<tr><td colspan="4">No data</td></tr>`}</table></div>
+        </div>
+        <div class="ad-card"><h3>Recent site bookings</h3><table class="ad-t"><tr><th>Hotel</th><th>Check-in</th><th>Who</th><th>Status</th><th class="n">Price</th></tr>
+          ${S.recent.map(b => `<tr><td>${esc(b.name)}</td><td>${esc(b.checkin)}</td><td>${b.who}</td><td>${esc(b.status)}</td><td class="n">${money(b.price, b.currency)}</td></tr>`).join("") || `<tr><td colspan="5">No bookings yet</td></tr>`}</table></div>`;
+    }
+
+    async function probe() {
+      const el = document.getElementById("probe");
+      el.innerHTML = `<div class="skel" style="height:60px;border-radius:12px"></div>`;
+      const d = await fetch("/api/admin/pricing-probe?q=" + encodeURIComponent(document.getElementById("pq").value)).then(r => r.json()).catch(() => null);
+      if (!d || !d.success) { el.innerHTML = `<p class="bad">${esc(d?.error || "Probe failed")}</p>`; return; }
+      const s = d.summary, pct = (x) => x == null ? "–" : ((x - 1) * 100).toFixed(1) + "%";
+      el.innerHTML = `
+        <p style="font-size:13.5px;margin-bottom:10px">${d.hotels} hotels · ${d.checkin} → ${d.checkout}<br>
+          Median SSP over net: <b>${pct(s.medianSspOverNet)}</b> · Our public price vs SSP (median): <b>${pct(s.medianPublicOverSsp)}</b> at ${d.publicMargin}% margin<br>
+          Hotels where SSP changes with our margin: <b>${s.sspMovesWithMargin}/${d.hotels}</b> · Below SSP at public margin: <b>${s.belowSspAtPublicMargin}/${d.hotels}</b></p>
+        <table class="ad-t"><tr><th>Hotel</th><th class="n">Net</th><th class="n">SSP</th><th class="n">SSP/net</th><th class="n">Public</th><th class="n">SSP @ public</th><th class="n">Public vs SSP</th></tr>
+        ${d.rows.map(r => `<tr><td>${esc(r.hotelId)}</td><td class="n">${money(r.net)}</td><td class="n">${money(r.sspAtMargin0)}</td><td class="n">${pct(r.sspOverNet)}</td><td class="n">${money(r.publicTotal)}</td><td class="n">${money(r.sspAtPublicMargin)}</td><td class="n ${r.publicOverSsp < 0.995 ? "bad" : "good"}">${pct(r.publicOverSsp)}</td></tr>`).join("")}</table>`;
+    }
+    document.getElementById("go").onclick = load;
+    document.getElementById("pgo").onclick = probe;
+    load();
+  })();
+  </script>
+</body>
+</html>
