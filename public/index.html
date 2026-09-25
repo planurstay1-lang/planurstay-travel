@@ -24,14 +24,10 @@
             <button class="tab" data-tab="flights" role="tab" aria-selected="false"><i data-ico="plane"></i>Flights</button>
             <span class="tab-break" aria-hidden="true"></span>
             <div class="trip-type tab-trip" id="tripToggle" aria-label="Trip type"><button type="button" class="chip-toggle" data-trip="round">Round trip</button><button type="button" class="chip-toggle" data-trip="oneway">One way</button><label class="chip-check"><input type="checkbox" data-nonstop>Non-stop only</label></div>
+            <button type="button" class="ai-pill hidden" id="aiPill" aria-label="Ask our AI travel assistant"><i data-ai-ic></i><span>Ask AI</span></button>
           </div>
           <div id="searchHost"></div>
         </div>
-        <form class="ai-strip hidden" id="aiStrip" novalidate>
-          <span class="ai-ic" data-ai-ic></span>
-          <input type="text" autocomplete="off" aria-label="Describe your trip to our AI assistant" placeholder="Not sure where to go? Describe your trip to our AI">
-          <button type="submit">Ask AI</button>
-        </form>
       </div>
       <div class="hero2-caption"><span id="heroPlace"></span><span class="hero2-dots" id="heroDots"></span></div>
     </div>
@@ -169,15 +165,10 @@
     // Both forms are built once; switching tabs only shows/hides them, so nothing redraws or jumps.
     const host = document.getElementById("searchHost");
     host.innerHTML = `<div data-form="stays"></div><div data-form="flights" class="hidden"></div>`;
-    // Ask AI: its own bar under the search box, separate from the Stays / Flights search
-    const aiStrip = document.getElementById("aiStrip");
-    aiStrip.querySelector("[data-ai-ic]").innerHTML = PS.icon("sparkle", 18);
-    aiStrip.onsubmit = (e) => {
-      e.preventDefault();
-      const q = aiStrip.querySelector("input").value.trim();
-      PS.track("page", { askAI: 1 });
-      PS.askNuitee(q);
-    };
+    // Ask AI: a small pill at the right end of the tabs row
+    const aiPill = document.getElementById("aiPill");
+    aiPill.querySelector("[data-ai-ic]").outerHTML = PS.icon("sparkle", 17);
+    aiPill.onclick = () => { PS.track("page", { askAI: 1 }); PS.askNuitee(""); };
     PS.staysSearch(host.querySelector('[data-form="stays"]'), PS.local.get("ps_last_stays") || {});
     PS.flightsSearch(host.querySelector('[data-form="flights"]'), { ...(PS.local.get("ps_last_flights") || {}), tripToggle: document.getElementById("tripToggle") });
     const tabs = document.querySelectorAll(".tab");
@@ -194,8 +185,8 @@
     // The Ask AI bar appears once we know an assistant is available
     PS.chatConfig().then(c => {
       if (!c.nuitee && !c.assistant) return;
-      aiStrip.classList.remove("hidden");
-      if (location.hash === "#ai") aiStrip.querySelector("input").focus();
+      aiPill.classList.remove("hidden");
+      if (location.hash === "#ai") PS.askNuitee("");
     });
 
     PS.auth().then(a => {

@@ -76,7 +76,7 @@
       btn.hidden = true;
       document.getElementById("fxPayPortal")?.remove(); // one payment form on the page at a time
       const portal = document.createElement("div");
-      portal.id = "fxPayPortal"; portal.className = "payment-sdk-box"; portal.style.marginTop = "12px";
+      portal.id = "fxPayPortal"; portal.className = "payment-sdk-box pay-box"; portal.style.marginTop = "12px";
       box.appendChild(portal);
       window.liteAPIPayment = new LiteAPIPayment({
         publicKey: cfg.publicKey || "sandbox",

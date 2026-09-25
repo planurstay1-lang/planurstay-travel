@@ -232,7 +232,7 @@
       html += `<ol class="co-steps"><li class="on"><span>1</span>Travelers &amp; contact</li><li><span>2</span>Review &amp; pay</li></ol>
       <section class="co-panel" id="detailsPanel">
         <div class="co-head"><h2>Traveler details</h2>${signInLink}</div>
-        <div class="alert warn" style="margin-bottom:16px">${PS.icon("alert", 18)}<div><b>Names must match the passport or ID exactly</b>, including middle names. Use English letters only (é → e, ñ → n). No titles like Mr or Dr. Airlines can refuse boarding if the name doesn't match, and name changes usually aren't allowed.</div></div>
+        <div class="alert warn" style="margin-bottom:16px">${PS.icon("alert", 18)}<div><b>Enter names exactly as on the passport</b>, in English letters, no titles.</div></div>
         ${Array.from({ length: n }, (_, i) => `<div class="pax-card"><h3>${PS.icon("user", 18)}Traveler ${i + 1} · Adult${i === 0 ? " (lead traveler)" : ""}</h3>
           <div class="form-grid three">
             ${f(`p${i}_first`, "First name", 'autocomplete="given-name" placeholder="As on document"')}

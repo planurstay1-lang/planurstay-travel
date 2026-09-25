@@ -141,7 +141,9 @@
           dep: segs[0].departureTime, arr: segs[segs.length - 1].arrivalTime,
         };
       });
-      const offers = (j.offers || [j.cheapestOffer]).filter(Boolean).sort((a, b) => a.pricing.display.total - b.pricing.display.total);
+      const seenFare = new Set();
+      const offers = (j.offers || [j.cheapestOffer]).filter(Boolean).sort((a, b) => a.pricing.display.total - b.pricing.display.total)
+        .filter(o => { const k = JSON.stringify([o.fare?.family, (o.segmentFares || []).map(f => f.cabin), o.terms?.changeable, o.terms?.refundable, o.baggage?.hasCheckedBag, Math.round(o.pricing.display.total)]); return !seenFare.has(k) && seenFare.add(k); });
       const cheapest = offers[0];
       const conns = j.connections || [];
       return {
@@ -347,12 +349,12 @@
       const dd = dayDiff(l.dep, l.arr);
       const segLine = (s) => {
         const am = j.amen.get(s.segmentKey), cabin = j.cabins.get(s.segmentKey);
-        const ac = am?.aircraftType ? (AIRCRAFT[am.aircraftType] || "") : "";
+        const ac = am?.aircraftType ? (AIRCRAFT[am.aircraftType] || (/[a-z]{3,}/i.test(am.aircraftType) ? am.aircraftType : "")) : "";
         const op = s.carrier?.operatingName && s.carrier.operatingName !== s.carrier.marketingName ? ` · Operated by ${PS.esc(s.carrier.operatingName)}` : "";
         return `<div class="fseg">
-          <div><b style="color:var(--ink)">${PS.esc(s.carrier?.marketingName || "")} ${PS.esc(s.carrier?.marketingCode || "")}${PS.esc(s.flight?.marketingNumber || "")}</b> · Flight time ${PS.dur(s.duration?.minutes || 0)}
-            <a class="term-link" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent(`${s.carrier?.marketingCode || ""}${s.flight?.marketingNumber || ""} ${s.departureTime.slice(0, 10)} terminal`)}">${PS.icon("info", 12)}Check terminal &amp; gate</a></div>
-          <div class="leg-more hidden">${[cabin, ac].filter(Boolean).map(PS.esc).join(" · ")}${op}
+          <div><b style="color:var(--ink)">${PS.esc(s.carrier?.marketingName || "")} ${PS.esc(s.carrier?.marketingCode || "")}${PS.esc(s.flight?.marketingNumber || "")}</b> · ${PS.dur(s.duration?.minutes || 0)}${ac ? `<span class="aircraft">${PS.icon("plane", 12)}${PS.esc(ac)}</span>` : ""}</div>
+          <div class="leg-more hidden">${cabin ? PS.esc(tidy(cabin)) : ""}${op}
+            <a class="term-link" style="margin-left:0" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent(`${s.carrier?.marketingCode || ""}${s.flight?.marketingNumber || ""} ${s.departureTime.slice(0, 10)} terminal`)}">${PS.icon("info", 12)}Terminal &amp; gate</a>
             ${am?.amenities?.length ? `<div class="amen-row" style="margin-top:6px">${am.amenities.map(a => `<span>${PS.icon(AMEN_ICON[a.category] || "check", 12)}${PS.esc(a.details || a.name)}${a.chargeable ? " ($)" : ""}</span>`).join("")}</div>` : ""}</div>
         </div>`;
       };
@@ -360,7 +362,7 @@
       l.segs.forEach((s, k) => {
         const first = k === 0;
         const depDD = dayDiff(l.dep, s.departureTime);
-        rows += `<div class="t">${depDD > 0 ? `<small>${PS.fmtDate(s.departureTime.slice(0, 10))}</small>` : ""}${PS.time(s.departureTime)}</div><div class="rail ${first ? "first" : ""}"><span class="dot"></span></div><div class="ap">${s.originCode} <span>${PS.esc(s.originName || "")}</span></div>`;
+        rows += `<div class="t">${depDD > 0 ? `<small>${PS.fmtDate(s.departureTime.slice(0, 10))}</small>` : ""}${PS.time(s.departureTime)}</div><div class="rail ${first ? "first" : ""}"><span class="dot"></span></div><div class="ap">${s.originCode} <span>${PS.esc(cityOf(s.originName, s.originCode))}</span></div>`;
         rows += `<div></div><div class="rail">${s.carrier?.marketingLogo ? `<img class="logo" src="${PS.esc(s.carrier.marketingLogo)}" alt="" onerror="this.style.visibility='hidden'">` : ""}</div>${segLine(s)}`;
         const next = l.segs[k + 1];
         const arrDD = dayDiff(l.dep, s.arrivalTime);
@@ -372,22 +374,16 @@
           if (c.changeAirport) warns.push(["red", `Change airports: ${c.arrivalAirportCode} → ${c.departureAirportCode}`], ["red", "Collect & re-check your bags"]);
           if (c.overnight) warns.push(["", "Overnight layover"]);
           if (mins < 60) warns.push(["", "Short connection"]);
-          rows += `<div class="t">${arrDD > 0 ? `<small>${PS.fmtDate(s.arrivalTime.slice(0, 10))}</small>` : ""}${PS.time(s.arrivalTime)}</div><div class="rail"><span class="dot"></span></div><div class="ap">${s.destinationCode} <span>${PS.esc(s.destinationName || "")}</span></div>`;
-          const bagNote = c.changeAirport
-            ? "Pick up your checked bags, travel to the other airport and check in again."
-            : sameAirline
-              ? `Checked bags are normally sent through to ${PS.esc(lastSeg.destinationCode)} when both flights are on one booking. Confirm when you check in.`
-              : `Different airlines (${PS.esc(s.carrier?.marketingName || "")} → ${PS.esc(next.carrier?.marketingName || "")}): ask at check-in whether your bags go through to ${PS.esc(lastSeg.destinationCode)} or need collecting here.`;
-          rows += `<div></div><div class="rail"></div><div class="xfer"><div>Transfer in <b>${PS.esc(cityOf(c.arrivalAirportName, c.arrivalAirportCode))}</b> · ${PS.dur(mins)}</div>${warns.map(([cls, w]) => `<div class="w ${cls}">${PS.icon("alert", 14)}${w}</div>`).join("")}
-            <div class="bag-note">${PS.icon("suitcase", 14)}<span>${bagNote}</span></div>
-            <div class="bag-note">${PS.icon("info", 14)}<span>Your arrival and departure terminals may differ. Check them with "Check terminal &amp; gate" and allow time to transfer${mins < 90 ? "; this connection is tight" : ""}.</span></div></div>`;
+          rows += `<div class="t">${arrDD > 0 ? `<small>${PS.fmtDate(s.arrivalTime.slice(0, 10))}</small>` : ""}${PS.time(s.arrivalTime)}</div><div class="rail"><span class="dot"></span></div><div class="ap">${s.destinationCode} <span>${PS.esc(cityOf(s.destinationName, s.destinationCode))}</span></div>`;
+          if (!c.changeAirport && !sameAirline) warns.push(["", "Ask at check-in if bags go through"]);
+          rows += `<div></div><div class="rail"></div><div class="xfer"><div style="display:flex;gap:6px;align-items:center">${PS.icon("clock", 14)}${PS.dur(mins)} layover in <b>${PS.esc(cityOf(c.arrivalAirportName, c.arrivalAirportCode))}</b></div>${warns.map(([cls, w]) => `<div class="w ${cls}">${PS.icon("alert", 14)}${w}</div>`).join("")}</div>`;
         }
       });
-      rows += `<div class="t">${dd > 0 ? `<small>${PS.fmtDate(l.arr.slice(0, 10))}</small>` : ""}${PS.time(l.arr)}</div><div class="rail last"><span class="dot"></span></div><div class="ap">${lastSeg.destinationCode} <span>${PS.esc(lastSeg.destinationName || "")}</span></div>`;
+      rows += `<div class="t">${dd > 0 ? `<small>${PS.fmtDate(l.arr.slice(0, 10))}</small>` : ""}${PS.time(l.arr)}</div><div class="rail last"><span class="dot"></span></div><div class="ap">${lastSeg.destinationCode} <span>${PS.esc(cityOf(lastSeg.destinationName, lastSeg.destinationCode))}</span></div>`;
       return `<div>
         <div class="leg-top"><span class="dir">${i === 0 ? "Depart" : "Return"}</span>${PS.fmtDay(l.dep.slice(0, 10))}<i></i>Duration ${PS.dur(l.minutes)}<i></i>${l.segs.length === 1 ? "Nonstop" : PS.plural(l.segs.length - 1, "stop")}</div>
         <div class="stl">${rows}</div>
-        <button type="button" class="more-toggle" data-more>${PS.icon("right", 14)}Cabin, aircraft &amp; amenities</button>
+        <button type="button" class="more-toggle" data-more>${PS.icon("right", 14)}More details</button>
       </div>`;
     }
 
@@ -417,7 +413,7 @@
       qvEl.querySelectorAll("[data-more]").forEach(b => b.onclick = () => {
         const open = qvEl.querySelector(".leg-more.hidden");
         qvEl.querySelectorAll(".leg-more").forEach(m => m.classList.toggle("hidden", !open));
-        b.innerHTML = `${PS.icon(open ? "left" : "right", 14)}${open ? "Hide details" : "Cabin, aircraft &amp; amenities"}`;
+        b.innerHTML = `${PS.icon(open ? "left" : "right", 14)}${open ? "Hide details" : "More details"}`;
       });
       btn.setAttribute("aria-expanded", "true");
       qvBtn = btn;
@@ -431,7 +427,7 @@
         <div class="modal-head"><h2>${PS.esc(q.fromCity || q.from)} ${roundTrip ? "⇄" : "→"} ${PS.esc(q.toCity || q.to)}</h2><button class="modal-close" aria-label="Close">${PS.icon("x", 20)}</button></div>
         <div class="modal-body">
           <div class="legs2" style="${j.legs.length === 1 ? "grid-template-columns:1fr" : ""}">${j.legs.map((l, i) => compactLeg(j, l, i)).join("")}</div>
-          <p class="note" style="margin:14px 0 22px">All times are local. Terminal and gate numbers are shown on your e-ticket and at the airport.</p>
+          <p class="note" style="margin:14px 0 22px">All times are local.</p>
           <h3 style="font-size:18px;margin-bottom:12px">Choose your fare</h3>
           <div class="fares-row">${j.offers.slice(0, 8).map((o, i) => fareHTML(j, o, i)).join("")}</div>
         </div>
@@ -443,7 +439,7 @@
       back.querySelectorAll("[data-more]").forEach(b => b.onclick = () => {
         const leg = b.parentElement, open = leg.querySelector(".leg-more.hidden");
         leg.querySelectorAll(".leg-more").forEach(m => m.classList.toggle("hidden", !open));
-        b.innerHTML = `${PS.icon(open ? "left" : "right", 14)}${open ? "Hide details" : "Cabin, aircraft &amp; amenities"}`;
+        b.innerHTML = `${PS.icon(open ? "left" : "right", 14)}${open ? "Hide details" : "More details"}`;
       });
       back.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => pick(b.dataset.pick, +b.dataset.offer));
       document.addEventListener("keydown", onKey);
@@ -452,27 +448,46 @@
       back.querySelector(".modal-close").focus();
     }
 
+    // Tidy LiteAPI fare data: "ECONOMY_LIGHT" → "Economy Light"; cabin pulled out of the family name
+    const tidy = (v) => { const t = String(v || "").replace(/_/g, " ").trim(); return t === t.toUpperCase() ? t.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : t; };
+    const CABIN_RANK = ["economy", "premium economy", "business", "first"];
+    function fareCabin(o) {
+      const cabins = [...new Set((o.segmentFares || []).map(f => tidy(f.cabin).toLowerCase()).filter(Boolean))];
+      if (!cabins.length) return { label: "", top: "" };
+      const top = cabins.sort((a, b) => CABIN_RANK.indexOf(b) - CABIN_RANK.indexOf(a))[0];
+      const name = top.replace(/^./, c => c.toUpperCase());
+      return { top, label: cabins.length > 1 ? `${name} on some flights` : name };
+    }
+    function fareName(o, cabinTop) {
+      let n = tidy(o.fare?.family) || "Standard";
+      if (cabinTop && n.toLowerCase().startsWith(cabinTop + " ")) n = n.slice(cabinTop.length + 1);
+      return n.replace(/^./, c => c.toUpperCase());
+    }
     function fareHTML(j, o, i) {
       const t = o.terms || {}, b = o.baggage || {};
-      const carry = (b.included || []).some(x => x.bagType === "cabin" || x.bagType === "carry_on");
+      const carry = (b.included || []).some(x => x.bagType === "cabin" || x.bagType === "carry_on") || b.hasCarryOnBag;
       const checked = (b.included || []).filter(x => x.bagType === "checked");
+      const pieces = checked[0]?.pieces || (b.hasCheckedBag ? 1 : 0);
       const paidBag = (b.paid || []).find(x => x.bagType === "checked");
       const li = (yes, text) => `<li class="${yes ? "ok" : "no"}">${PS.icon(yes ? "check" : "x", 14, 2.6)}<span>${text}</span></li>`;
-      const cabin = [...new Set((o.segmentFares || []).map(f => f.cabin).filter(Boolean))].join(" / ");
-      return `<div class="fare">
-        <h4>${PS.esc(o.fare?.family || "Standard")}${cabin ? `<small style="display:block;color:var(--muted);font-weight:600;font-size:12.5px">${PS.esc(cabin)}</small>` : ""}</h4>
+      const cab = fareCabin(o);
+      const cur = o.pricing.display.currency, total = o.pricing.display.total, diff = total - j.offers[0].pricing.display.total;
+      const seats = o.fare?.seatsRemaining;
+      return `<div class="fare${i === 0 ? " best" : ""}">
+        <div class="fare-top">${cab.label ? `<span class="fare-cabin">${PS.esc(cab.label)}</span>` : "<span></span>"}${i === 0 ? `<span class="fare-badge">Lowest price</span>` : ""}</div>
+        <h4>${PS.esc(fareName(o, cab.top))}</h4>
+        <div class="fare-price"><b>${PS.money(total, cur, 0)}</b><small>${i > 0 && diff >= 1 ? `+${PS.money(diff, cur, 0)} · ` : ""}${adults > 1 ? `${PS.money(o.pricing.display.perPassenger?.adult?.total, cur, 0)} per adult` : "total, incl. taxes"}</small></div>
         <ul>
-          ${li(carry || b.hasCarryOnBag, "Carry-on bag")}
-          ${li(checked.length || b.hasCheckedBag, checked.length ? `${checked[0].pieces || 1} checked bag${(checked[0].pieces || 1) > 1 ? "s" : ""}${checked[0].weightKg ? ` (${checked[0].weightKg} kg)` : ""}` : paidBag?.pricing?.display?.amount ? `Checked bag from ${PS.money(paidBag.pricing.display.amount, paidBag.pricing.display.currency, 0)}` : "Checked bag")}
+          ${li(carry, "Carry-on bag")}
+          ${li(pieces, pieces ? `${pieces} checked bag${pieces > 1 ? "s" : ""}${checked[0]?.weightKg ? ` · ${checked[0].weightKg} kg` : ""}` : paidBag?.pricing?.display?.amount ? `Checked bag from ${PS.money(paidBag.pricing.display.amount, paidBag.pricing.display.currency, 0)}` : "No checked bag")}
           ${li(t.changeable, t.changeable ? "Changes allowed" : "No changes")}
           ${li(t.refundable, t.refundable ? "Refundable" : "Non-refundable")}
-          ${o.fare?.seatsRemaining && o.fare.seatsRemaining < 6 ? `<li style="color:var(--coral);font-weight:700">Only ${o.fare.seatsRemaining} seats left</li>` : ""}
         </ul>
-        <div class="price-big">${PS.money(o.pricing.display.total, o.pricing.display.currency, 0)}</div>
-        <div class="price-sub">${adults > 1 ? `${PS.money(o.pricing.display.perPassenger?.adult?.total, o.pricing.display.currency, 0)} per adult` : "total, incl. taxes"}</div>
-        <button class="btn btn-coral btn-sm" data-pick="${j.idx}" data-offer="${i}">Select</button>
+        ${seats && seats < 4 ? `<div class="fare-left">Only ${seats} left at this price</div>` : ""}
+        <button class="btn ${i === 0 ? "btn-coral" : "btn-ghost"} btn-sm" data-pick="${j.idx}" data-offer="${i}">Select</button>
       </div>`;
     }
+
 
     function card(j) {
       const lay = j.legs.flatMap(l => l.conns).some(c => c.changeAirport);
