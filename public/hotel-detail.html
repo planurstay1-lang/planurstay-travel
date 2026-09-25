@@ -199,7 +199,7 @@
       roomsEl.innerHTML = `<div class="loading-note" style="margin:0 0 14px"><span class="spinner"></span>Checking live availability…</div>` + Array.from({ length: 2 }, () => `<div class="skel" style="height:160px;border-radius:18px;margin-bottom:14px"></div>`).join("");
       let offers = [];
       try {
-        const r = await PS.api("/api/stays/rooms", { method: "POST", body: { hotelId, checkin: PS.iso(checkin), checkout: PS.iso(checkout), adults: occ.adults, rooms: occ.rooms, childAges: occ.childAges } });
+        const r = await PS.api("/api/stays/rooms", { method: "POST", body: { currency: PS.cur(), hotelId, checkin: PS.iso(checkin), checkout: PS.iso(checkout), adults: occ.adults, rooms: occ.rooms, childAges: occ.childAges } });
         offers = r.data || [];
       } catch (e) {
         if (my !== loadSeq) return;

@@ -58,6 +58,7 @@
           <div class="res-title"><h1 id="resTitle">Hotels</h1><p id="resMeta">Searching live prices…</p></div>
           <div class="res-actions">
             <button class="btn btn-sm btn-ghost show-mobile" id="openFilters"></button>
+            <button class="btn btn-sm btn-ghost hidden" id="alertBtn"></button>
             <button class="btn btn-sm btn-ghost" id="mapToggle"></button>
           </div>
         </div>
@@ -125,7 +126,7 @@
 
     let all = [];
     try {
-      const r = await PS.api("/api/stays/search", { method: "POST", body: {
+      const r = await PS.api("/api/stays/search", { method: "POST", body: { currency: PS.cur(),
         placeId: q.placeId, checkin: q.checkin, checkout: q.checkout,
         adults: +q.adults || 2, rooms: +q.rooms || 1,
         childAges: q.children ? q.children.split(",").filter(s => s !== "").map(Number) : [],
@@ -163,7 +164,7 @@
       pMin = Math.floor(prices[0]); pMax = Math.ceil(prices[prices.length - 1]);
       priceEl.min = pMin; priceEl.max = pMax; priceEl.step = Math.max(1, Math.round((pMax - pMin) / 100));
       if (wasAny) { if (st) st.max = pMax; priceEl.value = pMax; }
-      document.getElementById("fPriceMin").textContent = PS.money(pMin, "USD", 0);
+      document.getElementById("fPriceMin").textContent = PS.money(pMin, PS.cur(), 0);
       const cnt = (f) => all.filter(f).length;
       document.getElementById("cRefund").textContent = cnt(h => h.refundable);
       document.getElementById("cBreakfast").textContent = cnt(h => h.breakfast);
@@ -195,7 +196,7 @@
       document.getElementById("sRating").textContent = lbl(top("rating"));
       list.sort(by[st.sort]);
       meta.textContent = `${list.length} of ${all.length} properties · ${baseMeta}`;
-      document.getElementById("fPriceMax").textContent = st.max >= pMax ? "Any" : "Up to " + PS.money(st.max, "USD", 0);
+      document.getElementById("fPriceMax").textContent = st.max >= pMax ? "Any" : "Up to " + PS.money(st.max, PS.cur(), 0);
 
       if (!list.length) {
         results.innerHTML = empty("filter", "No stays match your filters", "Try removing a filter or widening your price range.", `<button class="btn btn-primary" id="emptyClear">Clear filters</button>`);
@@ -316,7 +317,7 @@
       const my = ++areaSeq;
       mapStatus(`<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>Searching this area…`);
       try {
-        const r = await PS.api("/api/stays/search", { method: "POST", body: {
+        const r = await PS.api("/api/stays/search", { method: "POST", body: { currency: PS.cur(),
           latitude: c.lat, longitude: c.lng, radius, checkin: q.checkin, checkout: q.checkout,
           adults: +q.adults || 2, rooms: +q.rooms || 1, childAges: q.children ? q.children.split(",").filter(x => x !== "").map(Number) : [], limit: 150,
         }});
@@ -356,7 +357,7 @@
       const c = e.target.closest?.(".hcard"); if (!c || warmed.has(c.dataset.id)) return;
       warmed.add(c.dataset.id);
       fetch(`/api/hotels/${c.dataset.id}`).catch(() => {});
-      fetch("/api/stays/rooms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hotelId: c.dataset.id, checkin: q.checkin, checkout: q.checkout, adults: +q.adults || 2, rooms: +q.rooms || 1, childAges: q.children ? q.children.split(",").filter(s => s !== "").map(Number) : [] }) }).catch(() => {});
+      fetch("/api/stays/rooms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currency: PS.cur(), hotelId: c.dataset.id, checkin: q.checkin, checkout: q.checkout, adults: +q.adults || 2, rooms: +q.rooms || 1, childAges: q.children ? q.children.split(",").filter(s => s !== "").map(Number) : [] }) }).catch(() => {});
     };
     results.addEventListener("mouseover", warm);
     results.addEventListener("touchstart", warm, { passive: true });
@@ -396,6 +397,42 @@
       pts.slice(0, 80).forEach(p => L.circleMarker(p, { radius: 4, color: "#1f5bff", weight: 2, fillColor: "#fff", fillOpacity: 1 }).addTo(mm));
       mm.fitBounds(pts, { padding: [12, 12], maxZoom: 14 });
     }).catch(() => document.getElementById("miniMapGroup")?.remove());
+
+    // ─── Price alert: email me when prices for this search drop ───
+    const alertBtn = document.getElementById("alertBtn");
+    alertBtn.innerHTML = PS.icon("bolt", 16) + "Track prices";
+    alertBtn.classList.remove("hidden");
+    alertBtn.onclick = async () => {
+      const low = Math.min(...all.map(h => h.perNight));
+      const a = await PS.auth();
+      const back = document.createElement("div");
+      back.className = "modal-back";
+      back.innerHTML = `<div class="modal" style="width:min(460px,100%)" role="dialog" aria-modal="true" aria-label="Track prices">
+        <div class="modal-head"><h2>${PS.icon("bolt", 22)} Track prices</h2><button class="modal-close" aria-label="Close">${PS.icon("x", 20)}</button></div>
+        <div class="modal-body">
+          <p style="color:var(--text-2);margin-bottom:14px">We'll check hotel prices in <b style="color:var(--ink)">${PS.esc(q.dest || "this area")}</b> for <b style="color:var(--ink)">${PS.fmtDate(q.checkin)} – ${PS.fmtDate(q.checkout)}</b> every day and email you when they drop.</p>
+          ${Number.isFinite(low) ? `<div class="alert info" style="margin-bottom:16px">${PS.icon("tag", 18)}<div>Right now hotels start from <b>${PS.money(low, PS.cur(), 0)}</b>/night.</div></div>` : ""}
+          <form id="alertForm" novalidate><div class="field" style="margin-bottom:12px"><label for="alertEmail">Email</label><input id="alertEmail" type="email" autocomplete="email" required value="${PS.esc(a.loggedIn ? a.user.email : "")}" placeholder="you@example.com"></div>
+          <button class="btn btn-coral btn-block" type="submit">Email me when prices drop</button></form>
+          <div id="alertMsg"></div>
+          <p class="price-sub" style="margin-top:10px">You can stop the alert anytime from the email.</p>
+        </div></div>`;
+      const close = () => { back.remove(); document.body.style.overflow = ""; };
+      back.addEventListener("click", (e) => { if (e.target === back) close(); });
+      back.querySelector(".modal-close").onclick = close;
+      document.body.appendChild(back); document.body.style.overflow = "hidden";
+      back.querySelector("#alertForm").onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector("button"), msg = back.querySelector("#alertMsg");
+        btn.disabled = true;
+        try {
+          const r = await PS.api("/api/alerts", { method: "POST", body: { email: back.querySelector("#alertEmail").value.trim(), placeId: q.placeId, dest: q.dest, destDetail: q.destDetail, checkin: q.checkin, checkout: q.checkout, adults: +q.adults || 2, rooms: +q.rooms || 1, currency: PS.cur(), price: Number.isFinite(low) ? low : null } });
+          back.querySelector("#alertForm").remove();
+          msg.innerHTML = `<div class="alert success">${PS.icon("check", 18)}<div><b>${r.already ? "You're already tracking this search." : "Price alert is on!"}</b> ${r.already ? "" : "Check your inbox for a confirmation."}</div></div>`;
+          alertBtn.innerHTML = PS.icon("check", 16, 2.6) + "Tracking prices";
+        } catch (err) { btn.disabled = false; msg.innerHTML = `<div class="alert error" style="margin-top:12px">${PS.icon("alert", 18)}<div>${PS.esc(err.message)}</div></div>`; }
+      };
+    };
 
     apply();
   })();

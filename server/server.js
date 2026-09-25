@@ -149,6 +149,8 @@ app.use(express.static(path.join(__dirname, "../public"), {
 
 // ─── Storefront search routes (must precede /api/hotels/:id) ─────────────────
 require("./modules/storefront-routes").registerStorefrontRoutes(app, { apiKey: key, jwt, JWT_SECRET, db });
+require("./modules/engagement-routes").registerEngagementRoutes(app, { db, apiKey: key, jwt, JWT_SECRET, APP_URL });
+require("./modules/guides").registerGuideRoutes(app, { APP_URL });
 app.get("/checkout", (req, res) => res.sendFile(path.join(__dirname, "../public/checkout.html")));
 app.get("/membership", (req, res) => res.sendFile(path.join(__dirname, "../public/membership.html")));
 

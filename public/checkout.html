@@ -192,12 +192,15 @@
         uberBox.innerHTML = opt("uber", "", "No thanks", "", !extras.uber) + vals.map(u => opt("uber", u.value, PS.money(u.value, "USD", 0), "ride credit", extras.uber?.value === u.value)).join("");
         uberBox.querySelectorAll("[data-uber]").forEach(b => b.onclick = () => { extras.uber = b.dataset.uber ? { value: +b.dataset.uber, currency: "USD" } : null; paintUber(vals); repaint(); });
       };
-      PS.api("/api/extras/uber").then(r => paintUber(r.data || [])).catch(() => document.querySelector("#uberOpts").closest(".extra").remove());
+      // LiteAPI Uber vouchers are USD-only, so offer them only when the room is priced in USD
+      if ((sel.offer.currency || "USD") === "USD") PS.api("/api/extras/uber").then(r => paintUber(r.data || [])).catch(() => document.querySelector("#uberOpts").closest(".extra").remove());
+      else { document.querySelector("#uberOpts").closest(".extra").remove(); document.getElementById("extrasPanel").classList.add("hidden"); }
 
       // eSIM for the hotel's country — only shown when the eSIM service is enabled on the account
       if (sel.hotel.country) PS.api(`/api/extras/esim?country=${encodeURIComponent(sel.hotel.country)}`).then(r => {
         if (!r.enabled || !r.data?.length) return;
         const box = document.getElementById("esimBox");
+        document.getElementById("extrasPanel").classList.remove("hidden");
         const plans = r.data.slice(0, 5);
         const paint = () => {
           box.innerHTML = `<div class="extra">

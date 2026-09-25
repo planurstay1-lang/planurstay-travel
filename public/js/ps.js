@@ -113,6 +113,56 @@
     setTimeout(() => t.remove(), ms);
   };
 
+  // ─── Currency (all LiteAPI currencies; prices come back from LiteAPI already in this currency) ───
+  PS.cur = () => { const c = PS.local.get("ps_cur"); return /^[A-Z]{3}$/.test(c || "") ? c : "USD"; };
+  const POPULAR_CUR = ["USD", "CAD", "EUR", "GBP", "INR", "AUD", "AED", "MXN", "JPY", "SGD"];
+  async function currencyList() {
+    const cached = PS.local.get("ps_cur_list");
+    if (cached && cached.at > Date.now() - 7 * 86400000 && cached.list?.length) return cached.list;
+    try {
+      const r = await PS.api("/api/reference/currencies");
+      const list = (r.data || []).filter(c => /^[A-Z]{3}$/.test(c.code)).map(c => ({ code: c.code, name: c.currency || c.code }));
+      if (list.length) PS.local.set("ps_cur_list", { at: Date.now(), list });
+      return list;
+    } catch { return POPULAR_CUR.map(code => ({ code, name: code })); }
+  }
+  const curName = (code) => { try { return new Intl.DisplayNames(["en"], { type: "currency" }).of(code); } catch { return code; } };
+  const curSymbol = (code) => { try { return (0).toLocaleString("en", { style: "currency", currency: code, currencyDisplay: "narrowSymbol" }).replace(/[\d.,\s]/g, "") || code; } catch { return code; } };
+  PS.openCurrency = async () => {
+    const back = document.createElement("div");
+    back.className = "modal-back";
+    back.innerHTML = `<div class="modal cur-modal" role="dialog" aria-modal="true" aria-label="Choose currency">
+      <div class="modal-head"><h2>Choose a currency</h2><button class="modal-close" aria-label="Close">${PS.icon("x", 20)}</button></div>
+      <div class="modal-body">
+        <div class="field" style="margin-bottom:16px"><input id="curSearch" placeholder="Search currency or code" aria-label="Search currency" autocomplete="off"></div>
+        <div id="curList"><div class="loading-note" style="border:0;padding:0"><span class="spinner"></span>Loading currencies…</div></div>
+      </div></div>`;
+    const close = () => { back.remove(); document.body.style.overflow = ""; };
+    back.addEventListener("click", (e) => { if (e.target === back) close(); });
+    back.querySelector(".modal-close").onclick = close;
+    document.addEventListener("keydown", function k(e) { if (e.key === "Escape") { close(); document.removeEventListener("keydown", k); } });
+    document.body.appendChild(back); document.body.style.overflow = "hidden";
+    const list = await currencyList();
+    const byCode = Object.fromEntries(list.map(c => [c.code, c]));
+    const cur = PS.cur();
+    const item = (c) => `<button type="button" class="cur-item ${c.code === cur ? "on" : ""}" data-cur="${c.code}"><b>${c.code}</b><span>${PS.esc(curName(c.code) !== c.code ? curName(c.code) : c.name)}</span><em>${PS.esc(curSymbol(c.code))}</em></button>`;
+    const paint = (q) => {
+      q = (q || "").trim().toLowerCase();
+      const match = (c) => !q || c.code.toLowerCase().includes(q) || (c.name || "").toLowerCase().includes(q) || curName(c.code).toLowerCase().includes(q);
+      const pop = POPULAR_CUR.filter(c => byCode[c] || c === "USD").map(c => byCode[c] || { code: c, name: c }).filter(match);
+      const rest = list.filter(c => !POPULAR_CUR.includes(c.code) && match(c)).sort((a, b) => a.code.localeCompare(b.code));
+      back.querySelector("#curList").innerHTML =
+        (pop.length ? `<div class="cur-h">Popular</div><div class="cur-grid">${pop.map(item).join("")}</div>` : "") +
+        (rest.length ? `<div class="cur-h">All currencies (${list.length})</div><div class="cur-grid">${rest.map(item).join("")}</div>` : "") +
+        (!pop.length && !rest.length ? `<div class="ac-empty">No currency matches “${PS.esc(q)}”.</div>` : "");
+      back.querySelectorAll("[data-cur]").forEach(b => b.onclick = () => { PS.local.set("ps_cur", b.dataset.cur); location.reload(); });
+    };
+    paint("");
+    const input = back.querySelector("#curSearch");
+    input.addEventListener("input", () => paint(input.value));
+    if (window.innerWidth > 760) input.focus();
+  };
+
   // ─── Auth ───
   let authPromise = null;
   PS.auth = () => (authPromise ||= fetch("/api/auth/me", { credentials: "same-origin" }).then(r => r.json()).catch(() => ({ loggedIn: false })));
@@ -129,13 +179,16 @@
         <nav class="nav" aria-label="Main">
           <a href="/hotels" class="${active === "stays" ? "active" : ""}">${PS.icon("bed", 18)}Stays</a>
           <a href="/flights" class="${active === "flights" ? "active" : ""}">${PS.icon("plane", 18)}Flights</a>
+          <a href="/guides" class="${active === "guides" ? "active" : ""}">${PS.icon("globe", 18)}Guides</a>
           <a href="/membership" class="${active === "rewards" ? "active" : ""}">${PS.icon("gift", 18)}Rewards</a>
         </nav>
         <div class="hdr-right" id="hdrRight">
+          <button type="button" class="cur-btn" id="curBtn" aria-label="Currency: ${PS.cur()}">${PS.cur()}</button>
           <a href="/my-bookings" class="hdr-link hide-sm">Trips</a>
         </div>
       </div>`;
     document.body.prepend(el);
+    el.querySelector("#curBtn").onclick = PS.openCurrency;
 
     const mob = document.createElement("nav");
     mob.className = "mobile-nav";
@@ -181,15 +234,31 @@
             <p>Your trip, simplified. Hotels and flights worldwide at member prices, backed by real people who help before, during and after you travel.</p>
             <a class="foot-mail" href="mailto:info@planurstay.com">${PS.icon("mail", 16)}info@planurstay.com</a>
           </div>
+          <div class="foot-news">
+            <h4>Get deals in your inbox</h4>
+            <p>Member offers, price drops and trip ideas. No spam, unsubscribe anytime.</p>
+            <form id="newsForm" novalidate><input type="email" id="newsEmail" placeholder="Your email" aria-label="Email for newsletter" autocomplete="email" required><button class="btn btn-coral" type="submit">Subscribe</button></form>
+            <div id="newsMsg"></div>
+          </div>
           <div class="foot-cols">
-            <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/membership">Rewards</a></div>
+            <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/guides">Travel guides</a><a href="/membership">Rewards</a></div>
             <div><h4>Your account</h4><a href="/my-bookings">My trips</a><a href="/login">Sign in</a><a href="/membership">Membership</a></div>
             <div><h4>Support</h4><a href="mailto:info@planurstay.com">Contact us</a><a href="/my-bookings">Manage a booking</a><a href="/my-bookings">Find a booking</a></div>
           </div>
         </div>
-        <div class="foot-bottom"><span>© ${new Date().getFullYear()} PlanurStay. All rights reserved.</span><span class="pay-note">${PS.icon("lock", 14)}Secure payments · Prices in USD</span></div>
+        <div class="foot-bottom"><span>© ${new Date().getFullYear()} PlanurStay. All rights reserved.</span><span class="pay-note">${PS.icon("lock", 14)}Secure payments · Prices in ${PS.cur()}</span></div>
       </div>`;
     document.body.appendChild(f);
+    f.querySelector("#newsForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const input = f.querySelector("#newsEmail"), msg = f.querySelector("#newsMsg"), btn = e.target.querySelector("button");
+      btn.disabled = true;
+      try {
+        const r = await PS.api("/api/newsletter", { method: "POST", body: { email: input.value.trim(), source: location.pathname } });
+        e.target.remove();
+        msg.innerHTML = `<p class="news-ok">${PS.icon("check", 16, 3)}${r.already ? "You're already subscribed." : "You're subscribed! Check your inbox."}</p>`;
+      } catch (err) { btn.disabled = false; msg.innerHTML = `<p class="news-err">${PS.esc(err.message)}</p>`; }
+    };
   };
 
   // ─── Popover plumbing ───

@@ -255,9 +255,9 @@
           const { d, i } = queue.shift();
           const el = row.querySelector(`[data-i="${i}"] .deal-price`);
           try {
-            const r = await PS.api("/api/stays/search", { method: "POST", body: { placeId: d.placeId, checkin: PS.iso(ci), checkout: PS.iso(co), adults: 2, rooms: 1, limit: 60 } });
+            const r = await PS.api("/api/stays/search", { method: "POST", body: { currency: PS.cur(), placeId: d.placeId, checkin: PS.iso(ci), checkout: PS.iso(co), adults: 2, rooms: 1, limit: 60 } });
             const min = Math.min(...(r.data || []).map(h => h.perNight));
-            el.innerHTML = Number.isFinite(min) ? `Hotels from <b>${PS.money(min, "USD", 0)}</b>/night` : "See stays";
+            el.innerHTML = Number.isFinite(min) ? `Hotels from <b>${PS.money(min, PS.cur(), 0)}</b>/night` : "See stays";
           } catch { el.textContent = "See stays"; }
         }
       };

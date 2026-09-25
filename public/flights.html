@@ -103,7 +103,7 @@
     let journeys = [], sortMeta = {};
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const r = await PS.api("/api/flights/offers", { method: "POST", body: { legs, adults, currency: "USD", country: q.fromCountry || "US" } });
+        const r = await PS.api("/api/flights/offers", { method: "POST", body: { legs, adults, currency: PS.cur(), country: q.fromCountry || "US" } });
         journeys = r.data?.journeys || [];
         loader.done();
         sortMeta = r.data?.sortMetadata || {};
