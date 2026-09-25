@@ -194,11 +194,12 @@ app.get("/membership", (req, res) => res.sendFile(path.join(__dirname, "../publi
 // ─── Auth Routes ───
 app.post("/api/auth/signup", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { password } = req.body;
+    const email = String(req.body.email || "").trim().toLowerCase(); // emails are case-insensitive
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
     if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
 
-    const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+    const existing = db.prepare("SELECT id FROM users WHERE lower(trim(email)) = ?").get(email);
     if (existing) return res.status(400).json({ error: "Email already registered" });
 
     const hash = await bcrypt.hash(password, 10);
@@ -220,8 +221,9 @@ app.post("/api/auth/signup", async (req, res) => {
 
 app.post("/api/auth/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const user = db.prepare("SELECT id, email, password_hash FROM users WHERE email = ?").get(email);
+    const { password } = req.body;
+    const email = String(req.body.email || "").trim().toLowerCase(); // emails are case-insensitive
+    const user = db.prepare("SELECT id, email, password_hash FROM users WHERE lower(trim(email)) = ?").get(email);
     if (!user) return res.status(401).json({ error: "No account found with that email" });
 
     const valid = await bcrypt.compare(password, user.password_hash);

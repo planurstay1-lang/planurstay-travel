@@ -46,7 +46,10 @@
     const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const me = await fetch("/api/admin/me").then(r => r.json()).catch(() => ({}));
     if (!me.admin) {
-      root.innerHTML = `<div class="empty"><h3>Admins only</h3><p>Sign in with an admin account.</p><a class="btn btn-primary" href="${PS.loginUrl()}">Sign in</a></div>`;
+      const why = !me.signedIn ? "Sign in with an admin account."
+        : !me.adminListSet ? `You're signed in as <b>${esc(me.email)}</b>, but no admins are set up on the server. On Render → Environment, add <code>ADMIN_EMAILS</code> = <code>${esc(me.email)}</code>, save, and wait for the redeploy.`
+        : `You're signed in as <b>${esc(me.email)}</b>, which isn't on the admin list. Check <code>ADMIN_EMAILS</code> on Render matches this email exactly.`;
+      root.innerHTML = `<div class="empty"><h3>Admins only</h3><p>${why}</p>${me.signedIn ? "" : `<a class="btn btn-primary" href="${PS.loginUrl()}">Sign in</a>`}</div>`;
       return;
     }
     const iso = (d) => d.toISOString().slice(0, 10);

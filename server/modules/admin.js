@@ -8,11 +8,13 @@
 const pricing = require("./pricing");
 
 function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
-  const admins = () => (process.env.ADMIN_EMAILS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+  // Tolerant parsing: ADMIN_EMAILS or ADMIN_EMAIL, separated by commas/semicolons/spaces, quotes ignored.
+  const admins = () => (process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "")
+    .split(/[,;\s]+/).map(s => s.replace(/["'<>]/g, "").trim().toLowerCase()).filter(s => s.includes("@"));
   const adminUser = (req) => {
     try {
       const u = jwt.verify(req.cookies?.token || "", JWT_SECRET);
-      return admins().includes(String(u.email || "").toLowerCase()) ? u : null;
+      return admins().includes(String(u.email || "").trim().toLowerCase()) ? u : null;
     } catch { return null; }
   };
   const guard = (req, res, next) => (adminUser(req) ? next() : res.status(403).json({ error: "Admins only" }));
@@ -45,7 +47,12 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
   const all = (sql, ...a) => { try { return db.prepare(sql).all(...a); } catch { return []; } };
 
   function register(app) {
-    app.get("/api/admin/me", (req, res) => res.json({ admin: !!adminUser(req) }));
+    // Tells the /admin page why access was refused (never reveals who the admins are)
+    app.get("/api/admin/me", (req, res) => {
+      let email = null;
+      try { email = jwt.verify(req.cookies?.token || "", JWT_SECRET).email || null; } catch {}
+      res.json({ admin: !!adminUser(req), signedIn: !!email, email, adminListSet: admins().length > 0 });
+    });
 
     // Public: current member saving for marketing copy (no margins exposed)
     app.get("/api/pricing/summary", (req, res) => res.json({ memberSavePct: pricing.memberSavePct() }));
