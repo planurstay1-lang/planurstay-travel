@@ -37,6 +37,10 @@ Never commit the values. Set them in Render → Environment.
 | `PAID_MARGIN_FLOOR` | optional | Lowest margin a paid-member discount can bring a hotel down to (default `2`). |
 | `COMEBACK_BONUS_POINTS` | optional | Bonus points in the "Welcome back" email for booking again within 30 days (default `500`). |
 | `INSURANCE_URL`, `TRANSFERS_URL`, `CAR_HIRE_URL` | optional | Partner (affiliate) links shown as "Complete your trip" after booking. HTTPS only; placeholders `{city}` `{country}` `{checkin}` `{checkout}` `{airport}` are filled in. Unset = hidden. |
+| `GA4_ID` | optional | Google Analytics 4 measurement ID (`G-XXXXXXX`). Tracks search → view → checkout → payment → purchase. |
+| `META_PIXEL_ID` | optional | Meta (Facebook/Instagram) Pixel ID (digits). Same funnel events, for Instagram/Facebook ads and retargeting. |
+| `WHATSAPP_NUMBER` | optional | WhatsApp number with country code, digits only (e.g. `14165550000`). Shows a WhatsApp button on hotel pages and checkout. |
+| `REVIEWS_URL`, `REVIEWS_LABEL` | optional | Link to your Trustpilot / Google reviews and the badge text (e.g. `4.8 on Trustpilot`). Shown next to the Pay button. |
 
 ## Nuitee Connect webhook events
 

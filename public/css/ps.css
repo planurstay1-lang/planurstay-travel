@@ -2056,3 +2056,23 @@ button.fs-seat:not(:disabled):hover { outline: 2px solid var(--blue); }
 .fs-bag small { display: block; color: var(--muted); font-size: 12px; }
 .fs-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line-2); padding-top: 10px; margin-top: 10px; font-size: 13.5px; }
 .fs-foot svg { color: var(--green); vertical-align: -2px; }
+
+/* WhatsApp button, trust row, exit offer, prefill note */
+.wa-float { position: fixed; left: 20px; bottom: 20px; z-index: 90; display: inline-flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px; border-radius: 999px; background: #25d366; color: #fff !important; font-weight: 800; font-size: 14.5px; box-shadow: 0 10px 24px -8px rgba(0,0,0,.35); }
+.wa-float:hover { background: #1ebe5a; }
+@media (max-width: 760px) { .wa-float { bottom: 96px; left: 14px; height: 44px; padding: 0 12px; } .wa-float span { display: none; } }
+.trust-row { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 12px; font-size: 13px; color: var(--text-2); }
+.trust-row span, .trust-row a { display: inline-flex; gap: 5px; align-items: center; }
+.trust-row a { color: var(--blue); font-weight: 600; }
+.trust-row svg { color: var(--green); }
+.exit-offer { width: min(440px, 100%); padding: 28px 26px 22px; text-align: center; position: relative; }
+.exit-offer .modal-close { position: absolute; top: 12px; right: 12px; }
+.exit-offer .eo-ic { width: 48px; height: 48px; border-radius: 14px; margin: 0 auto 12px; display: grid; place-items: center; background: #fff1ec; color: #ff5a3c; }
+.exit-offer .eo-ic.ok { background: var(--green-50); color: var(--green); }
+.exit-offer h2 { font-size: 20px; margin-bottom: 6px; }
+.exit-offer p { color: var(--text-2); font-size: 14px; margin-bottom: 14px; }
+.exit-offer form { display: flex; gap: 8px; }
+.exit-offer input { flex: 1; min-width: 0; font: inherit; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.exit-offer small { display: block; color: var(--muted); font-size: 12px; margin-top: 8px; }
+.exit-offer .eo-msg { color: var(--red); font-size: 13px; margin-top: 6px; }
+.co-prefill { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; background: var(--green-50); color: #0a7d46; border-radius: 10px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; }

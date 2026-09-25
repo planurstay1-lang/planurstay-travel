@@ -11,6 +11,7 @@
  *
  *   POST /api/growth/checkout-start  { type, prebookId, name, checkin, checkout, total, currency, back }
  *   GET  /api/partners               → { insurance?, transfers?, carHire? } (templates only)
+ *   GET  /api/site-config            → { ga4, metaPixel, whatsapp, phone, reviewsUrl, reviewsLabel }
  *
  * Every marketing email honours users.reminders_off (the same one-click opt-out as reminders).
  */
@@ -176,6 +177,19 @@ function createGrowth({ db, jwt, JWT_SECRET, sendEmail, appUrl }) {
 
   function register(app) {
     app.post("/api/growth/checkout-start", (req, res) => { res.json({ success: true, tracked: checkoutStart(req, req.body || {}) }); });
+    // Public site settings from env: analytics IDs, WhatsApp, phone, reviews badge. Unset = feature hidden.
+    app.get("/api/site-config", (req, res) => {
+      const env = (k) => String(process.env[k] || "").trim();
+      const wa = env("WHATSAPP_NUMBER").replace(/\D/g, "");
+      res.set("Cache-Control", "public, max-age=300").json({
+        ga4: /^G-[A-Z0-9]{4,}$/.test(env("GA4_ID")) ? env("GA4_ID") : null,
+        metaPixel: /^\d{6,20}$/.test(env("META_PIXEL_ID")) ? env("META_PIXEL_ID") : null,
+        whatsapp: wa.length >= 8 && wa.length <= 15 ? wa : null,
+        phone: env("SUPPORT_PHONE").slice(0, 30) || null,
+        reviewsUrl: /^https:\/\//.test(env("REVIEWS_URL")) ? env("REVIEWS_URL") : null,
+        reviewsLabel: env("REVIEWS_LABEL").slice(0, 60) || null,
+      });
+    });
     app.get("/api/partners", (req, res) => {
       const out = {};
       for (const [k, env, title, text] of PARTNERS) { const url = (process.env[env] || "").trim(); if (/^https:\/\//.test(url)) out[k] = { url, title, text }; }

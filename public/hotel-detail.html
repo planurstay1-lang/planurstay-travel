@@ -147,6 +147,7 @@
 
     // ─── Sticky section tabs ───
     const TABS = [["overview", "Overview"], ["facSec", "Facilities"], ["roomsPanel", "Rooms"], ...(rating ? [["reviewsSec", "Reviews"]] : []), ["descSec", "Description"], ["faqSec", "FAQs"]];
+    PS.whatsapp(`Hi PlanurStay, I have a question about ${hotel.name} (${PS.iso(checkin)} to ${PS.iso(checkout)}).`);
     document.getElementById("hdTabs").innerHTML = `<nav class="hd-tabs" aria-label="Hotel sections"><div class="hd-tabs-in">
       <div class="hd-tab-links">${TABS.map(([id, l], k) => `<a href="#${id}" data-tab="${id}" class="${k === 0 ? "on" : ""}">${l}</a>`).join("")}</div>
       <div class="hd-tab-book"><span class="hd-from" id="hdFrom"></span><a href="#roomsPanel" class="btn btn-primary">Select rooms</a></div>
