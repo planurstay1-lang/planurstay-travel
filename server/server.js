@@ -26,8 +26,21 @@ const liteApi = require("liteapi-node-sdk")(key);
 // ─── Database ──────────────────────────────────────────────────────────────
 // On Render, point DB_PATH at a persistent disk (e.g. /var/data/bookings.db);
 // the default ./data path is wiped on every deploy/restart.
-const dbPath = process.env.DB_PATH || "./data/bookings.db";
-if (!fs.existsSync(require("path").dirname(dbPath))) { fs.mkdirSync(require("path").dirname(dbPath), { recursive: true }); }
+// If DB_PATH's folder can't be used (e.g. the disk isn't mounted), fall back to ./data so the site
+// still starts, and flag it loudly in the logs and on /admin.
+let dbPath = process.env.DB_PATH || "./data/bookings.db";
+const dbInfo = { configured: dbPath, path: dbPath, persistent: !!process.env.DB_PATH, error: null };
+try {
+  const dir = require("path").dirname(dbPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.accessSync(dir, fs.constants.W_OK);
+} catch (err) {
+  dbInfo.error = `${err.code || "ERROR"}: can't use ${require("path").dirname(dbPath)} (is the Render disk mounted there?)`;
+  console.error(`\n⚠️  DATABASE NOT PERSISTENT: ${dbInfo.error}. Falling back to ./data/bookings.db; data will be lost on the next deploy.\n`);
+  dbPath = "./data/bookings.db";
+  if (!fs.existsSync("./data")) fs.mkdirSync("./data", { recursive: true });
+  Object.assign(dbInfo, { path: dbPath, persistent: false });
+}
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 db.exec(`
@@ -152,7 +165,7 @@ require("./modules/guides").registerGuideRoutes(app, { APP_URL });
 require("./modules/legal").registerLegalRoutes(app);
 const rewards = require("./modules/rewards").createRewards({ db, apiKey: key, jwt, JWT_SECRET });
 rewards.register(app);
-const admin = require("./modules/admin").createAdmin({ db, apiKey: () => key, jwt, JWT_SECRET });
+const admin = require("./modules/admin").createAdmin({ db, apiKey: () => key, jwt, JWT_SECRET, dbInfo });
 admin.register(app);
 require("./modules/analytics").createAnalytics({ db, isAdmin: admin.isAdmin }).register(app);
 // Plain email helper for modules (verification codes, support tickets). Returns true when sent.

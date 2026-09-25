@@ -66,7 +66,8 @@
 
     async function load() {
       const ov = document.getElementById("ov");
-      ov.innerHTML = `<div class="skel" style="height:96px;border-radius:14px"></div>`;
+      const dbWarn = d.database && !d.database.persistent ? `<div class="ad-card" style="border-color:#f3c3bd;background:#fff6f5"><h3 class="bad">Database is not on the persistent disk</h3><p style="font-size:13.5px">${esc(d.database.error || "DB_PATH is not set")}. Accounts, bookings, tickets and settings will be erased on the next deploy. On Render, check Disk → mount path is exactly the folder in DB_PATH (e.g. /var/data).</p></div>` : "";
+      ov.innerHTML = dbWarn + `<div class="skel" style="height:96px;border-radius:14px"></div>`;
       const q = new URLSearchParams({ from: document.getElementById("from").value, to: document.getElementById("to").value });
       const d = await fetch("/api/admin/overview?" + q).then(r => r.json()).catch(() => null);
       if (!d || !d.success) { ov.innerHTML = `<div class="panel">Could not load analytics.</div>`; return; }

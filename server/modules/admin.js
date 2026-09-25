@@ -7,7 +7,7 @@
  */
 const pricing = require("./pricing");
 
-function createAdmin({ db, apiKey, jwt, JWT_SECRET }) {
+function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
   const admins = () => (process.env.ADMIN_EMAILS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
   const adminUser = (req) => {
     try {
@@ -74,7 +74,7 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET }) {
       const sumBy = (arr, k) => (arr || []).reduce((s, x) => s + (+x[k] || 0), 0);
       const pts = one("SELECT COALESCE(SUM(CASE WHEN type IN ('earn','bonus','redeem','reverse') THEN points END),0) AS avail, COALESCE(SUM(CASE WHEN type='pending' THEN points END),0) AS pending FROM rewards_ledger") || {};
       res.json({
-        success: true, from, to,
+        success: true, from, to, database: dbInfo,
         pricing: { publicMargin: pricing.PUBLIC_MARGIN(), memberMargin: pricing.MEMBER_MARGIN(), memberSavePct: pricing.memberSavePct(), parityGate: process.env.PARITY_GATE === "on" },
         liteapi: {
           totals: {
