@@ -45,6 +45,10 @@
       return;
     }
 
+    // ─── Travel protection (Sitata): fixed-price plans at checkout, paid to Sitata after booking ───
+    let insPlans = [], insChoice = null, insAnswered = false;
+    const insSumHTML = (show) => !show || !insChoice ? "" : `<div class="co-ins-sum">${PS.icon("shield", 18)}<div><b>Travel protection · ${PS.esc(insChoice.name)}</b><small>Charged separately by Sitata right after you book</small></div><b>${PS.money(insChoice.total, insChoice.currency, 2)}</b></div>`;
+
     // ─── Hold (prebook) state: re-used as long as add-ons and promo code haven't changed ───
     let held = null, heldKey = "";
     const holdKey = () => JSON.stringify({ o: sel.offer?.offerId, v: (document.getElementById("voucher")?.value || "").trim(), u: extras.uber?.value || 0, e: extras.esim?.packageId || "" });
@@ -142,7 +146,7 @@
       });
       return out;
     }
-    const repaint = () => { sumCol.innerHTML = timerHTML() + summaryHTML(held && heldKey === holdKey() ? { total: held.price, currency: held.currency, voucher: held.voucherTotalAmount, services: held.servicesAmount || 0 } : {}); paintEarn(); };
+    const repaint = () => { sumCol.innerHTML = timerHTML() + summaryHTML(held && heldKey === holdKey() ? { total: held.price, currency: held.currency, voucher: held.voucherTotalAmount, services: held.servicesAmount || 0 } : {}); paintEarn(); if (insChoice) document.querySelector("#sumCol .co-card")?.insertAdjacentHTML("afterend", insSumHTML(true)); };
     // ─── Price hold countdown (flights): the fare is only guaranteed until the offer expires ───
     let expiresAt = type === "flight" && sel.offer.expiration ? Date.parse(sel.offer.expiration) : null;
     let expired = false;
@@ -272,6 +276,7 @@
       ${sel.search?.to ? `<section class="co-panel co-pkg">${PS.icon("gift", 20)}<div><b>Need a hotel in ${PS.esc(sel.search.toCity || sel.search.to)}?</b>
         <p>Book this flight and package prices unlock on hotels near ${PS.esc(sel.search.to)} for your dates: about <span data-save-pct>${PS.savePct()}</span>% off, no sign-in needed. You'll see them right after booking.</p></div></section>` : ""}`;
     }
+    html += `<section class="co-panel hidden" id="insPanel"></section>`;
     html += `<section class="co-panel">
         <div class="co-head"><h2>Redeem a promo code <small>(optional)</small></h2></div>
         <div id="rewardsPick"></div>
@@ -290,6 +295,39 @@
       <button class="btn btn-primary btn-lg btn-block co-go" id="continueBtn">Continue to payment ${PS.icon("right", 18)}</button>
       <p class="agree-note">By continuing you agree to our <a href="/terms" target="_blank">Terms</a>, <a href="/cancellation-policy" target="_blank">Cancellation policy</a> and <a href="/privacy" target="_blank">Privacy policy</a>, and the ${type === "hotel" ? "hotel's" : "airline's"} own rules.</p>`;
     formCol.innerHTML = html;
+    loadProtection();
+    async function loadProtection() {
+      const panel = document.getElementById("insPanel"); if (!panel) return;
+      const s = sel.search || {}, h = sel.hotel || {}, stay = sel.stay || {};
+      const start = type === "hotel" ? stay.checkin : s.depart, end = type === "hotel" ? stay.checkout : (s.return || s.depart);
+      let dest = type === "hotel" ? h.country : s.toCountry;
+      if (!dest && s.to) { try { dest = ((await PS.api(`/api/airports?q=${encodeURIComponent(s.to)}`)).data || []).find(a => a.code === s.to)?.countryCode; } catch {} }
+      const cur = type === "hotel" ? sel.offer.currency : sel.offer.pricing?.display?.currency;
+      const cost = type === "hotel" ? sel.offer.total : sel.offer.pricing?.display?.total;
+      const n = type === "hotel" ? (+stay.adults || 1) + (stay.childAges || []).length : (+s.adults || 1);
+      const from = (s.fromCountry || (navigator.language || "").split("-")[1] || "CA").toUpperCase();
+      let r;
+      try { r = await PS.api("/api/insurance/quote", { method: "POST", body: { currency: cur, fromCountry: from, destCountry: dest, start, end, totalCost: cost, travellers: n, email: me.email } }); } catch { return; }
+      insPlans = r.plans || [];
+      if (!insPlans.length) return;
+      const place = type === "hotel" ? (h.city || "your trip") : (s.toCity || s.to || "your trip");
+      const opt = (p, i) => `<label class="ins-opt"><input type="radio" name="ins" value="${i}">
+        <div class="ins-body"><div class="ins-top"><b>${PS.esc(p.name)}</b><span class="ins-price">${PS.money(p.total, p.currency, 2)}${n > 1 ? `<small>${PS.money(p.perPerson, p.currency, 2)} per traveler</small>` : ""}</span></div>
+        ${p.benefits.length ? `<ul>${p.benefits.map(b => `<li>${PS.icon("check", 13, 3)}${PS.esc(b.name)}${b.limit ? ` <span>up to ${PS.esc(b.limit)}</span>` : ""}</li>`).join("")}</ul>` : ""}</div></label>`;
+      panel.innerHTML = `<div class="co-head"><h2>${PS.icon("shield", 20)} Protect your trip to ${PS.esc(place)}</h2></div>
+        <p class="ins-lead">Trip cancellation, medical emergencies abroad and lost bags, with 24/7 help. ${type === "flight" && !sel.offer.terms?.refundable ? "<b>Your fare is non-refundable</b>, so cover matters if plans change." : ""}</p>
+        <div class="ins-opts">${insPlans.map(opt).join("")}
+          <label class="ins-opt no"><input type="radio" name="ins" value="no"><div class="ins-body"><b>No thanks</b><small>I'll take the risk and pay any cancellation or medical costs myself.</small></div></label></div>
+        <p class="price-sub" style="margin-top:10px">Provided and charged by our partner Sitata, separately from your booking. You'll confirm the policy and pay Sitata right after booking. Prices are for adults; Sitata confirms the final price for each traveler's age. We may earn a commission.</p>`;
+      panel.classList.remove("hidden");
+      panel.querySelectorAll('input[name="ins"]').forEach(x => x.onchange = () => {
+        insAnswered = true; panel.classList.remove("err");
+        insChoice = x.value === "no" ? null : insPlans[+x.value];
+        panel.querySelectorAll(".ins-opt").forEach(l => l.classList.toggle("on", l.querySelector("input").checked));
+        PS.track("page", { insuranceChoice: x.value === "no" ? "no" : "yes" });
+        repaint();
+      });
+    }
     tick();
     // ─── "Make it refundable": swap to the cheapest refundable fare on the same flights ───
     const flexPanel = document.getElementById("flexPanel");
@@ -490,6 +528,10 @@
         const cw = document.querySelector('[data-f="nameOk"]'); cw.classList.toggle("err", !conf.checked);
         if (!conf.checked) { ok = false; if (document.querySelectorAll(".field.err").length === 0) cw.scrollIntoView({ behavior: "smooth", block: "center" }); }
       }
+      const ip = document.getElementById("insPanel");
+      if (ip && !ip.classList.contains("hidden") && insPlans.length && !insAnswered) {
+        ip.classList.add("err"); if (ok) ip.scrollIntoView({ behavior: "smooth", block: "center" }); ok = false;
+      }
       if (!ok) document.querySelector(".field.err input:not([type=hidden]), .field.err select")?.focus();
       return ok;
     }
@@ -600,6 +642,7 @@
         remarks: type === "hotel" ? val("remarks") || undefined : undefined,
         work: document.querySelector('input[name="work"]:checked')?.value === "yes",
         price: pb.price, currency: pb.currency, createdAt: Date.now(),
+        insurance: insChoice ? { name: insChoice.name, total: insChoice.total, currency: insChoice.currency, productIds: insChoice.productIds } : null,
         // For the travel insurance offer after booking (pre-fills names and birthdays)
         travellers: type === "flight" ? (pb._passengers || []).map(x => ({ name: [x.firstName, x.middleName, x.lastName].filter(Boolean).join(" "), birthday: x.birthday, nationality: x.nationality })) : undefined,
       };

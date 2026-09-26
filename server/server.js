@@ -185,6 +185,7 @@ require("./modules/reminders").createReminders({ db, apiKey: () => key, jwt, JWT
 require("./modules/webhooks").createWebhooks({ db, sendEmail }).register(app);
 const growth = require("./modules/growth").createGrowth({ db, jwt, JWT_SECRET, sendEmail, appUrl: () => APP_URL });
 growth.register(app);
+require("./modules/insurance").createInsurance().register(app);
 require("./modules/flight-alerts").createFlightAlerts({ db, sendEmail, appUrl: () => APP_URL }).register(app, { jwt, JWT_SECRET });
 require("./modules/chat").createChat({ port: PORT, support }).register(app);
 // Google Search Console HTML-file verification: set GSC_HTML_FILE=google1234abcd.html on Render

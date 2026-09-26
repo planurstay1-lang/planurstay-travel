@@ -39,6 +39,8 @@ Never commit the values. Set them in Render → Environment.
 | `INSURANCE_URL`, `TRANSFERS_URL`, `CAR_HIRE_URL` | optional | Partner (affiliate) links shown as "Complete your trip" after booking. HTTPS only; placeholders `{city}` `{country}` `{checkin}` `{checkout}` `{airport}` are filled in. Unset = hidden. |
 | `SITATA_ORG_ID`, `SITATA_PUBLIC_TOKEN` | optional | Sitata travel insurance widget ("Protect your trip") on the confirmation page, pre-filled from the booking. Sitata sells and charges the policy (`merchantOfRecord: false`); we earn commission. Use the **public widget token**, never the private API key. Unset = hidden. |
 | `SITATA_CHAT_ID`, `SITATA_CONTACT_EMAIL` | optional | Chat ID and support email Sitata gives you for the widget. |
+| `SITATA_API_KEY` | optional | **Private** Sitata API key (server only, never shown in the browser). With `SITATA_ORG_ID` set, checkout shows fixed-price "Protect your trip" plans from Sitata quotes; a customer who picks one pays Sitata on the confirmation page. Unset = no checkout box. |
+| `SITATA_API_BASE` | optional | Sitata API address. Default `https://www.sitata.com`; set to their sandbox address if they give you one. |
 | `GA4_ID` | optional | Google Analytics 4 measurement ID (`G-XXXXXXX`). Tracks search → view → checkout → payment → purchase. |
 | `META_PIXEL_ID` | optional | Meta (Facebook/Instagram) Pixel ID (digits). Same funnel events, for Instagram/Facebook ads and retargeting. |
 | `WHATSAPP_NUMBER` | optional | WhatsApp number with country code, digits only (e.g. `14165550000`). Shows a WhatsApp button on hotel pages and checkout. |

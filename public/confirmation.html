@@ -190,10 +190,14 @@
       const start = type === "hotel" ? st.checkin : s.depart, end = type === "hotel" ? st.checkout : (s.return || s.depart);
       if (!start) return;
       const place = type === "hotel" ? (h.city || h.name || "your trip") : (s.toCity || s.to || "your trip");
-      box.innerHTML = `<div class="panel insure-panel">
-        <div class="insure-head"><span class="insure-ic">${PS.icon("shield", 22)}</span><div><h3>Protect your trip to ${PS.esc(place)}</h3>
-          <p>Cover for trip cancellation, medical emergencies abroad and lost bags, with 24/7 travel assistance. Get a quote for your dates in a minute.</p></div></div>
-        <button class="btn btn-primary" id="insureOpen">See cover options</button>
+      const chosen = p.insurance; // the plan they picked at checkout
+      box.innerHTML = `<div class="panel insure-panel ${chosen ? "chosen" : ""}">
+        <div class="insure-head"><span class="insure-ic">${PS.icon("shield", 22)}</span><div>
+          ${chosen ? `<span class="insure-step">One last step</span><h3>Finish adding your travel protection</h3>
+            <p>You chose <b>${PS.esc(chosen.name)}</b> (${PS.money(chosen.total, chosen.currency, 2)}). Confirm it and pay Sitata below. It's charged separately from your booking, and your trip is booked either way.</p>`
+          : `<h3>Protect your trip to ${PS.esc(place)}</h3>
+            <p>Cover for trip cancellation, medical emergencies abroad and lost bags, with 24/7 travel assistance. Get a quote for your dates in a minute.</p>`}</div></div>
+        <button class="btn btn-primary" id="insureOpen">${chosen ? "Continue to secure payment" : "See cover options"}</button>
         <div id="insure" class="insure-wdg"></div>
         <p class="price-sub" style="margin-top:10px">Travel insurance is provided and charged by our partner Sitata, separately from your booking. We may earn a commission.</p></div>`;
       document.getElementById("insureOpen").onclick = async (e) => {
@@ -233,6 +237,8 @@
         sc.onerror = () => { btn.disabled = false; btn.textContent = "See cover options"; PS.toast("Insurance quotes couldn't load. Please try again."); };
         document.body.appendChild(sc);
       };
+      // They already said yes at checkout: open Sitata's form straight away and bring it into view
+      if (chosen) { document.getElementById("insureOpen").click(); setTimeout(() => box.scrollIntoView({ behavior: "smooth", block: "start" }), 600); }
     }
 
     // Complete your trip: insurance, airport transfer, car hire (partner links configured on the server)

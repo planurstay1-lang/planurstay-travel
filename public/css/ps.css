@@ -2091,3 +2091,30 @@ button.fs-seat:not(:disabled):hover { outline: 2px solid var(--blue); }
 .insure-ic { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--blue-50); color: var(--blue); }
 .insure-wdg:empty { display: none; }
 .insure-wdg { margin-top: 6px; }
+
+/* Protect your trip at checkout (fixed-price plans, Trip.com style) */
+#insPanel.err { border-color: var(--red); box-shadow: 0 0 0 3px rgba(229,72,77,.12); }
+#insPanel.err .ins-lead::after { content: "Choose a plan or \"No thanks\" to continue."; display: block; margin-top: 6px; color: var(--red); font-weight: 700; }
+#insPanel .co-head h2 { display: flex; align-items: center; gap: 8px; }
+#insPanel .co-head h2 svg { color: var(--blue); }
+.ins-lead { margin: 0 0 12px; color: var(--text-2); font-size: 14px; }
+.ins-opts { display: grid; gap: 10px; }
+.ins-opt { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1.5px solid var(--line); border-radius: 14px; cursor: pointer; transition: border-color .15s, background .15s; }
+.ins-opt:hover { border-color: #b9c7ea; }
+.ins-opt.on { border-color: var(--blue); background: var(--blue-50); }
+.ins-opt input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--blue); flex: none; }
+.ins-body { flex: 1; min-width: 0; }
+.ins-body > small { display: block; color: var(--text-2); font-size: 13px; margin-top: 2px; }
+.ins-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.ins-price { font-weight: 800; color: var(--ink); text-align: right; white-space: nowrap; }
+.ins-price small { display: block; font-weight: 600; font-size: 12px; color: var(--muted); }
+.ins-body ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13.5px; color: var(--text-2); }
+.ins-body li { display: flex; align-items: center; gap: 6px; }
+.ins-body li svg { color: var(--green, #0a7d46); flex: none; }
+.ins-body li span { color: var(--muted); }
+.co-ins-sum { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 12px 14px; border: 1px dashed var(--blue); border-radius: 14px; background: var(--blue-50); font-size: 14px; }
+.co-ins-sum > svg { color: var(--blue); flex: none; }
+.co-ins-sum div { flex: 1; min-width: 0; }
+.co-ins-sum small { display: block; color: var(--text-2); font-size: 12px; }
+.insure-panel.chosen { border: 2px solid var(--blue); }
+.insure-step { display: inline-block; margin-bottom: 4px; padding: 2px 8px; border-radius: 999px; background: var(--blue); color: #fff; font-size: 11.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
