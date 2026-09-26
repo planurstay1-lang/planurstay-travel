@@ -10,7 +10,6 @@
   <link rel="stylesheet" href="/css/ps.css">
 </head>
 <body>
-  <div class="searchbar-wrap"><div class="container"><div class="search-card" id="searchHost"></div></div></div>
 
   <main class="container">
     <div class="results-layout">
@@ -43,7 +42,7 @@
     PS.header({ active: "flights" });
     PS.footer();
     const q = PS.qs();
-    PS.flightsSearch(document.getElementById("searchHost"), q);
+    const sp = PS.searchPill(q, "flights");
     document.getElementById("filterBody").innerHTML = PS.skeleton.filters(5);
     document.getElementById("openFilters").innerHTML = PS.icon("filter", 16) + "Filters";
     const results = document.getElementById("results"), meta = document.getElementById("resMeta"), title = document.getElementById("resTitle"), moreBtn = document.getElementById("moreBtn");
@@ -54,12 +53,13 @@
 
     if (!q.from || !q.to || !q.depart) {
       title.textContent = "Find a flight";
-      meta.textContent = "Choose where and when you're flying above.";
+      meta.textContent = "Choose where and when you're flying.";
       document.getElementById("sortTabs").classList.add("hidden");
       filtersEl.classList.add("hidden"); document.querySelector(".results-layout").style.gridTemplateColumns = "1fr";
       document.getElementById("xsell").innerHTML = "";
       document.getElementById("openFilters").remove();
       results.innerHTML = empty("plane", "Where are you flying?", "Search by city or airport code to compare fares across airlines.");
+      sp?.open();
       return;
     }
     PS.local.set("ps_last_flights", q);

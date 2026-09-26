@@ -2076,3 +2076,9 @@ button.fs-seat:not(:disabled):hover { outline: 2px solid var(--blue); }
 .exit-offer small { display: block; color: var(--muted); font-size: 12px; margin-top: 8px; }
 .exit-offer .eo-msg { color: var(--red); font-size: 13px; margin-top: 6px; }
 .co-prefill { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; background: var(--green-50); color: #0a7d46; border-radius: 10px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; }
+/* Search panel under the header pill (results pages): light controls on the white panel */
+.search-card.sleek.hdr-search .trip-type { background: var(--line-2); border: 0; backdrop-filter: none; display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; margin: 0 0 10px; }
+.search-card.sleek.hdr-search .trip-type .chip-toggle, .search-card.sleek.hdr-search .trip-type .chip-check { color: var(--text-2); }
+.search-card.sleek.hdr-search .trip-type .chip-toggle.active { background: #fff; color: var(--ink); box-shadow: var(--sh-1); }
+.search-card.sleek.hdr-search .trip-type .chip-check input { accent-color: var(--blue); }
+.site-header.has-pill .hdr-pill { max-width: 520px; }

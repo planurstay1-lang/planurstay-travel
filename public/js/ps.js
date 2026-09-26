@@ -414,13 +414,20 @@
   };
 
   // ─── Compact search in the header (hotel page): tap to open the full search, pre-filled ───
-  PS.searchPill = (init = {}) => {
+  // Slim search summary in the header on results/detail pages: tap it to open the full search, it folds
+  // away again when you click elsewhere or press Esc. mode "flights" shows the route instead of a place.
+  PS.searchPill = (init = {}, mode = "stays") => {
     const header = document.querySelector(".site-header"), inner = header?.querySelector(".hdr-inner");
     if (!inner || inner.querySelector(".hdr-pill")) return;
-    const guests = (+init.adults || 2) + (init.children ? String(init.children).split(",").filter(Boolean).length : 0);
     const pill = document.createElement("button");
-    pill.type = "button"; pill.className = "hdr-pill"; pill.setAttribute("aria-label", "Change search");
-    pill.innerHTML = `<span class="hp-dest">${PS.esc(init.dest || "Where to?")}</span><i></i><span>${init.checkin ? `${PS.fmtDate(init.checkin)} – ${PS.fmtDate(init.checkout)}` : "Add dates"}</span><i></i><span>${PS.plural(guests, "guest")}</span><span class="hp-go">${PS.icon("search", 16, 2.6)}</span>`;
+    pill.type = "button"; pill.className = "hdr-pill"; pill.setAttribute("aria-label", "Change search"); pill.setAttribute("aria-expanded", "false");
+    if (mode === "flights") {
+      const pax = +init.adults || 1;
+      pill.innerHTML = `<span class="hp-dest">${init.from ? `${PS.esc(init.fromCity || init.from)} → ${PS.esc(init.toCity || init.to)}` : "Where to?"}</span><i></i><span>${init.depart ? `${PS.fmtDate(init.depart)}${init.return ? " – " + PS.fmtDate(init.return) : " · One way"}` : "Add dates"}</span><i></i><span>${PS.plural(pax, "traveler")}</span><span class="hp-go">${PS.icon("search", 16, 2.6)}</span>`;
+    } else {
+      const guests = (+init.adults || 2) + (init.children ? String(init.children).split(",").filter(Boolean).length : 0);
+      pill.innerHTML = `<span class="hp-dest">${PS.esc(init.dest || "Where to?")}</span><i></i><span>${init.checkin ? `${PS.fmtDate(init.checkin)} – ${PS.fmtDate(init.checkout)}` : "Add dates"}</span><i></i><span>${PS.plural(guests, "guest")}</span><span class="hp-go">${PS.icon("search", 16, 2.6)}</span>`;
+    }
     inner.insertBefore(pill, inner.querySelector("#hdrRight"));
     header.classList.add("has-pill");
     const panel = document.createElement("div");
@@ -428,14 +435,21 @@
     panel.innerHTML = `<div class="container"><div class="search-card sleek hdr-search"><div id="hdrSearchHost"></div></div></div>`;
     header.appendChild(panel);
     let built = false;
-    const close = () => { panel.classList.add("hidden"); pill.classList.remove("open"); PS.closeCalendars(); };
-    pill.onclick = () => {
-      if (!panel.classList.contains("hidden")) return close();
-      if (!built) { PS.staysSearch(panel.querySelector("#hdrSearchHost"), init); built = true; }
-      panel.classList.remove("hidden"); pill.classList.add("open");
-      setTimeout(() => panel.querySelector(".dest input")?.focus(), 50);
+    const isOpen = () => !panel.classList.contains("hidden");
+    const close = () => { if (!isOpen()) return; PS.closeCalendars(); panel.classList.add("hidden"); pill.classList.remove("open"); pill.setAttribute("aria-expanded", "false"); header.classList.remove("panel-open"); };
+    const open = () => {
+      if (!built) { (mode === "flights" ? PS.flightsSearch : PS.staysSearch)(panel.querySelector("#hdrSearchHost"), init); built = true; }
+      panel.classList.remove("hidden"); pill.classList.add("open"); pill.setAttribute("aria-expanded", "true"); header.classList.add("panel-open");
+      setTimeout(() => panel.querySelector(mode === "flights" ? ".route-half.from input" : ".dest input")?.focus(), 50);
     };
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !panel.classList.contains("hidden")) close(); });
+    pill.onclick = () => (isOpen() ? close() : open());
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    // Click outside (but not inside the calendar / suggestions / guest pickers, which live outside the panel)
+    document.addEventListener("mousedown", (e) => {
+      if (!isOpen() || panel.contains(e.target) || pill.contains(e.target) || e.target.closest?.(".cal, .pop, .sheet, .sheet-back, [role=dialog]")) return;
+      close();
+    });
+    return { open, close };
   };
 
   // ─── Saved hotels (♥): on this device for guests, in the account for members ───

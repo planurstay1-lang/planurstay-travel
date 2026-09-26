@@ -10,7 +10,6 @@
   <link rel="stylesheet" href="/css/ps.css">
 </head>
 <body>
-  <div class="searchbar-wrap"><div class="container"><div class="search-card" id="searchHost"></div></div></div>
 
   <main class="container">
     <div class="results-layout" id="layout">
@@ -100,7 +99,7 @@
     PS.header({ active: "stays" });
     PS.footer();
     const q = PS.qs();
-    PS.staysSearch(document.getElementById("searchHost"), q);
+    const sp = PS.searchPill(q);
     document.getElementById("openFilters").innerHTML = PS.icon("filter", 16) + "Filters";
     const mapBtn = document.getElementById("mapToggle");
     mapBtn.innerHTML = PS.icon("map", 16) + "Map";
@@ -116,7 +115,8 @@
       document.getElementById("mapToggle").classList.add("hidden");
       document.getElementById("openFilters").remove();
       title.textContent = "Find your stay";
-      meta.textContent = "Choose a destination and dates above to see live prices.";
+      meta.textContent = "Choose a destination and dates to see live prices.";
+      sp?.open();
       document.getElementById("sortTabs").classList.add("hidden");
       results.innerHTML = empty("search", "Where would you like to stay?", "Search a city, neighborhood, landmark or hotel name to get started.",
         `<div class="pill-row" style="justify-content:center">${PS.DESTS.slice(0, 8).map(d => `<a class="pill" href="${PS.url("/hotels", { placeId: d.placeId, dest: d.name, destDetail: d.detail, checkin: PS.iso(PS.addDays(PS.today(), 14)), checkout: PS.iso(PS.addDays(PS.today(), 17)), adults: 2, rooms: 1 })}">${PS.esc(d.name)}</a>`).join("")}</div>`);
