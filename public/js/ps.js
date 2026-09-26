@@ -321,6 +321,7 @@
         <nav class="nav" aria-label="Main">
           <a href="/hotels" class="${active === "stays" ? "active" : ""}">${PS.icon("bed", 18)}Stays</a>
           <a href="/flights" class="${active === "flights" ? "active" : ""}">${PS.icon("plane", 18)}Flights</a>
+          <a href="/cars" class="nav-cars ${active === "cars" ? "active" : ""}" hidden>${PS.icon("car", 18)}Cars</a>
           <a href="/guides" class="${active === "guides" ? "active" : ""}">${PS.icon("globe", 18)}Guides</a>
           <a href="/membership" class="${active === "rewards" ? "active" : ""}">${PS.icon("gift", 18)}Rewards</a>
         </nav>
@@ -393,7 +394,7 @@
             <div id="newsMsg"></div>
           </div>
           <div class="foot-cols">
-            <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/guides">Travel guides</a><a href="/travel">Popular routes</a><a href="/membership">Rewards</a></div>
+            <div><h4>Explore</h4><a href="/hotels">Hotels</a><a href="/flights">Flights</a><a href="/cars" class="nav-cars" hidden>Car rentals</a><a href="/guides">Travel guides</a><a href="/travel">Popular routes</a><a href="/membership">Rewards</a></div>
             <div><h4>Your account</h4><a href="/my-bookings">My trips</a><a href="/login">Sign in</a><a href="/membership">Your points</a></div>
             <div><h4>Support</h4><a href="/contact">Contact us</a><a href="/cancellation-policy">Cancellations &amp; refunds</a><a href="/my-bookings">Manage a booking</a><a href="/my-bookings">Find a booking</a></div>
           </div>
@@ -1268,4 +1269,11 @@
       }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
     }
   })();
+  // ─── Cars link: shown only when car rentals are switched on ───
+  document.addEventListener("DOMContentLoaded", () => {
+    const show = () => document.querySelectorAll(".nav-cars").forEach(a => { a.hidden = false; });
+    const k = "ps_cars_on";
+    try { const v = sessionStorage.getItem(k); if (v === "1") return show(); if (v === "0") return; } catch {}
+    fetch("/api/cars/config").then(r => r.json()).then(c => { try { sessionStorage.setItem(k, c.enabled ? "1" : "0"); } catch {} if (c.enabled) show(); }).catch(() => {});
+  });
 })();
