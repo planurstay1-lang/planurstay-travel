@@ -10,7 +10,7 @@
  *
  * Claude only writes the plan (cities, dates, flights, day ideas). Every price comes from our own live
  * search endpoints, called with the visitor's cookie so members and package holders see their prices.
- * Env: ANTHROPIC_API_KEY, TRIP_MODEL (default claude-opus-5)
+ * Env: ANTHROPIC_API_KEY, TRIP_MODEL (default claude-haiku-4-5, the cheapest; claude-sonnet-5 plans a little better)
  */
 const crypto = require("crypto");
 const path = require("path");
@@ -96,7 +96,7 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
     views INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   const key = () => (process.env.ANTHROPIC_API_KEY || "").trim();
-  const model = () => process.env.TRIP_MODEL || "claude-opus-5";
+  const model = () => process.env.TRIP_MODEL || "claude-haiku-4-5";
   const base = `http://127.0.0.1:${port}`;
   const ISO = /^\d{4}-\d{2}-\d{2}$/;
   const today = () => new Date().toISOString().slice(0, 10);
@@ -121,21 +121,26 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
 
   // ─── Claude: request → structured plan ───
   async function planWithClaude(prompt, currency) {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
+    const m = model();
+    const call = (extra) => fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key(), "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({
-        model: model(), max_tokens: 16000,
-        system: systemPrompt(currency),
-        output_config: { effort: "medium", format: { type: "json_schema", schema: SPEC_SCHEMA } },
-        messages: [{ role: "user", content: prompt }],
-      }),
+      body: JSON.stringify({ model: m, max_tokens: 8000, system: systemPrompt(currency), messages: [{ role: "user", content: prompt }], ...extra }),
       signal: AbortSignal.timeout(120000),
-    });
-    const j = await r.json().catch(() => ({}));
+    }).then(async r => ({ r, j: await r.json().catch(() => ({})) }));
+    // Structured outputs; effort only on models that take it (Haiku doesn't).
+    const effort = /haiku/.test(m) ? {} : { effort: "medium" };
+    let { r, j } = await call({ output_config: { ...effort, format: { type: "json_schema", schema: SPEC_SCHEMA } } });
+    let fromTool = false;
+    // A model without structured outputs: ask for the same JSON through a tool with this schema instead.
+    if (r.status === 400) {
+      ({ r, j } = await call({ tools: [{ name: "make_plan", description: "Return the trip plan.", input_schema: SPEC_SCHEMA }], tool_choice: { type: "tool", name: "make_plan" } }));
+      fromTool = true;
+    }
     if (!r.ok) throw new Error(j.error?.message || `Planner error ${r.status}`);
     if (j.stop_reason === "refusal") throw Object.assign(new Error("refusal"), { user: "We can't plan that trip. Try describing it differently." });
     if (j.stop_reason === "max_tokens") throw new Error("Plan was cut off");
+    if (fromTool) return (j.content || []).find(b => b.type === "tool_use")?.input || {};
     const text = (j.content || []).filter(b => b.type === "text").map(b => b.text).join("");
     return JSON.parse(text);
   }

@@ -25,8 +25,8 @@ Never commit the values. Set them in Render → Environment.
 | `EMAIL_FROM` | for email | Sender on a domain verified in Resend, e.g. `PlanurStay <bookings@planurstay.com>`. |
 | `EMAIL_REPLY_TO` | optional | Reply-to address (default `info@planurstay.com`). |
 | `ANTHROPIC_API_KEY` | optional | Turns on the AI Help assistant and the AI trip planner (`/plan`). Without it the Help bubble shows a simple menu and the planner says it isn't available. |
-| `CHAT_MODEL` | optional | Assistant model (default `claude-sonnet-5`). |
-| `TRIP_MODEL` | optional | Trip planner model (default `claude-opus-5`). |
+| `CHAT_MODEL` | optional | Assistant model (default `claude-haiku-4-5`, the cheapest: $1/$5 per million tokens). |
+| `TRIP_MODEL` | optional | Trip planner model (default `claude-haiku-4-5`; `claude-sonnet-5` plans a little better at 2× the price). |
 | `NUITEE_CHATBOT_KEY` | optional | Public key for the "Ask AI" chatbot (defaults to the account's public key). `NUITEE_CHATBOT=off` hides it. |
 | `CHATBOT` | optional | `off` hides the Help bubble. |
 | `LEGAL_NAME`, `LEGAL_ADDRESS`, `SUPPORT_PHONE`, `LEGAL_COUNTRY` | optional | Shown on /terms, /privacy, /contact. |
