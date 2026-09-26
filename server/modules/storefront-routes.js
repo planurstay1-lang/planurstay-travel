@@ -777,15 +777,23 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           margin: 0,
           timeout: 12,
       };
-      const fetchAt = (margin) => {
-        const body = { ...roomsBody, margin };
-        return cached("rooms:" + JSON.stringify(body), 3 * MIN, () => lite("/hotels/rates", { method: "POST", body }));
+      // Only cache answers that actually have rooms: an empty or failed answer (slow supplier, rate limit)
+      // must not stick for 3 minutes and show "sold out".
+      const hasRooms = (v) => v?.ok && ((v.json?.data || [])[0]?.roomTypes || []).length > 0;
+      const fetchAt = (margin, timeout = 12) => {
+        const body = { ...roomsBody, margin, timeout };
+        return cached("rooms:" + JSON.stringify(body), 3 * MIN, () => lite("/hotels/rates", { method: "POST", body }), hasRooms);
       };
       // 1) Net rates + the hotel's own price (SSP at margin 0) for every offer.
       // roomMapping drops unmapped rooms (sometimes all of them), so rates are loaded without it; a separate
       // mapped call only lends mappedRoomId (for room photos) to rooms it can match by name.
       const mappedP = cached("roomsmap:" + JSON.stringify(roomsBody), 3 * MIN, () => lite("/hotels/rates", { method: "POST", body: { ...roomsBody, roomMapping: true } })).catch(() => null);
-      const r = await fetchAt(0);
+      let r = await fetchAt(0);
+      // Suppliers that miss the 12s window come back empty (or as "no availability"): ask once more with more time.
+      if (!hasRooms(r) && (r.ok || r.status === 404 || r.status === 408 || r.status === 429 || r.json?.error?.code === 2001)) {
+        const r2 = await fetchAt(0, 25);
+        if (hasRooms(r2) || r2.ok) r = r2;
+      }
       if (!r.ok) {
         if (r.status === 404 || r.json?.error?.code === 2001) return res.json({ success: true, data: [] });
         return res.status(502).json({ error: errMessage(r, "Could not load rooms") });
@@ -815,12 +823,24 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
       });
       // 2) One bookable request per distinct margin (usually 1-2); offers at a margin we didn't fetch are left out.
       const margins = [...new Set([...plan.values()].map(v => v.margin))].sort((x, y) => x - y).slice(0, 6);
-      const results = await Promise.all(margins.map(m => fetchAt(m)));
+      const pickAt = (m, res) => {
+        const rts = hasRooms(res) ? res.json.data[0].roomTypes : [];
+        const out = [];
+        keysOf(rts).forEach((k, i) => { const pl = plan.get(k); if (pl && pl.margin === m) out.push({ rt: rts[i], publicTotal: pl.publicTotal }); });
+        return out;
+      };
+      const results = await Promise.all(margins.map(m => fetchAt(m).catch(() => null)));
       const chosen = [];
-      margins.forEach((m, mi) => {
-        const rts = results[mi].ok ? (results[mi].json.data || [])[0]?.roomTypes || [] : [];
-        keysOf(rts).forEach((k, i) => { const pl = plan.get(k); if (pl && pl.margin === m) chosen.push({ rt: rts[i], publicTotal: pl.publicTotal }); });
-      });
+      for (const [mi, m] of margins.entries()) {
+        let got = pickAt(m, results[mi]);
+        // A failed or empty margin call would silently hide every room at that price: retry it once.
+        if (!got.length) got = pickAt(m, await fetchAt(m, 20).catch(() => null));
+        chosen.push(...got);
+      }
+      if (base.length && !chosen.length) {
+        console.error("Stays rooms: bookable rates missing", b.hotelId, b.checkin, margins.join(","), results.map(x => x?.status).join(","));
+        return res.status(502).json({ error: "We couldn't confirm live prices for this hotel just now. Please try again." });
+      }
       const mapped = await mappedP;
       const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
       const mapIds = new Map();
