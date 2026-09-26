@@ -218,7 +218,7 @@
     const dest = q.get("dest") || q.get("toCity") || q.get("to") || undefined;
     const e = p === "/" ? "home" : p === "/hotels" ? "hotel_results" : p.startsWith("/hotel/") ? "hotel_view"
       : p === "/flights" ? "flight_results" : p === "/flight-detail" ? "flight_view" : p === "/checkout" ? "checkout"
-      : p === "/guides" ? "guides" : p.startsWith("/guides/") ? "guide" : p === "/membership" ? "rewards"
+      : p === "/guides" ? "guides" : p.startsWith("/guides/") ? "guide" : p === "/membership" ? "rewards" : p === "/plan" ? "plan" : p.startsWith("/trip/") ? "trip_view"
       : p === "/my-bookings" ? "trips" : p === "/login" ? "login" : /^\/(terms|privacy|cancellation-policy|contact)$/.test(p) ? "legal"
       : p === "/confirmation" || p === "/admin" ? null : "page";
     if (e) PS.track(e, dest && (e === "hotel_results" || e === "flight_results") ? { dest: dest.slice(0, 60) } : undefined);
@@ -235,10 +235,10 @@
     fetch("/api/pricing/summary").then(r => r.json()).then(d => { if (d.memberSavePct > 0) { PS.store.set("ps_save", d.memberSavePct); fillSave(); } }).catch(() => {});
   }
 
-  PS.api = async (url, { method = "GET", body, signal } = {}) => {
+  PS.api = async (url, { method = "GET", body, signal, headers } = {}) => {
     const res = await fetch(url, {
       method, signal, credentials: "same-origin",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: body || headers ? { ...(body ? { "Content-Type": "application/json" } : {}), ...headers } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
     let json = {};
@@ -321,6 +321,7 @@
         <nav class="nav" aria-label="Main">
           <a href="/hotels" class="${active === "stays" ? "active" : ""}">${PS.icon("bed", 18)}Stays</a>
           <a href="/flights" class="${active === "flights" ? "active" : ""}">${PS.icon("plane", 18)}Flights</a>
+          <a href="/plan" class="${active === "plan" ? "active" : ""}">${PS.icon("sparkle", 18)}Plan a trip</a>
           <a href="/guides" class="${active === "guides" ? "active" : ""}">${PS.icon("globe", 18)}Guides</a>
           <a href="/membership" class="${active === "rewards" ? "active" : ""}">${PS.icon("gift", 18)}Rewards</a>
         </nav>
@@ -344,6 +345,7 @@
       <a href="/" class="${active === "home" ? "active" : ""}">${PS.icon("home", 20)}Home</a>
       <a href="/hotels" class="${active === "stays" ? "active" : ""}">${PS.icon("bed", 20)}Stays</a>
       <a href="/flights" class="${active === "flights" ? "active" : ""}">${PS.icon("plane", 20)}Flights</a>
+      <a href="/plan" class="${active === "plan" ? "active" : ""}">${PS.icon("sparkle", 20)}Plan</a>
       <a href="/my-bookings" class="${active === "trips" ? "active" : ""}">${PS.icon("trips", 20)}Trips</a>`;
     document.body.appendChild(mob);
 

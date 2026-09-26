@@ -187,6 +187,7 @@ const growth = require("./modules/growth").createGrowth({ db, jwt, JWT_SECRET, s
 growth.register(app);
 require("./modules/flight-alerts").createFlightAlerts({ db, sendEmail, appUrl: () => APP_URL }).register(app, { jwt, JWT_SECRET });
 require("./modules/chat").createChat({ port: PORT, support }).register(app);
+require("./modules/trips").createTrips({ db, port: PORT, jwt, JWT_SECRET }).register(app);
 // Google Search Console HTML-file verification: set GSC_HTML_FILE=google1234abcd.html on Render
 app.get(/^\/google[0-9a-z]+\.html$/, (req, res, next) => {
   const f = (process.env.GSC_HTML_FILE || "").trim();
