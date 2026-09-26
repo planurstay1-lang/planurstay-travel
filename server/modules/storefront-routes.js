@@ -794,16 +794,18 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         const r2 = await fetchAt(0, 25);
         if (hasRooms(r2) || r2.ok) r = r2;
       }
+      if (!hasRooms(r)) console.error("Stays rooms: no rates", b.hotelId, b.checkin, b.checkout, r.status, String(errMessage(r, "")).slice(0, 120));
       if (!r.ok) {
         if (r.status === 404 || r.json?.error?.code === 2001) return res.json({ success: true, data: [] });
         return res.status(502).json({ error: errMessage(r, "Could not load rooms") });
       }
       // Offer IDs change with the margin; the room type + rate name/board/refundability (+ occurrence) don't.
-      const keysOf = (roomTypes) => {
+      // `loose` leaves out roomTypeId in case the supplier re-issues it between calls.
+      const keysOf = (roomTypes, loose) => {
         const seen = new Map();
         return (roomTypes || []).map(rt => {
           const rate = rt.rates?.[0] || {};
-          const k = [rt.roomTypeId, rate.name, rate.boardType, rate.cancellationPolicies?.refundableTag, (rt.rates || []).length].join("|");
+          const k = [loose ? "" : rt.roomTypeId, rate.name, rate.boardType, rate.cancellationPolicies?.refundableTag, (rt.rates || []).length].join("|");
           const n = (seen.get(k) || 0) + 1; seen.set(k, n);
           return k + "#" + n;
         });
@@ -813,33 +815,49 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
       if (pkg) { const meta = await hotelMeta(b.hotelId); pk = pkgApplies(pkg, meta?.lat, meta?.lng, b.checkin, b.checkout); }
       const member = isMem || pk, extra = isMem ? paidExtra(req) : 0;
       const base = (r.json.data || [])[0]?.roomTypes || [];
-      const baseKeys = keysOf(base);
-      const plan = new Map(); // key → { margin, publicTotal }
+      const baseKeys = keysOf(base), baseLoose = keysOf(base, true);
+      const plan = new Map(), planLoose = new Map(); // key → { margin, publicTotal }
       base.forEach((rt, i) => {
         const net = rt.offerRetailRate?.amount;
         if (net == null) return;
         const p = pricing.priceFor(net, rt.suggestedSellingPrice?.amount, member, extra);
-        plan.set(baseKeys[i], { margin: p.margin, publicTotal: p.publicTotal });
+        const v = { margin: p.margin, publicTotal: p.publicTotal };
+        plan.set(baseKeys[i], v); planLoose.set(baseLoose[i], v);
       });
       // 2) One bookable request per distinct margin (usually 1-2); offers at a margin we didn't fetch are left out.
       const margins = [...new Set([...plan.values()].map(v => v.margin))].sort((x, y) => x - y).slice(0, 6);
-      const pickAt = (m, res) => {
+      const fails = [];
+      const note = (m, res) => { if (!hasRooms(res)) fails.push(`${m}%:${res ? res.status : "err"}${res?.json?.error ? " " + String(errMessage(res, "")).slice(0, 80) : ""}`); return res; };
+      // Rooms in `res` (fetched at some margin) that belong to plan margin m, or to any margin ≤ m when `upTo`.
+      const pickAt = (m, res, upTo) => {
         const rts = hasRooms(res) ? res.json.data[0].roomTypes : [];
-        const out = [];
-        keysOf(rts).forEach((k, i) => { const pl = plan.get(k); if (pl && pl.margin === m) out.push({ rt: rts[i], publicTotal: pl.publicTotal }); });
+        const full = keysOf(rts), loose = keysOf(rts, true), out = [], used = new Set();
+        rts.forEach((rt, i) => {
+          const pl = plan.get(full[i]) || planLoose.get(loose[i]);
+          if (!pl || used.has(pl) || !(upTo ? pl.margin <= m : pl.margin === m)) return;
+          used.add(pl);
+          out.push({ rt, publicTotal: Math.max(pl.publicTotal, +rt.offerRetailRate?.amount || 0) });
+        });
         return out;
       };
-      const results = await Promise.all(margins.map(m => fetchAt(m).catch(() => null)));
+      const get = (m, t) => fetchAt(m, t).catch(() => null).then(res => note(m, res));
+      const results = await Promise.all(margins.map(m => get(m)));
       const chosen = [];
       for (const [mi, m] of margins.entries()) {
         let got = pickAt(m, results[mi]);
-        // A failed or empty margin call would silently hide every room at that price: retry it once.
-        if (!got.length) got = pickAt(m, await fetchAt(m, 20).catch(() => null));
+        // A failed or empty margin call would silently hide every room at that price. Retry once with a
+        // whole-number margin (a touch higher, still at/above the hotel's price) and more supplier time.
+        if (!got.length) got = pickAt(m, await get(Math.ceil(m), 20));
         chosen.push(...got);
       }
+      // Last resort: one call at the highest margin (whole number) and show every room it can price.
+      if (base.length && !chosen.length && margins.length) {
+        const top = Math.ceil(margins[margins.length - 1]);
+        chosen.push(...pickAt(top, await get(top, 25), true));
+      }
+      if (fails.length) console.error("Stays rooms:", b.hotelId, b.checkin, `base ${base.length}, shown ${chosen.length},`, fails.join(" | "));
       if (base.length && !chosen.length) {
-        console.error("Stays rooms: bookable rates missing", b.hotelId, b.checkin, margins.join(","), results.map(x => x?.status).join(","));
-        return res.status(502).json({ error: "We couldn't confirm live prices for this hotel just now. Please try again." });
+        return res.status(502).json({ error: `We couldn't confirm live prices for this hotel just now. Please try again. (${fails.slice(-1)[0] || "no match"})` });
       }
       const mapped = await mappedP;
       const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
