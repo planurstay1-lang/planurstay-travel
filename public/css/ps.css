@@ -109,6 +109,8 @@ p { margin: 0; }
 .menu a, .menu button { display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 8px; background: none; border: 0; font-weight: 600; font-size: 14px; }
 .menu a:hover, .menu button:hover { background: var(--line-2); }
 .menu .menu-email { padding: 10px 12px 8px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line-2); margin-bottom: 4px; }
+@media (max-width: 1180px) { .nav a { padding: 8px 10px; } .nav a svg { display: none; } }
+@media (max-width: 960px) { .nav a[href="/guides"], .nav a[href="/membership"] { display: none; } }
 @media (max-width: 760px) {
   .nav { display: none; }
   .hdr-inner { height: 62px; gap: 12px; }
@@ -1597,9 +1599,9 @@ a.route:hover .route-go { background: var(--blue); color: #fff; }
 .hdr-pill .hp-dest { max-width: 140px; }
 .hdr-pill i { width: 1px; height: 18px; background: var(--line); flex: none; }
 .hdr-pill .hp-go { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--blue); color: #fff; display: grid; place-items: center; }
-.site-header.has-pill .hdr-nav { display: none; }
+.site-header.has-pill .nav { display: none; }
 .hdr-pill { min-width: min(360px, 52vw); }
-@media (min-width: 1440px) { .site-header.has-pill .hdr-nav { display: flex; } .site-header.has-pill .hdr-pill { margin: 0 16px; } }
+@media (min-width: 1440px) { .site-header.has-pill .nav { display: flex; } .site-header.has-pill .nav a { padding: 8px 10px; } .site-header.has-pill .nav a svg { display: none; } .site-header.has-pill .hdr-pill { margin: 0 16px; } }
 @media (max-width: 640px) { .hdr-pill { font-size: 12.5px; gap: 8px; padding-left: 12px; } .hdr-pill .hp-dest { max-width: 80px; } }
 .hdr-panel { position: absolute; left: 0; right: 0; top: 100%; background: #fff; border-bottom: 1px solid var(--line); box-shadow: 0 18px 40px -20px rgba(11,27,63,.35); padding: 16px 0 20px; z-index: 60; }
 .hdr-panel.hidden { display: none; }
@@ -2082,3 +2084,12 @@ button.fs-seat:not(:disabled):hover { outline: 2px solid var(--blue); }
 .search-card.sleek.hdr-search .trip-type .chip-toggle.active { background: #fff; color: var(--ink); box-shadow: var(--sh-1); }
 .search-card.sleek.hdr-search .trip-type .chip-check input { accent-color: var(--blue); }
 .site-header.has-pill .hdr-pill { max-width: 520px; }
+
+/* ─── Homepage: AI trip planner promo ─── */
+.plan-promo { display: flex; align-items: center; gap: 16px; padding: 18px 20px; border-radius: 20px; background: linear-gradient(120deg, #1f5bff, #7b4dff); color: #fff; text-decoration: none; box-shadow: 0 18px 40px -22px rgba(31, 91, 255, .7); }
+.plan-promo .pp-ic { width: 46px; height: 46px; flex: none; border-radius: 14px; display: grid; place-items: center; background: rgba(255, 255, 255, .18); }
+.plan-promo .pp-tx { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.plan-promo .pp-tx b { font-size: 17px; }
+.plan-promo .pp-tx span { font-size: 14px; opacity: .9; line-height: 1.45; }
+.plan-promo .btn { flex: none; }
+@media (max-width: 640px) { .plan-promo { flex-wrap: wrap; } .plan-promo .btn { width: 100%; justify-content: center; } }

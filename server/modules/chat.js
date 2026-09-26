@@ -4,7 +4,7 @@
  *   GET  /api/chat/status   → { enabled }   (the widget stays hidden when no API key is set)
  *   POST /api/chat          → { messages: [{role, content}], currency } → { reply, cards }
  *
- * Env: ANTHROPIC_API_KEY (required), CHAT_MODEL (default claude-sonnet-5)
+ * Env: ANTHROPIC_API_KEY (required), CHAT_MODEL (default claude-haiku-4-5)
  *
  * The assistant never invents prices: hotel and flight prices come from our own search
  * endpoints (called with the visitor's cookie, so signed-in members see member prices).
@@ -109,7 +109,7 @@ Stay on travel and booking topics. Politely decline unrelated requests. Never as
 
 function createChat({ port, support }) {
   const key = () => (process.env.ANTHROPIC_API_KEY || "").trim();
-  const model = () => process.env.CHAT_MODEL || "claude-sonnet-5";
+  const model = () => process.env.CHAT_MODEL || "claude-haiku-4-5";
   const base = `http://127.0.0.1:${port}`;
 
   // Per-IP limit: 40 messages per hour keeps costs predictable.
@@ -204,7 +204,9 @@ function createChat({ port, support }) {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key(), "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: model(), max_tokens: 900, system: systemPrompt(currency), tools: TOOLS, messages }),
+      // Prompt caching: the tools, instructions and earlier turns are resent on every tool round and every
+      // message; cached reads cost ~10% of normal input.
+      body: JSON.stringify({ model: model(), max_tokens: 900, cache_control: { type: "ephemeral" }, system: systemPrompt(currency), tools: TOOLS, messages }),
       signal: AbortSignal.timeout(90000),
     });
     const j = await r.json().catch(() => ({}));
