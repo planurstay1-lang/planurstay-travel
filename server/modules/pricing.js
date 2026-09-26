@@ -13,6 +13,9 @@ const num = (v, d) => (Number.isFinite(+v) && v !== "" && v != null ? +v : d);
 const overrides = {};
 const PUBLIC_MARGIN = () => num(overrides.publicMargin, num(process.env.PUBLIC_MARGIN, 16));
 const MEMBER_MARGIN = () => num(overrides.memberMargin, num(process.env.MEMBER_MARGIN, 6));
+// Expedia-style: free-cancellation rates carry extra margin points, so the non-refundable rate (the headline
+// price) stays sharp and we earn more when a guest pays for flexibility.
+const FLEX_EXTRA = () => num(overrides.flexExtra, num(process.env.FLEX_EXTRA_MARGIN, 6));
 
 // ─── SSP-aware public pricing ───
 // Rates are fetched at margin 0: we get our net cost and the hotel's own public price (SSP at margin 0).
@@ -35,9 +38,10 @@ const PAID_EXTRA = () => ({ essential: num(process.env.PAID_EXTRA_ESSENTIAL, 2),
 const PAID_FLOOR = () => num(process.env.PAID_MARGIN_FLOOR, 2);
 const paidExtraPct = (planId) => PAID_EXTRA()[planId] || 0;
 /** Price a net rate for this visitor. total = what they pay; publicTotal = the guest price (member strike-through).
- *  extraPct: extra margin points off for paid members (0 for everyone else). */
-function priceFor(net, ssp0, member, extraPct = 0) {
-  const pub = publicMargin(net, ssp0);
+ *  extraPct: extra margin points off for paid members (0 for everyone else).
+ *  refundable: free-cancellation rate, priced FLEX_EXTRA points higher. */
+function priceFor(net, ssp0, member, extraPct = 0, refundable = false) {
+  const pub = publicMargin(net, ssp0) + (refundable ? FLEX_EXTRA() : 0);
   // Members always save the same share off the guest price (about 8% at 16%/6%), also on hotels
   // priced up to their SSP, so the member saving matches the "Members save about X%" promise.
   const memberMargin = round2(((1 + pub / 100) * (1 + MEMBER_MARGIN() / 100) / (1 + PUBLIC_MARGIN() / 100) - 1) * 100);
@@ -53,6 +57,6 @@ module.exports = {
   memberFactor: () => (1 + MEMBER_MARGIN() / 100) / (1 + PUBLIC_MARGIN() / 100),
   // Whole-percent member saving, for marketing copy ("Members save about 8%")
   memberSavePct: () => Math.floor((1 - (1 + MEMBER_MARGIN() / 100) / (1 + PUBLIC_MARGIN() / 100)) * 100),
-  setOverrides: (o) => { for (const k of ["publicMargin", "memberMargin"]) if (k in o) overrides[k] = o[k]; },
-  PUBLIC_MARGIN, MEMBER_MARGIN,
+  setOverrides: (o) => { for (const k of ["publicMargin", "memberMargin", "flexExtra"]) if (k in o) overrides[k] = o[k]; },
+  PUBLIC_MARGIN, MEMBER_MARGIN, FLEX_EXTRA,
 };

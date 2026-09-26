@@ -467,9 +467,12 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           const total = rt.offerRetailRate?.amount;
           if (total == null) continue;
           for (const rate of rt.rates || []) { meals.add(mealPlan(rate.boardName || rate.boardType)); if (rate.cancellationPolicies?.refundableTag === "RFN") refundAny = true; }
-          if (!best || total < best.total) {
+          // Compare as priced: free-cancellation rates carry extra margin, so a slightly dearer non-refundable net can be the cheaper headline
+          const eff = total * (rt.rates?.[0]?.cancellationPolicies?.refundableTag === "RFN" ? 1 + pricing.FLEX_EXTRA() / 100 : 1);
+          if (!best || eff < best.eff) {
             const rate = rt.rates?.[0] || {};
             best = {
+              eff,
               offerId: rt.offerId,
               total,
               currency: rt.offerRetailRate.currency,
@@ -496,7 +499,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           rating: h.rating || 0,
           reviews: h.review_count || 0,
           nights,
-          ...best,
+          ...best, eff: undefined,
           meals: [...meals], refundAny,
           perNight: best.total / nights,
         };
@@ -505,7 +508,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
       const member = isMember(req), pkg = !member && pkgFrom(req), extra = member ? paidExtra(req) : 0;
       data.forEach(h => {
         const pk = !!pkg && pkgApplies(pkg, h.lat, h.lng, b.checkin, b.checkout);
-        const p = pricing.priceFor(h.total, h.ssp, member || pk, extra);
+        const p = pricing.priceFor(h.total, h.ssp, member || pk, extra, h.refundable);
         h.total = p.total; h.publicTotal = p.publicTotal; h.perNight = p.total / h.nights;
         applyParity(h, member || pk);
         if (pk) h.packagePrice = true;
@@ -748,10 +751,10 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         let low = null, n = 0;
         for (const e of r.ok ? r.json.data || [] : []) {
           let best = null;
-          for (const rt of e.roomTypes || []) { const net = rt.offerRetailRate?.amount; if (net != null && (!best || net < best.net)) best = { net, ssp: rt.suggestedSellingPrice?.amount }; }
+          for (const rt of e.roomTypes || []) { const net = rt.offerRetailRate?.amount; if (net != null && (!best || net < best.net)) best = { net, ssp: rt.suggestedSellingPrice?.amount, rfn: rt.rates?.[0]?.cancellationPolicies?.refundableTag === "RFN" }; }
           if (!best) continue;
           n++;
-          const t = pricing.priceFor(best.net, best.ssp, member, extra).total / nights;
+          const t = pricing.priceFor(best.net, best.ssp, member, extra, best.rfn).total / nights;
           if (low == null || t < low) low = t;
         }
         return { offset: o, checkin: body.checkin, checkout: body.checkout, lowNight: low != null ? Math.round(low * 100) / 100 : null, hotels: n };
@@ -820,7 +823,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
       base.forEach((rt, i) => {
         const net = rt.offerRetailRate?.amount;
         if (net == null) return;
-        const p = pricing.priceFor(net, rt.suggestedSellingPrice?.amount, member, extra);
+        const p = pricing.priceFor(net, rt.suggestedSellingPrice?.amount, member, extra, rt.rates?.[0]?.cancellationPolicies?.refundableTag === "RFN");
         const v = { margin: p.margin, publicTotal: p.publicTotal };
         plan.set(baseKeys[i], v); planLoose.set(baseLoose[i], v);
       });
