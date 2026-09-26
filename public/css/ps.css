@@ -2082,3 +2082,12 @@ button.fs-seat:not(:disabled):hover { outline: 2px solid var(--blue); }
 .search-card.sleek.hdr-search .trip-type .chip-toggle.active { background: #fff; color: var(--ink); box-shadow: var(--sh-1); }
 .search-card.sleek.hdr-search .trip-type .chip-check input { accent-color: var(--blue); }
 .site-header.has-pill .hdr-pill { max-width: 520px; }
+
+/* Protect your trip (Sitata insurance widget on the confirmation page) */
+.insure-panel { margin-top: 18px; }
+.insure-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 14px; }
+.insure-head h3 { font-size: 17px; margin: 0 0 4px; }
+.insure-head p { margin: 0; color: var(--text-2); font-size: 14px; }
+.insure-ic { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--blue-50); color: var(--blue); }
+.insure-wdg:empty { display: none; }
+.insure-wdg { margin-top: 6px; }

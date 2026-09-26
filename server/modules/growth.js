@@ -190,6 +190,15 @@ function createGrowth({ db, jwt, JWT_SECRET, sendEmail, appUrl }) {
         reviewsLabel: env("REVIEWS_LABEL").slice(0, 60) || null,
       });
     });
+    // Sitata travel insurance widget (public widget credentials only; Sitata collects the payment).
+    // Hidden until SITATA_ORG_ID and SITATA_PUBLIC_TOKEN are set.
+    app.get("/api/insurance/config", (req, res) => {
+      const env = (k) => String(process.env[k] || "").trim();
+      const orgId = env("SITATA_ORG_ID"), token = env("SITATA_PUBLIC_TOKEN");
+      if (!orgId || !token) return res.json({ success: true, enabled: false });
+      res.set("Cache-Control", "public, max-age=300").json({ success: true, enabled: true, orgId, token,
+        chatId: env("SITATA_CHAT_ID") || null, contactEmail: env("SITATA_CONTACT_EMAIL") || null });
+    });
     app.get("/api/partners", (req, res) => {
       const out = {};
       for (const [k, env, title, text] of PARTNERS) { const url = (process.env[env] || "").trim(); if (/^https:\/\//.test(url)) out[k] = { url, title, text }; }

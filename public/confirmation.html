@@ -154,6 +154,7 @@
             <a class="btn btn-coral" href="${PS.url("/hotels", { placeId: b._package.placeId, dest: b._package.city, checkin: b._package.checkin, checkout: b._package.checkout, adults: 2, rooms: 1 })}">${PS.icon("bed", 16)}Find a hotel</a></div>`
           : type === "flight" && p.sel?.search?.to ? `<div class="xsell" style="margin-top:18px"><div><b>Need a hotel in ${PS.esc(p.sel.search.toCity || p.sel.search.to)}?</b><p>Book a stay for ${PS.fmtDate(p.sel.search.depart)}${p.sel.search.return ? " – " + PS.fmtDate(p.sel.search.return) : ""}.</p></div><a class="btn btn-white btn-sm" href="${PS.url("/", {})}#stays">${PS.icon("bed", 16)}Find hotels</a></div>` : ""}
           ${extrasHTML(b, p)}
+          <div id="insureBox"></div>
           <div id="partnersBox"></div>
           <div id="saveTrip"></div>
           <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:22px">
@@ -163,6 +164,7 @@
         </div>`;
       PS.track("booked", { type, value: Number(price) || undefined, currency: cur, id: b.bookingId || b.booking_id || prebookId });
       saveTrip(b);
+      insurance(b, p);
       partners(p);
     }
 
@@ -175,6 +177,62 @@
       const uberUrl = (json.match(/https?:\/\/[^"\s]*uber[^"\s]*/i) || [])[0];
       return `${ex.uber ? `<div class="voucher-box"><div><b>${PS.money(ex.uber.value, "USD", 0)} Uber ride credit</b><p>${uberUrl ? "Tap to add it to your Uber account before you travel." : "Your voucher link is included in your confirmation email."}</p></div>${uberUrl ? `<a class="btn btn-white btn-sm" href="${PS.esc(uberUrl)}" target="_blank" rel="noopener">${PS.icon("car", 16)}Claim ride credit</a>` : ""}</div>` : ""}
         ${ex.esim ? `<div class="voucher-box" style="background:var(--blue)"><div><b>eSIM data plan added</b><p>${ex.esim.dataGb != null ? ex.esim.dataGb + " GB" : "Data"}${ex.esim.days ? " for " + ex.esim.days + " days" : ""}. Install instructions (QR code) are sent to your email.</p></div></div>` : ""}`;
+    }
+
+    // ─── Protect your trip: Sitata travel insurance, sold inside the page (Sitata takes the payment) ───
+    // Pre-filled from the booking; the widget script only loads when the traveller opens it.
+    async function insurance(b, p) {
+      let cfg;
+      try { cfg = await PS.api("/api/insurance/config"); } catch { return; }
+      if (!cfg?.enabled) return;
+      const box = document.getElementById("insureBox");
+      const sel = p.sel || {}, s = sel.search || {}, h = sel.hotel || {}, st = sel.stay || {};
+      const start = type === "hotel" ? st.checkin : s.depart, end = type === "hotel" ? st.checkout : (s.return || s.depart);
+      if (!start) return;
+      const place = type === "hotel" ? (h.city || h.name || "your trip") : (s.toCity || s.to || "your trip");
+      box.innerHTML = `<div class="panel insure-panel">
+        <div class="insure-head"><span class="insure-ic">${PS.icon("shield", 22)}</span><div><h3>Protect your trip to ${PS.esc(place)}</h3>
+          <p>Cover for trip cancellation, medical emergencies abroad and lost bags, with 24/7 travel assistance. Get a quote for your dates in a minute.</p></div></div>
+        <button class="btn btn-primary" id="insureOpen">See cover options</button>
+        <div id="insure" class="insure-wdg"></div>
+        <p class="price-sub" style="margin-top:10px">Travel insurance is provided and charged by our partner Sitata, separately from your booking. We may earn a commission.</p></div>`;
+      document.getElementById("insureOpen").onclick = async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Loading quotes…`;
+        PS.track("page", { insurance: 1 });
+        // Destination country: the hotel's, or the arrival airport's for flights
+        let destCc = type === "hotel" ? h.country : s.toCountry;
+        if (!destCc && s.to) { try { destCc = ((await PS.api(`/api/airports?q=${encodeURIComponent(s.to)}`)).data || []).find(a => a.code === s.to)?.countryCode; } catch {} }
+        const regionName = (c) => { try { return new Intl.DisplayNames(["en"], { type: "region" }).of(c); } catch { return c; } };
+        const iso = (d, endOfDay) => d ? `${String(d).slice(0, 10)}T${endOfDay ? "23:59:59" : "00:00:00"}+00:00` : undefined;
+        const trav = p.travellers || [];
+        const holder = p.holder || {};
+        const price = Number(b.price ?? b.pricing?.totalAmount ?? p.price) || 0;
+        const opts = {
+          orgId: cfg.orgId, token: cfg.token, merchantOfRecord: false, noQuoteProcess: "assist",
+          ...(cfg.chatId ? { chat: { chatId: cfg.chatId } } : {}),
+          ...(cfg.contactEmail ? { contactEmail: cfg.contactEmail } : {}),
+          priorityOriginCountries: ["CA", "US", "IN", "AE", "GB"],
+          ...(s.fromCountry ? { departureCountryCode: String(s.fromCountry).toUpperCase() } : {}),
+          user: { name: trav[0]?.name || [holder.firstName, holder.lastName].filter(Boolean).join(" "), email: holder.email || undefined,
+            ...(trav[0]?.birthday ? { birthday: trav[0].birthday } : {}), ...(s.fromCountry ? { home_country: String(s.fromCountry).toUpperCase() } : {}) },
+          otherTravellers: trav.slice(1).map(t => ({ name: t.name, birthday: t.birthday, relation: 0 })),
+          trip: { currency_code: b.currency || p.currency || "USD", start: iso(start), finish: iso(end, true),
+            ...(price ? { total_cost: Math.round(price * 100) } : {}), // Sitata takes amounts in cents
+            destinations: destCc ? [{ country_code: destCc, friendly_name: regionName(destCc), entry_date: iso(start), exit_date: iso(end, true), type: 0 }] : [] },
+        };
+        const startWidget = () => {
+          try {
+            const w = new window.Sitata.insure(document.getElementById("insure"), opts);
+            w.run(); btn.remove();
+          } catch (err) { btn.disabled = false; btn.textContent = "See cover options"; PS.toast("Insurance quotes couldn't load. Please try again."); }
+        };
+        if (window.Sitata?.insure) return startWidget();
+        document.addEventListener("sitata:insureReady", startWidget, { once: true });
+        const sc = document.createElement("script"); sc.async = true; sc.src = "https://www.sitata.com/widgets/sitata-insure.js";
+        sc.onerror = () => { btn.disabled = false; btn.textContent = "See cover options"; PS.toast("Insurance quotes couldn't load. Please try again."); };
+        document.body.appendChild(sc);
+      };
     }
 
     // Complete your trip: insurance, airport transfer, car hire (partner links configured on the server)

@@ -600,6 +600,8 @@
         remarks: type === "hotel" ? val("remarks") || undefined : undefined,
         work: document.querySelector('input[name="work"]:checked')?.value === "yes",
         price: pb.price, currency: pb.currency, createdAt: Date.now(),
+        // For the travel insurance offer after booking (pre-fills names and birthdays)
+        travellers: type === "flight" ? (pb._passengers || []).map(x => ({ name: [x.firstName, x.middleName, x.lastName].filter(Boolean).join(" "), birthday: x.birthday, nationality: x.nationality })) : undefined,
       };
       PS.local.set("ps_pending_" + pb.prebookId, pending);
       rememberTravelers();
