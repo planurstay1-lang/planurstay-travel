@@ -33,6 +33,10 @@
           <div class="res-title"><h2 id="resTitle">Cars</h2><p id="resMeta"></p></div>
           <div class="res-actions"><button class="btn btn-sm btn-ghost show-mobile" id="openFilters"></button></div>
         </div>
+        <div class="sort-tabs car-sort" id="carSort">
+          <button class="sort-tab active" data-sort="rec"><b>Recommended</b><small id="sRec">—</small></button>
+          <button class="sort-tab" data-sort="price"><b>Lowest price</b><small id="sPrice">—</small></button>
+        </div>
         <div id="carResults"></div>
         <div style="text-align:center;margin-top:8px"><button class="btn btn-ghost hidden" id="moreBtn">Show more cars</button></div>
       </section>
@@ -119,8 +123,8 @@
     const typeOf = (c) => (c.body === "SUV" || c.body === "Crossover" || c.body === "Off-road") ? "SUV" : (c.body === "Van" || c.body === "Minivan" || c.body === "Commercial van") ? "Van / minivan" : (c.category || "Other").replace(" elite", "");
     all.forEach(c => { c.type = typeOf(c); });
     const pMax = Math.ceil(Math.max(...all.map(c => c.price)));
-    const blank = () => ({ types: new Set(), vendors: new Set(), auto: false, seats: 0, unl: false, max: pMax, sort: "price", shown: 20 });
-    let st = blank();
+    const blank = () => ({ types: new Set(), vendors: new Set(), auto: false, seats: 0, unl: false, max: pMax, sort: st?.sort || "rec", shown: 20 });
+    let st = null; st = blank();
     const pass = (c, skip) => (skip === "types" || !st.types.size || st.types.has(c.type)) && (skip === "vendors" || !st.vendors.size || st.vendors.has(c.vendor)) &&
       (!st.auto || c.automatic) && (!st.seats || (c.seats || 0) >= st.seats) && (!st.unl || c.unlimitedMileage) && (st.max >= pMax || c.price <= st.max);
     const cnt = (skip, test) => all.filter(c => pass(c, skip) && test(c)).length;
@@ -158,11 +162,11 @@
 
     // "2026-10-04 14:45" (local time at pick-up) → "Sun, Oct 4, 14:45"
     const fmtDeadline = (d) => d ? `${PS.fmtDay(d.slice(0, 10))}, ${d.slice(11, 16)}` : "";
-    const cancelTag = (c) => c.freeCancelUntil ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation until ${PS.esc(fmtDeadline(c.freeCancelUntil))}</span>` : `<span class="tag">Non-refundable</span>`;
+    const cancelTag = (c) => c.payAtPickup ? `<span class="tag green">${PS.icon("check", 13, 3)}Pay at pick-up</span><span class="tag green">${PS.icon("check", 13, 3)}Free cancellation</span>` : c.freeCancelUntil ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation until ${PS.esc(fmtDeadline(c.freeCancelUntil))}</span>` : `<span class="tag">Non-refundable</span>`;
     function carCard(c) {
       const feats = [c.seats ? `${PS.icon("user", 14)}${c.seats} seats` : "", c.bags ? `${PS.icon("bag", 14)}${c.bags} bags` : "", c.automatic != null ? `${PS.icon("car", 14)}${c.automatic ? "Automatic" : "Manual"}` : "", c.fuel ? c.fuel : "", c.ac ? `${PS.icon("check", 14, 2.6)}A/C` : "", c.doors ? `${c.doors} doors` : ""].filter(Boolean);
-      return `<article class="car-card">
-        <div class="car-main">
+      return `<article class="car-card${c.commission ? " rec" : ""}">
+        <div class="car-main">${c.commission ? `<span class="car-badge">${PS.icon("star", 12)}Recommended</span>` : ""}
           <div class="car-vendor">${c.logo ? `<img src="${PS.esc(c.logo)}" alt="" onerror="this.remove()">` : ""}<b>${PS.esc(c.vendor)}</b></div>
           <h3>${PS.esc(c.type)}${c.body && !["SUV", "Van", "Minivan"].includes(c.body) ? ` <small>${PS.esc(c.body)}</small>` : ""}</h3>
           <div class="car-model">${PS.esc(c.model)}</div>
@@ -170,12 +174,19 @@
           <div class="tags">${c.unlimitedMileage ? `<span class="tag green">${PS.icon("check", 13, 3)}Unlimited mileage</span>` : `<span class="tag">Limited mileage</span>`}${cancelTag(c)}</div>
         </div>
         <div class="car-price"><span class="price-big">${PS.money(c.perDay, c.currency, 0)}</span><span class="price-sub">per day</span>
-          <span class="price-total"><b>${PS.money(c.price, c.currency, 2)}</b> total · ${PS.plural(c.days, "day")}</span>
+          <span class="price-total"><b>${PS.money(c.price, c.currency, 2)}</b> ${c.payAtPickup ? "approx. total" : "total"} · ${PS.plural(c.days, "day")}</span>
+          ${c.payAtPickup ? `<span class="price-sub" style="color:var(--green,#0a7d46);font-weight:700">Pay at pick-up</span>` : ""}
           <button class="btn btn-primary btn-sm" data-pick="${c.quoteId}">${cfg.bookingEnabled ? "Select" : "View"}</button></div>
       </article>`;
     }
+    const recScore = (c) => c.price * (c.commission ? 0.8 : 1) * (c.unlimitedMileage ? 1 : 1.08);
+    const sorter = { rec: (a, b) => recScore(a) - recScore(b), price: (a, b) => a.price - b.price };
+    document.querySelectorAll("#carSort .sort-tab").forEach(t => t.onclick = () => { document.querySelectorAll("#carSort .sort-tab").forEach(x => x.classList.toggle("active", x === t)); st.sort = t.dataset.sort; st.shown = 20; renderList(); });
     function renderList() {
-      const list = all.filter(c => pass(c)).sort((a, b) => a.price - b.price);
+      const list = all.filter(c => pass(c)).sort(sorter[st.sort] || sorter.rec);
+      const top = (k) => [...list].sort(sorter[k])[0];
+      $("sRec").textContent = top("rec") ? `${PS.money(top("rec").price, cur, 0)} total` : "—";
+      $("sPrice").textContent = top("price") ? `${PS.money(top("price").price, cur, 0)} total` : "—";
       $("resMeta").textContent = `${list.length} of ${all.length} cars · ${when}`;
       if (!list.length) { $("carResults").innerHTML = empty("filter", "No cars match your filters", "Try removing a filter.", `<button class="btn btn-primary" id="emptyClear">Clear filters</button>`); $("emptyClear").onclick = () => { st = blank(); apply(); }; $("moreBtn").classList.add("hidden"); return; }
       $("carResults").innerHTML = list.slice(0, st.shown).map(carCard).join("");
@@ -201,7 +212,9 @@
                 <div><small>Pick-up</small><b>${PS.fmtDay(q.pickupDate)} · ${PS.esc(q.pickupTime || "10:00")}</b><span>${PS.esc(q.pickupCity || c.pickup)} (${PS.esc(c.pickup)})</span></div>
                 <div><small>Drop-off</small><b>${PS.fmtDay(q.returnDate)} · ${PS.esc(q.returnTime || "10:00")}</b><span>${PS.esc(q.dropoffCity || q.pickupCity || c.dropoff)} (${PS.esc(c.dropoff)})</span></div>
               </div>
-              ${c.freeCancelUntil
+              ${c.payAtPickup
+                ? `<div class="co-cancel ok"><b>${PS.icon("check", 16, 2.6)}Nothing to pay now · free cancellation</b><p>You pay the rental company at pick-up. Cancel free any time before pick-up. If you don't cancel and don't pick up the car, the rental company's no-show rules apply.</p></div>`
+                : c.freeCancelUntil
                 ? `<div class="co-cancel ok"><b>${PS.icon("check", 16, 2.6)}Free cancellation until ${PS.esc(fmtDeadline(c.freeCancelUntil))}</b><p>Cancel up to ${c.freeCancelHours} hours before pick-up (local time) for a full refund. After that, or if you don't pick up the car, there's no refund.</p></div>`
                 : `<div class="co-cancel no"><b>${PS.icon("info", 16)}Non-refundable</b><p>Pick-up is less than ${c.freeCancelHours} hours away, so this booking can't be cancelled for a refund.</p></div>`}
               <details class="car-rules"><summary>Important rules from the rental company</summary><ul>
@@ -230,7 +243,7 @@
               <p class="price-sub" style="margin:0 0 12px">We only place a hold on your card now. You're charged once the rental company confirms your car; if it can't, the hold is released.</p>
               <div id="payEl"></div>
               <button class="btn btn-primary btn-lg btn-block" id="payBtn" style="margin-top:14px">Book now · ${PS.money(c.price, c.currency, 2)}</button></section>
-            <button class="btn btn-primary btn-lg btn-block co-go" id="carContinue">${cfg.bookingEnabled ? `Continue to payment ${PS.icon("right", 18)}` : "Online booking opens soon"}</button>
+            <button class="btn btn-primary btn-lg btn-block co-go" id="carContinue">${!cfg.bookingEnabled ? "Online booking opens soon" : c.payAtPickup ? `Reserve now · pay at pick-up ${PS.icon("right", 18)}` : `Continue to payment ${PS.icon("right", 18)}`}</button>
             <p class="agree-note">By booking you agree to our <a href="/terms" target="_blank">Terms</a>, <a href="/cancellation-policy" target="_blank">Cancellation policy</a> and the rental company's rules above.</p>
           </div>
           <aside class="co-sum">
@@ -244,7 +257,9 @@
                 <div class="co-line muted"><span>Taxes and mandatory fees</span><span>Included</span></div>`}
                 <div class="co-line muted"><span>Extras (fuel, child seats, GPS)</span><span>At the desk</span></div>
               </div>
-              <div class="co-total"><div><b>Total</b><b>${PS.money(c.price, c.currency, 2)}</b></div><small>Includes all mandatory taxes and fees · ${PS.money(c.perDay, c.currency, 2)} per day</small></div>
+              ${c.payAtPickup
+                ? `<div class="co-total"><div><b>Due now</b><b>${PS.money(0, c.currency, 2)}</b></div><small>Pay at pick-up: approx. ${PS.money(c.price, c.currency, 2)}, including all mandatory taxes and fees</small></div>`
+                : `<div class="co-total"><div><b>Total</b><b>${PS.money(c.price, c.currency, 2)}</b></div><small>Includes all mandatory taxes and fees · ${PS.money(c.perDay, c.currency, 2)} per day</small></div>`}
             </div>
           </aside>
         </div>`;
@@ -272,12 +287,30 @@
         return ok;
       }
       let stripe = null, elements = null, ref = null;
+      const driverBody = () => ({ firstName: val("dFirst"), lastName: val("dLast"), email: val("dEmail"), phone: val("dPhone"), dob: val("dDob"), gender: val("dGender"), note: val("dNote") });
+      if (c.payAtPickup) {
+        $("carContinue").onclick = async () => {
+          $("carMsg").innerHTML = "";
+          if (!validate()) return;
+          const btn = $("carContinue"); btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Reserving with ${PS.esc(c.vendor)}… (up to 30 seconds)`;
+          try {
+            const r = await PS.api("/api/cars/reserve", { method: "POST", body: { quoteId: c.quoteId, driver: driverBody() } });
+            clearInterval(timerId);
+            if (r.data.status === "failed") throw new Error(r.data.error || "The rental company couldn't confirm this car. Please choose another.");
+            location.href = PS.url("/cars", { ref: r.data.ref });
+          } catch (e) {
+            btn.disabled = false; btn.innerHTML = `Reserve now · pay at pick-up ${PS.icon("right", 18)}`;
+            $("carMsg").innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>${PS.esc(e.message)}</div></div>`;
+          }
+        };
+        return;
+      }
       $("carContinue").onclick = async () => {
         $("carMsg").innerHTML = "";
         if (!validate()) return;
         const btn = $("carContinue"); btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Preparing secure payment…`;
         try {
-          const r = await PS.api("/api/cars/checkout", { method: "POST", body: { quoteId: c.quoteId, driver: { firstName: val("dFirst"), lastName: val("dLast"), email: val("dEmail"), phone: val("dPhone"), dob: val("dDob"), gender: val("dGender"), note: val("dNote") } } });
+          const r = await PS.api("/api/cars/checkout", { method: "POST", body: { quoteId: c.quoteId, driver: driverBody() } });
           ref = r.data.ref;
           await loadStripe();
           stripe = window.Stripe(cfg.publishableKey);
@@ -313,12 +346,20 @@
       const box = $("carCheckout"); box.hidden = false;
       box.innerHTML = `<div class="confirm-hero"><span class="spinner" style="width:40px;height:40px;border-width:4px"></span><h1>Booking your car…</h1><p>We're confirming with the rental company. Please keep this page open (up to 30 seconds).</p></div>`;
       let s;
+      if (cfg.payment !== "prepay") {
+        for (let i = 0; i < 12; i++) { // reservation may still be confirming with the rental company
+          try { s = (await PS.api(`/api/cars/booking/${encodeURIComponent(ref)}`)).data; } catch { s = null; }
+          if (!s || s.status !== "booking") break;
+          await new Promise(r => setTimeout(r, 3000));
+        }
+        if (!s) { box.innerHTML = `<div class="empty"><div class="ei">${PS.icon("alert", 28)}</div><h3>Booking not found</h3><p>Reference: <b>${PS.esc(ref)}</b></p><a class="btn btn-primary" href="/cars">Search cars</a></div>`; return; }
+      } else
       try { s = (await PS.api("/api/cars/book", { method: "POST", body: { ref } })).data; }
       catch (e) {
         try { s = (await PS.api(`/api/cars/booking/${encodeURIComponent(ref)}`)).data; } catch {}
         if (!s || s.status === "awaiting_payment") { box.innerHTML = `<div class="empty"><div class="ei">${PS.icon("alert", 28)}</div><h3>We couldn't finish this booking</h3><p>${PS.esc(e.message)}</p><p>Reference: <b>${PS.esc(ref)}</b></p><a class="btn btn-primary" href="/cars">Search cars again</a></div>`; return; }
       }
-      if (s.status === "failed") { box.innerHTML = `<div class="empty"><div class="ei">${PS.icon("alert", 28)}</div><h3>This car couldn't be confirmed</h3><p>${PS.esc(s.error || "")} The hold on your card has been released.</p><a class="btn btn-primary" href="${PS.url("/cars", { pickup: s.ctx.pickupCode, pickupDate: s.ctx.pickupDate, pickupTime: s.ctx.pickupTime, returnDate: s.ctx.returnDate, returnTime: s.ctx.returnTime })}">Choose another car</a></div>`; return; }
+      if (s.status === "failed") { box.innerHTML = `<div class="empty"><div class="ei">${PS.icon("alert", 28)}</div><h3>This car couldn't be confirmed</h3><p>${PS.esc(s.error || "")}${s.payAtPickup ? "" : " The hold on your card has been released."}</p><a class="btn btn-primary" href="${PS.url("/cars", { pickup: s.ctx.pickupCode, pickupDate: s.ctx.pickupDate, pickupTime: s.ctx.pickupTime, returnDate: s.ctx.returnDate, returnTime: s.ctx.returnTime })}">Choose another car</a></div>`; return; }
       const ok = s.status === "confirmed";
       box.innerHTML = `<div class="confirm-hero ${ok ? "" : "pending"}"><div class="ci">${PS.icon(ok ? "check" : "clock", 40, 2.6)}</div><h1>${ok ? "Your car is booked!" : "Booking received"}</h1>
           <p>${ok ? `We've sent the details to <b>${PS.esc(s.driver.email)}</b>.` : "The rental company is still confirming. We'll email you as soon as it's done."}</p></div>
@@ -328,9 +369,11 @@
               <div><span>Pick-up</span><b>${PS.esc(s.ctx.pickupCode)} · ${PS.fmtDay(s.ctx.pickupDate)} ${PS.esc(s.ctx.pickupTime)}</b></div>
               <div><span>Drop-off</span><b>${PS.esc(s.ctx.returnCode)} · ${PS.fmtDay(s.ctx.returnDate)} ${PS.esc(s.ctx.returnTime)}</b></div>
               <div><span>Driver</span><b>${PS.esc(s.driver.firstName)} ${PS.esc(s.driver.lastName)}</b></div>
-              <div><span>Cancellation</span><b>${s.freeCancelUntil ? `Free until ${PS.esc(fmtDeadline(s.freeCancelUntil))}` : "Non-refundable"}</b></div>
-            </div><div class="divider"></div><div class="sum-total"><span>Total paid</span><b>${PS.money(s.amount, s.currency, 2)}</b></div></div>
-          <div class="alert info" style="margin-top:16px">${PS.icon("info", 18)}<div>At the desk, bring the driver's licence, a credit card in the driver's name for the deposit, and this reference. ${s.freeCancelUntil ? `To cancel for a full refund, contact us with your reference before ${PS.esc(fmtDeadline(s.freeCancelUntil))} (local time). After that there's no refund.` : "This booking is non-refundable."}</div></div>
+              <div><span>Cancellation</span><b>${s.payAtPickup ? "Free before pick-up" : s.freeCancelUntil ? `Free until ${PS.esc(fmtDeadline(s.freeCancelUntil))}` : "Non-refundable"}</b></div>
+            </div><div class="divider"></div>${s.payAtPickup
+              ? `<div class="sum-total"><span>Pay at pick-up (approx.)</span><b>${PS.money(s.amount, s.currency, 2)}</b></div><p class="price-sub" style="margin-top:6px">Nothing was charged by PlanurStay. Includes mandatory taxes and fees; extras are paid at the desk.</p>`
+              : `<div class="sum-total"><span>Total paid</span><b>${PS.money(s.amount, s.currency, 2)}</b></div>`}</div>
+          <div class="alert info" style="margin-top:16px">${PS.icon("info", 18)}<div>At the desk, bring the driver's licence, a credit card in the driver's name for the deposit, and this reference. ${s.payAtPickup ? "To cancel, reply to your confirmation email with your reference before pick-up." : s.freeCancelUntil ? `To cancel for a full refund, contact us with your reference before ${PS.esc(fmtDeadline(s.freeCancelUntil))} (local time). After that there's no refund.` : "This booking is non-refundable."}</div></div>
           <div style="display:flex;gap:10px;justify-content:center;margin-top:18px"><a class="btn btn-primary" href="/">Back to PlanurStay</a><button class="btn btn-ghost" onclick="window.print()">Print</button></div></div>`;
       PS.track("booked", { type: "car", value: s.amount, currency: s.currency, id: s.ref });
     }

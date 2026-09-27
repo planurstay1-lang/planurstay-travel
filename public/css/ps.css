@@ -2167,3 +2167,6 @@ button.fs-seat:not(:disabled):hover { outline: 2px solid var(--blue); }
 .car-spec { margin: -4px 0 4px; font-size: 13.5px; color: var(--text-2); }
 .cars-page .field.full { grid-column: 1 / -1; }
 .cars-page textarea { width: 100%; resize: vertical; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.car-sort { margin-bottom: 14px; }
+.car-card.rec { border-color: #b9c7ea; }
+.car-badge { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px; padding: 3px 9px; border-radius: 999px; background: var(--blue-50); color: var(--blue); font-size: 12px; font-weight: 700; }

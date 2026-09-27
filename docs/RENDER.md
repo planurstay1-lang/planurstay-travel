@@ -43,10 +43,12 @@ Never commit the values. Set them in Render → Environment.
 | `SITATA_CHAT_ID`, `SITATA_CONTACT_EMAIL` | optional | Chat ID and support email Sitata gives you for the widget. |
 | `SITATA_API_KEY` | optional | **Private** Sitata API key (server only, never shown in the browser). With `SITATA_ORG_ID` set, checkout shows fixed-price "Protect your trip" plans from Sitata quotes; a customer who picks one pays Sitata on the confirmation page. Unset = no checkout box. |
 | `SITATA_API_BASE` | optional | Sitata API address. Default `https://www.sitata.com`; set to their sandbox address if they give you one. |
-| `TRAVELLEZ_EMAIL`, `TRAVELLEZ_PASSWORD` | optional | PlanurStay's own Travellez account (Sabre car rentals). With these set, the **Cars** page and menu link appear and search works; the AI trip planner adds rental cars to road trips, and booking confirmations offer a car at the destination. |
-| `CARS_BOOKING_ENABLED` | optional | Set to `true` to allow real car bookings (needs the Stripe keys below). Leave unset until you've done one test booking yourself: there is no Travellez test environment. |
-| `CAR_MARKUP_PCT` | optional | Markup on the Travellez car price. Default `3` (about break-even after Stripe fees; cars are priced to match other sites). |
-| `CAR_FREE_CANCEL_HOURS` | optional | Free cancellation for cars until this many hours before pick-up; no refund after. Default `48`. |
+| `TRAVELLEZ_EMAIL`, `TRAVELLEZ_PASSWORD` | optional | PlanurStay's own Travellez account (Sabre car rentals). With these set, the **Cars** page and menu link appear and search works. |
+| `CARS_BOOKING_ENABLED` | optional | Set to `true` to allow real car reservations. Leave unset until you've done one test booking yourself and confirmed with Travellez what the company card is used for: there is no Travellez test environment. |
+| `CARS_PAYMENT` | optional | `counter` (default): **reserve now, pay at pick-up**. Sabre car rates are pay-at-counter, so PlanurStay charges nothing and adds no markup. `prepay`: PlanurStay charges the customer through Stripe (price + `CAR_MARKUP_PCT`); only use this for rates Travellez actually prepays. |
+| `CAR_COMMISSION_VENDORS` | optional | Sabre vendor codes that pay you commission, comma-separated. Default `EY` (Economy Rent a Car). These cars get a "Recommended" badge and rank higher in the Recommended sort. |
+| `CAR_MARKUP_PCT` | optional | Pay-now mode only: markup on the Travellez car price. Default `3`. |
+| `CAR_FREE_CANCEL_HOURS` | optional | Pay-now mode only: free cancellation until this many hours before pick-up; no refund after. Default `48`. |
 | `TRAVELLEZ_CARD_ID` | optional | Which saved Travellez card pays for cars. Default: the account's default (or first) card. |
 | `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` | for car bookings | Customer card payments for cars. The card is only held first and charged once the car is confirmed. |
 | `GA4_ID` | optional | Google Analytics 4 measurement ID (`G-XXXXXXX`). Tracks search → view → checkout → payment → purchase. |

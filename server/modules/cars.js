@@ -27,7 +27,13 @@ function createCars({ db, sendEmail }) {
   const env = (k) => String(process.env[k] || "").trim();
   const base = () => (env("TRAVELLEZ_API_BASE_URL") || "https://api.travellez.com").replace(/\/$/, "");
   const searchOn = () => !!(env("TRAVELLEZ_EMAIL") && env("TRAVELLEZ_PASSWORD"));
-  const bookingOn = () => searchOn() && env("CARS_BOOKING_ENABLED") === "true" && !!env("STRIPE_SECRET_KEY") && !!env("STRIPE_PUBLISHABLE_KEY");
+  // How cars are paid. "counter" (default): Sabre pay-at-pick-up rates; we reserve and the customer pays the rental
+  // company at the desk, so there's no markup and no card charge on PlanurStay. "prepay": we charge the customer
+  // (price + CAR_MARKUP_PCT) through Stripe; only for rates Travellez actually prepays.
+  const payMode = () => (env("CARS_PAYMENT") === "prepay" ? "prepay" : "counter");
+  const bookingOn = () => searchOn() && env("CARS_BOOKING_ENABLED") === "true" && (payMode() === "counter" || (!!env("STRIPE_SECRET_KEY") && !!env("STRIPE_PUBLISHABLE_KEY")));
+  // Vendors that pay us commission (Sabre vendor codes). Economy Rent a Car (EY) is the confirmed one.
+  const commissionVendors = () => new Set((env("CAR_COMMISSION_VENDORS") || "EY").split(",").map(v => v.trim().toUpperCase()).filter(Boolean));
   const markup = () => { const m = parseFloat(env("CAR_MARKUP_PCT")); return Number.isFinite(m) && m >= 0 && m <= 50 ? m : 3; };
   const cancelHours = () => { const h = parseInt(env("CAR_FREE_CANCEL_HOURS")); return Number.isFinite(h) && h >= 0 && h <= 240 ? h : 48; };
   // Free-cancellation deadline in the pick-up location's local time ("YYYY-MM-DD HH:MM"), or null if pick-up is too soon.
@@ -82,7 +88,7 @@ function createCars({ db, sendEmail }) {
   const QUOTE_TTL = 29 * 60 * 1000; // Travellez/Sabre hold a car rate for about 30 minutes
   const sweep = () => { const now = Date.now(); for (const [k, q] of quotes) if (now - q.at > QUOTE_TTL) quotes.delete(k); };
   const ZERO_DEC = new Set(["JPY", "KRW", "VND", "CLP", "ISK", "UGX", "XOF", "XAF", "PYG", "RWF"]);
-  const sell = (net) => Math.ceil(net * (1 + markup() / 100) * 100) / 100;
+  const sell = (net) => (payMode() === "counter" ? net : Math.ceil(net * (1 + markup() / 100) * 100) / 100);
 
   // ACRISS car code (e.g. "CDAR") → words people understand
   const CAT = { M: "Mini", N: "Mini elite", E: "Economy", H: "Economy elite", C: "Compact", D: "Compact elite", I: "Intermediate", J: "Intermediate elite", S: "Standard", R: "Standard elite", F: "Full-size", G: "Full-size elite", P: "Premium", U: "Premium elite", L: "Luxury", W: "Luxury elite", O: "Oversize", X: "Special" };
@@ -117,7 +123,9 @@ function createCars({ db, sendEmail }) {
       unlimitedMileage: !mileage || /^unl/i.test(String(mileage)), pickup: raw.PickUpLocation?.LocationCode || ctx.pickupCode, dropoff: raw.ReturnLocation?.LocationCode || ctx.returnCode,
       price, perDay: Math.round(price / days * 100) / 100, currency: currency || "USD", days,
       expiresAt: new Date(Date.now() + QUOTE_TTL).toISOString(),
-      freeCancelUntil: cancelDeadline(ctx), freeCancelHours: cancelHours(),
+      payAtPickup: payMode() === "counter",
+      commission: commissionVendors().has(String(vendor.Code || "").toUpperCase()),
+      freeCancelUntil: payMode() === "counter" ? null : cancelDeadline(ctx), freeCancelHours: cancelHours(),
       // Order summary like Travellez: our markup sits in the base fare; taxes and charges are shown as they are
       breakdown: base != null && base < net ? { base: Math.round((price - (net - base)) * 100) / 100, chargesTax: Math.round((net - base) * 100) / 100 } : null,
     };
@@ -144,7 +152,7 @@ function createCars({ db, sendEmail }) {
       for (const raw of av.data || []) { const c = toCar(raw, ctx); if (c) cars.push(c); }
       if (page >= (av.pagination?.total_pages || 1)) break;
     }
-    return { cars: cars.sort((a, b) => a.price - b.price), ctx, markupPct: markup() };
+    return { cars: cars.sort((a, b) => a.price - b.price), ctx, payment: payMode() };
   }
 
   // ─── Booking ───
@@ -171,7 +179,7 @@ function createCars({ db, sendEmail }) {
   }
 
   async function checkout(b) {
-    if (!bookingOn()) throw Object.assign(new Error("Car booking isn't open yet."), { status: 403 });
+    if (!bookingOn() || payMode() !== "prepay") throw Object.assign(new Error("Car booking isn't open yet."), { status: 403 });
     const q = quotes.get(String(b.quoteId || ""));
     if (!q || Date.now() - q.at > QUOTE_TTL) throw Object.assign(new Error("This price has expired. Please search again."), { status: 410 });
     const d = cleanDriver(b.driver);
@@ -199,6 +207,57 @@ function createCars({ db, sendEmail }) {
     return card.id;
   }
 
+  // Book the car on Travellez and wait for the supplier's answer. Returns { status, bookingId, supplierRef, error }.
+  async function placeBooking(ref, q, d) {
+    let res;
+    try {
+      const cardId = await companyCard();
+      res = await tz("/vehicle/booking", { method: "POST", timeoutMs: 120000, body: {
+        first_name: d.firstName, last_name: d.lastName, email: d.email, phone_number: d.phone, date_of_birth: d.dob, gender: d.gender,
+        phone_user_type: "B", additional_note: `PlanurStay ${ref}${d.note ? ` · ${d.note}` : ""}`, rateId: q.rateKey, payment_token: cardId, requested_by_comment: "",
+        in_policy: true, is_personal: true, is_redeemed: false,
+        pick_up_date: q.ctx.pickupDate, pick_up_time: q.ctx.pickupTime, return_date: q.ctx.returnDate, return_time: q.ctx.returnTime,
+        rate_code: q.rateCode, image: "",
+      } });
+    } catch (e) { res = { ok: false, status: 0, text: e.message }; }
+    const bookingId = res.ok ? res.json?.booking_id : null;
+    if (!bookingId) {
+      console.warn("Travellez car booking failed:", ref, res.status, (res.text || "").slice(0, 300));
+      return { status: "failed", error: String(res.json?.message || res.json?.detail || res.text || "Booking failed").slice(0, 500) };
+    }
+    setRow(ref, { travellez_booking_id: String(bookingId), travellez_car_id: res.json?.car_id ? String(res.json.car_id) : null });
+    // Travellez processes bookings asynchronously: wait for the supplier to confirm
+    let status = "pending", supplierRef = null;
+    for (let i = 0; i < 6; i++) {
+      await new Promise(r => setTimeout(r, i === 0 ? 4000 : 3000));
+      const v = await tz(`/booking/cab/${encodeURIComponent(bookingId)}`).catch(() => null);
+      status = String(v?.json?.booking_status || status).toLowerCase();
+      supplierRef = v?.json?.booking_reference || supplierRef;
+      if (["confirmed", "failed", "cancelled", "canceled", "rejected"].includes(status)) break;
+    }
+    if (["failed", "cancelled", "canceled", "rejected"].includes(status)) return { status: "failed", bookingId, error: `Supplier status: ${status}` };
+    return { status: status === "confirmed" ? "confirmed" : "pending_confirmation", bookingId, supplierRef };
+  }
+
+  // Pay at pick-up: reserve only. Nothing is charged on PlanurStay.
+  async function reserve(b) {
+    if (!bookingOn() || payMode() !== "counter") throw Object.assign(new Error("Car booking isn't open yet."), { status: 403 });
+    const q = quotes.get(String(b.quoteId || ""));
+    if (!q || Date.now() - q.at > QUOTE_TTL) throw Object.assign(new Error("This price has expired. Please search again."), { status: 410 });
+    const d = cleanDriver(b.driver);
+    const err = driverError(d, q.ctx.pickupDate); if (err) throw Object.assign(new Error(err), { status: 400 });
+    if (q.reservedRef) return summary(row(q.reservedRef)); // double-click / retry: same reservation
+    const ref = "CAR-" + crypto.randomBytes(5).toString("hex").toUpperCase();
+    q.reservedRef = ref;
+    db.prepare("INSERT INTO car_bookings (ref, status, payment_intent, amount, currency, net, quote_json, driver_json) VALUES (?, 'booking', NULL, ?, ?, ?, ?, ?)")
+      .run(ref, q.car.price, q.car.currency.toUpperCase(), q.net, JSON.stringify({ rateKey: q.rateKey, rateCode: q.rateCode, ctx: q.ctx, car: q.car }), JSON.stringify(d));
+    const out = await placeBooking(ref, q, d);
+    setRow(ref, { status: out.status, supplier_ref: out.supplierRef ? String(out.supplierRef) : null, error: out.error || null });
+    if (out.status === "failed") q.reservedRef = null; // let them try again or pick another car
+    else notify(ref).catch(() => {});
+    return summary(row(ref));
+  }
+
   const locks = new Set();
   async function book(refIn) {
     const ref = String(refIn || "");
@@ -213,40 +272,14 @@ function createCars({ db, sendEmail }) {
       if (pi.status !== "requires_capture") throw Object.assign(new Error("Your card hasn't been authorized yet"), { status: 402 });
       const q = JSON.parse(r0.quote_json), d = JSON.parse(r0.driver_json);
       setRow(ref, { status: "booking" });
-      let res;
-      try {
-        const cardId = await companyCard();
-        res = await tz("/vehicle/booking", { method: "POST", timeoutMs: 120000, body: {
-          first_name: d.firstName, last_name: d.lastName, email: d.email, phone_number: d.phone, date_of_birth: d.dob, gender: d.gender,
-          phone_user_type: "B", additional_note: `PlanurStay ${ref}${d.note ? ` · ${d.note}` : ""}`, rateId: q.rateKey, payment_token: cardId, requested_by_comment: "",
-          in_policy: true, is_personal: true, is_redeemed: false,
-          pick_up_date: q.ctx.pickupDate, pick_up_time: q.ctx.pickupTime, return_date: q.ctx.returnDate, return_time: q.ctx.returnTime,
-          rate_code: q.rateCode, image: "",
-        } });
-      } catch (e) { res = { ok: false, status: 0, text: e.message }; }
-      const bookingId = res.ok ? res.json?.booking_id : null;
-      if (!bookingId) {
-        // Nothing was booked: release the customer's hold
+      const out = await placeBooking(ref, q, d);
+      if (out.status === "failed") {
+        // Nothing was booked (or the supplier rejected it): release the customer's hold
         await s.paymentIntents.cancel(pi.id).catch(e => console.warn("Car PI cancel:", e.message));
-        setRow(ref, { status: "failed", error: String(res.json?.message || res.json?.detail || res.text || "Booking failed").slice(0, 500) });
-        console.warn("Travellez car booking failed:", ref, res.status, (res.text || "").slice(0, 300));
+        setRow(ref, { status: "failed", error: out.error });
         return summary(row(ref));
       }
-      setRow(ref, { travellez_booking_id: String(bookingId), travellez_car_id: res.json?.car_id ? String(res.json.car_id) : null });
-      // Wait for the supplier to confirm (Travellez processes bookings asynchronously)
-      let status = "pending", supplierRef = null;
-      for (let i = 0; i < 6; i++) {
-        await new Promise(r => setTimeout(r, i === 0 ? 4000 : 3000));
-        const v = await tz(`/booking/cab/${encodeURIComponent(bookingId)}`).catch(() => null);
-        status = String(v?.json?.booking_status || status).toLowerCase();
-        supplierRef = v?.json?.booking_reference || supplierRef;
-        if (["confirmed", "failed", "cancelled", "canceled", "rejected"].includes(status)) break;
-      }
-      if (["failed", "cancelled", "canceled", "rejected"].includes(status)) {
-        await s.paymentIntents.cancel(pi.id).catch(e => console.warn("Car PI cancel:", e.message));
-        setRow(ref, { status: "failed", error: `Supplier status: ${status}` });
-        return summary(row(ref));
-      }
+      const status = out.status === "confirmed" ? "confirmed" : "pending", supplierRef = out.supplierRef;
       // A booking exists (confirmed, or still being confirmed by the supplier): take the payment
       await s.paymentIntents.capture(pi.id);
       const final = status === "confirmed" ? "confirmed" : "pending_confirmation";
@@ -262,8 +295,9 @@ function createCars({ db, sendEmail }) {
   function summary(r) {
     if (!r) return null;
     const q = JSON.parse(r.quote_json || "{}"), d = JSON.parse(r.driver_json || "{}");
-    return { ref: r.ref, status: r.status, amount: r.amount, currency: r.currency, supplierRef: r.supplier_ref, car: q.car, ctx: q.ctx, freeCancelUntil: q.car?.freeCancelUntil || null,
-      driver: { firstName: d.firstName, lastName: d.lastName, email: d.email }, error: r.status === "failed" ? "The rental company couldn't confirm this car. You have not been charged." : null };
+    const counter = !r.payment_intent;
+    return { ref: r.ref, status: r.status, amount: r.amount, currency: r.currency, supplierRef: r.supplier_ref, car: q.car, ctx: q.ctx, freeCancelUntil: q.car?.freeCancelUntil || null, payAtPickup: counter,
+      driver: { firstName: d.firstName, lastName: d.lastName, email: d.email }, error: r.status === "failed" ? `The rental company couldn't confirm this car.${counter ? "" : " You have not been charged."}` : null };
   }
 
   async function notify(ref) {
@@ -276,15 +310,22 @@ function createCars({ db, sendEmail }) {
       <p><b>${esc(s.car.vendor)}</b> · ${esc(s.car.model)}${s.car.category ? ` (${esc(s.car.category)})` : ""}</p>
       <p>Pick-up: <b>${esc(s.ctx.pickupCode)}</b>, ${esc(s.ctx.pickupDate)} at ${esc(s.ctx.pickupTime)}<br>Drop-off: <b>${esc(s.ctx.returnCode)}</b>, ${esc(s.ctx.returnDate)} at ${esc(s.ctx.returnTime)}</p>
       <p>Driver: ${esc(s.driver.firstName)} ${esc(s.driver.lastName)}<br>PlanurStay reference: <b>${esc(s.ref)}</b>${s.supplierRef ? `<br>Rental confirmation: <b>${esc(s.supplierRef)}</b>` : ""}</p>
-      <p>Total paid: <b>${money(s.amount, s.currency)}</b></p>
-      <p>${s.freeCancelUntil ? `<b>Free cancellation until ${esc(s.freeCancelUntil)}</b> (local time at pick-up). After that, or if you don't pick up the car, there's no refund.` : "<b>This booking is non-refundable</b> because pick-up is less than 48 hours away."} To cancel, reply to this email with your reference.</p>
+      ${s.payAtPickup
+        ? `<p><b>Nothing to pay now.</b> Pay the rental company at pick-up: approximately <b>${money(s.amount, s.currency)}</b> including mandatory taxes and fees. Extras (fuel, insurance, extra drivers) are charged at the desk.</p>
+      <p>Cancel free any time before pick-up by replying to this email with your reference. If you don't cancel and don't pick up the car, the rental company's no-show rules apply.</p>`
+        : `<p>Total paid: <b>${money(s.amount, s.currency)}</b></p>
+      <p>${s.freeCancelUntil ? `<b>Free cancellation until ${esc(s.freeCancelUntil)}</b> (local time at pick-up). After that, or if you don't pick up the car, there's no refund.` : "<b>This booking is non-refundable</b> because pick-up is less than 48 hours away."} To cancel, reply to this email with your reference.</p>`}
       <p style="color:#4a5572;font-size:13px">Bring the driver's licence, a credit card in the driver's name and this reference to the rental desk. ${s.status === "confirmed" ? "" : "The rental company is still confirming; we'll email you as soon as it's done."}</p></div>`;
     await sendEmail({ to: s.driver.email, subject: `Car rental ${s.status === "confirmed" ? "confirmed" : "received"}: ${s.car.vendor}, ${s.ctx.pickupCode} ${s.ctx.pickupDate}`, html });
-    if (s.status !== "confirmed" && env("SUPPORT_EMAIL")) await sendEmail({ to: env("SUPPORT_EMAIL"), subject: `Car booking needs checking: ${s.ref}`, html: `<p>Travellez booking for ${esc(s.ref)} wasn't confirmed within 20 seconds. Payment was captured. Please check it in Travellez.</p>` });
+    if (s.status !== "confirmed" && env("SUPPORT_EMAIL")) await sendEmail({ to: env("SUPPORT_EMAIL"), subject: `Car booking needs checking: ${s.ref}`, html: `<p>Travellez booking for ${esc(s.ref)} wasn't confirmed within 20 seconds.${s.payAtPickup ? "" : " Payment was captured."} Please check it in Travellez.</p>` });
   }
 
   function register(app) {
-    app.get("/api/cars/config", (req, res) => res.json({ success: true, enabled: searchOn(), bookingEnabled: bookingOn(), publishableKey: bookingOn() ? env("STRIPE_PUBLISHABLE_KEY") : null }));
+    app.get("/api/cars/config", (req, res) => res.json({ success: true, enabled: searchOn(), bookingEnabled: bookingOn(), payment: payMode(), publishableKey: bookingOn() && payMode() === "prepay" ? env("STRIPE_PUBLISHABLE_KEY") : null }));
+    app.post("/api/cars/reserve", async (req, res) => {
+      try { res.json({ success: true, data: await reserve(req.body || {}) }); }
+      catch (e) { if (!e.status) console.warn("Car reserve:", e.message); res.status(e.status || 500).json({ error: e.status ? e.message : "We couldn't reserve this car. Please try again." }); }
+    });
     app.post("/api/cars/search", async (req, res) => {
       if (!searchOn()) return res.status(503).json({ error: "Car rentals aren't available yet." });
       try { res.json({ success: true, data: await search(req.body || {}) }); }
