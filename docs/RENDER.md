@@ -43,7 +43,7 @@ Never commit the values. Set them in Render → Environment.
 | `SITATA_CHAT_ID`, `SITATA_CONTACT_EMAIL` | optional | Chat ID and support email Sitata gives you for the widget. |
 | `SITATA_API_KEY` | optional | **Private** Sitata API key (server only, never shown in the browser). With `SITATA_ORG_ID` set, checkout shows fixed-price "Protect your trip" plans from Sitata quotes; a customer who picks one pays Sitata on the confirmation page. Unset = no checkout box. |
 | `SITATA_API_BASE` | optional | Sitata API address. Default `https://www.sitata.com`; set to their sandbox address if they give you one. |
-| `TRAVELLEZ_EMAIL`, `TRAVELLEZ_PASSWORD` | optional | PlanurStay's own Travellez account (Sabre car rentals). With these set, the **Cars** page and menu link appear and search works. |
+| `TRAVELLEZ_EMAIL`, `TRAVELLEZ_PASSWORD` | optional | PlanurStay's own Travellez account (Sabre car rentals). With these set, the **Cars** page and menu link appear and search works; the AI trip planner adds rental cars to road trips, and booking confirmations offer a car at the destination. |
 | `CARS_BOOKING_ENABLED` | optional | Set to `true` to allow real car bookings (needs the Stripe keys below). Leave unset until you've done one test booking yourself: there is no Travellez test environment. |
 | `CAR_MARKUP_PCT` | optional | Markup on the Travellez car price. Default `8`. |
 | `TRAVELLEZ_CARD_ID` | optional | Which saved Travellez card pays for cars. Default: the account's default (or first) card. |

@@ -1,10 +1,10 @@
 /**
  * AI Trip Builder: "Toronto to Delhi and Amritsar, Dec 10–24, 2 adults 2 kids" → a day-by-day plan with
- * live flights and hotels for every stop, one total, and a shareable link.
+ * live flights and hotels for every stop (plus a rental car where driving makes sense), one total, and a shareable link.
  *
  *   POST /api/trips/plan            { prompt, currency }  → { id, editKey } or { question } when details are missing
  *   GET  /api/trips/:id             → trip (spec + live options + selections); canEdit with x-trip-key or as the owner
- *   POST /api/trips/:id/select      { kind: "hotel"|"flight", index, option }   (editor only)
+ *   POST /api/trips/:id/select      { kind: "hotel"|"flight"|"car", index, option }   (editor only)
  *   POST /api/trips/:id/refresh     → re-check prices (keeps the chosen hotels when still available)
  *   GET  /plan, /trip/:id           → pages
  *
@@ -19,7 +19,7 @@ const STYLES = ["budget", "comfort", "luxury"];
 const SPEC_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["ready", "question", "title", "summary", "origin", "adults", "children", "rooms", "budget", "stops", "flights", "ground", "days", "tips"],
+  required: ["ready", "question", "title", "summary", "origin", "adults", "children", "rooms", "budget", "stops", "flights", "ground", "cars", "days", "tips"],
   properties: {
     ready: { type: "boolean", description: "false only when the destination or the travel dates/month are missing" },
     question: { type: "string", description: "One short question when ready is false, else empty" },
@@ -61,6 +61,18 @@ const SPEC_SCHEMA = {
         properties: { from: { type: "string" }, to: { type: "string" }, date: { type: "string" }, how: { type: "string", description: "e.g. 'Vande Bharat train, about 5 h'" } },
       },
     },
+    cars: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false,
+        required: ["city", "pickup", "dropoff", "why"],
+        properties: {
+          city: { type: "string", description: "City whose main airport the car is picked up and returned at" },
+          pickup: { type: "string", description: "YYYY-MM-DD" }, dropoff: { type: "string", description: "YYYY-MM-DD" },
+          why: { type: "string", description: "Why a car helps here, one sentence" },
+        },
+      },
+    },
     days: {
       type: "array",
       items: {
@@ -75,13 +87,14 @@ const SPEC_SCHEMA = {
 
 function systemPrompt(currency) {
   const today = new Date().toISOString().slice(0, 10);
-  return `You plan trips for PlanurStay, an online travel agency that sells flights and hotels. Today is ${today}. Prices are in ${currency}.
+  return `You plan trips for PlanurStay, an online travel agency that sells flights, hotels and rental cars. Today is ${today}. Prices are in ${currency}.
 Turn the traveller's request into a realistic plan. Our system searches live flights and hotels for it, so you never give prices.
 
 - Stops: up to 5 cities, in travel order. Each stop's checkout is the next stop's check-in. Total trip at most 30 nights.
 - Dates: use the dates given. If only a month or season is given, pick sensible dates and mention them in the summary. All dates must be after today. If there is no destination, or no hint at all of when, set ready=false and ask one short question.
 - Flights: one round trip from the origin to the first stop when the trip ends in the same city (return = last day). When the trip ends somewhere else, use two one-way flights (in to the first stop, home from the last stop). Add a one-way flight between stops only when ground travel would take more than about 7 hours. Use city names, or IATA codes when you're sure.
 - Ground: other moves between stops, with a practical way to travel and the rough time.
+- Cars: add a rental car (picked up and returned at a stop's main airport, usually for that stop's dates) only when the traveller asks for a car or a road trip, or when driving is clearly the easiest way to get around (e.g. US and Canadian national parks, Iceland, Scottish Highlands, rural Europe). Not in places where visitors rarely self-drive (e.g. India, Egypt, big Asian cities): suggest a car with driver in ground instead. Otherwise leave cars empty.
 - Style per stop: budget, comfort or luxury, from what the traveller says (default comfort).
 - Travellers: default 2 adults, 0 children. Rooms: 1 per 2 adults unless they say otherwise.
 - Days: one entry per day, short and specific (neighbourhoods, sights, food). No prices.
@@ -159,6 +172,8 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
       adults, children, rooms, budget: Math.max(0, +s.budget || 0),
       stops, flights,
       ground: (s.ground || []).slice(0, 6).map(g => ({ from: str(g.from, 60), to: str(g.to, 60), date: ISO.test(g.date) ? g.date : "", how: str(g.how, 160) })),
+      cars: (s.cars || []).filter(c => ISO.test(c.pickup) && ISO.test(c.dropoff) && c.dropoff > c.pickup && c.pickup > today()).slice(0, 3)
+        .map(c => ({ city: str(c.city, 60), pickup: c.pickup, dropoff: c.dropoff, why: str(c.why, 200) })).filter(c => c.city),
       days: (s.days || []).slice(0, 31).map(d => ({ date: ISO.test(d.date) ? d.date : "", city: str(d.city, 60), title: str(d.title, 90), plan: str(d.plan, 320) })),
       tips: (s.tips || []).slice(0, 6).map(x => str(x, 240)).filter(Boolean),
     };
@@ -236,6 +251,31 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
     return { ...stop, placeId: place.placeId, dest, hotelsUrl, options, sel };
   }
 
+  // Rental car at the stop's main airport (Travellez/Sabre). Prices come in the rental company's currency.
+  async function searchCar(c, spec, ctx) {
+    const ap = await airport(c.city);
+    if (!ap) return { ...c, options: [], error: `We couldn't find an airport for ${c.city}.` };
+    const search = { pickup: ap.code, pickupCity: ap.city, pickupDate: c.pickup, pickupTime: "10:00", returnDate: c.dropoff, returnTime: "10:00" };
+    const out = { ...c, code: ap.code, airport: ap.city || ap.code, url: `/cars?${qs(search)}` };
+    const r = await internal("/api/cars/search", { method: "POST", body: { pickupCode: ap.code, returnCode: ap.code, pickupDate: c.pickup, pickupTime: "10:00", returnDate: c.dropoff, returnTime: "10:00" } });
+    const cars = (r.data?.cars || []).filter(x => x.price > 0);
+    if (!cars.length) return { ...out, options: [], error: r.error || "No cars available for these dates." };
+    const people = spec.adults + spec.children;
+    const fits = (x) => (x.seats || 5) >= people && (x.bags == null || x.bags >= Math.ceil(people / 2));
+    const byPrice = [...cars].sort((a, b) => a.price - b.price);
+    const picks = [
+      ["Cheapest", byPrice.find(fits) || byPrice[0]],
+      ["Automatic", byPrice.find(x => x.automatic && fits(x))],
+      ["More space", byPrice.find(x => (x.seats || 0) >= Math.max(people + 2, 7) || /SUV|Van|Minivan/.test(x.body || ""))],
+    ];
+    const seen = new Set(), options = [];
+    for (const [label, x] of picks) {
+      if (!x || seen.has(x.quoteId)) continue; seen.add(x.quoteId);
+      options.push({ label, vendor: x.vendor, logo: x.logo, model: x.model, category: x.category, body: x.body, automatic: x.automatic, ac: x.ac, seats: x.seats, bags: x.bags, unlimitedMileage: x.unlimitedMileage, price: x.price, perDay: x.perDay, currency: x.currency, days: x.days });
+    }
+    return { ...out, options };
+  }
+
   // At most 3 searches at once (LiteAPI rate limits)
   async function pool3(fns) {
     const out = new Array(fns.length); let i = 0;
@@ -246,12 +286,23 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
 
   async function runSearches(spec, ctx, prev) {
     const keep = (i) => prev?.stops?.[i]?.options?.[prev.stops[i].sel]?.id;
+    // Cars only when car rentals are switched on (Travellez account set)
+    const carSpecs = (spec.cars || []).length && (await internal("/api/cars/config").catch(() => ({}))).enabled ? spec.cars : [];
     const res = await pool3([
       ...spec.flights.map((f) => () => searchFlight(f, spec, ctx)),
       ...spec.stops.map((s, i) => () => searchStay(s, spec, ctx, keep(i))),
+      ...carSpecs.map((c) => () => searchCar(c, spec, ctx)),
     ]);
-    const flights = res.slice(0, spec.flights.length).map((f, i) => ({ ...f, sel: Math.min(prev?.flights?.[i]?.sel || 0, Math.max(0, (f.options || []).length - 1)) }));
-    return { flights, stops: res.slice(spec.flights.length), currency: ctx.currency, checkedAt: new Date().toISOString() };
+    const nf = spec.flights.length, ns = spec.stops.length;
+    // Keep the option chosen earlier (by position for flights, by label for cars)
+    const flights = res.slice(0, nf).map((f, i) => ({ ...f, sel: Math.min(prev?.flights?.[i]?.sel || 0, Math.max(0, (f.options || []).length - 1)) }));
+    const cars = res.slice(nf + ns).map((c, i) => {
+      const was = prev?.cars?.[i]?.options?.[prev.cars[i].sel]?.label;
+      const people = spec.adults + spec.children;
+      const want = was || (people > 5 ? "More space" : "Cheapest");
+      return { ...c, sel: Math.max(0, (c.options || []).findIndex(o => o.label === want)) };
+    });
+    return { flights, stops: res.slice(nf, nf + ns), cars, currency: ctx.currency, checkedAt: new Date().toISOString() };
   }
 
   function load(id) {
@@ -300,7 +351,7 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
       if (!row) return res.status(404).json({ error: "Trip not found" });
       if (!canEdit(req, row)) return res.status(403).json({ error: "Only the person who planned this trip can change it. Plan your own copy instead." });
       const { kind, index, option } = req.body || {};
-      const list = kind === "hotel" ? row.live?.stops : kind === "flight" ? row.live?.flights : null;
+      const list = kind === "hotel" ? row.live?.stops : kind === "flight" ? row.live?.flights : kind === "car" ? row.live?.cars : null;
       const item = list?.[+index];
       if (!item || !Number.isInteger(+option) || +option < 0 || +option >= (item.options || []).length) return res.status(400).json({ error: "Invalid choice" });
       item.sel = +option;
@@ -315,7 +366,7 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
       // Anyone with the link may refresh old prices; fresh ones are served as they are.
       if (age < 15 * 60 * 1000) return res.json({ success: true, data: view(req, row) });
       if (limited(req, "refresh", 20)) return res.status(429).json({ error: "Please wait a little before refreshing prices again." });
-      const first = [...row.spec.flights.map(f => f.depart), ...row.spec.stops.map(s => s.checkin)].sort()[0];
+      const first = [...row.spec.flights.map(f => f.depart), ...row.spec.stops.map(s => s.checkin), ...(row.spec.cars || []).map(c => c.pickup)].sort()[0];
       if (!first || first <= today()) return res.status(400).json({ error: "This trip has already started, so prices can't be refreshed." });
       try {
         row.live = await runSearches(row.spec, { cookie: req.headers.cookie || "", currency: /^[A-Z]{3}$/.test(req.body?.currency || "") ? req.body.currency : row.currency }, row.live);
