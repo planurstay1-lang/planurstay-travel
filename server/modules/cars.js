@@ -6,7 +6,9 @@
  *   2. We book the car on Travellez with PlanurStay's own Travellez account; Travellez charges the
  *      company card saved on that account (the net price).
  *   3. Booking confirmed → we capture the customer's payment. Booking failed → we release the hold.
- *   Our margin is CAR_MARKUP_PCT (default 8%) on top of the Travellez price.
+ *   Our margin is CAR_MARKUP_PCT (default 5%) on top of the Travellez price.
+ *   Cancellation (like Rentalcars / Discover Cars): free until CAR_FREE_CANCEL_HOURS (default 48) before pick-up,
+ *   no refund after that or for no-shows. Travellez refunds us until pick-up, so late cancellations don't cost us.
  *
  *   GET  /api/cars/config              → { enabled, bookingEnabled, publishableKey }
  *   POST /api/cars/search              { pickupCode, returnCode, pickupDate, pickupTime, returnDate, returnTime }
@@ -26,7 +28,19 @@ function createCars({ db, sendEmail }) {
   const base = () => (env("TRAVELLEZ_API_BASE_URL") || "https://api.travellez.com").replace(/\/$/, "");
   const searchOn = () => !!(env("TRAVELLEZ_EMAIL") && env("TRAVELLEZ_PASSWORD"));
   const bookingOn = () => searchOn() && env("CARS_BOOKING_ENABLED") === "true" && !!env("STRIPE_SECRET_KEY") && !!env("STRIPE_PUBLISHABLE_KEY");
-  const markup = () => { const m = parseFloat(env("CAR_MARKUP_PCT")); return Number.isFinite(m) && m >= 0 && m <= 50 ? m : 8; };
+  const markup = () => { const m = parseFloat(env("CAR_MARKUP_PCT")); return Number.isFinite(m) && m >= 0 && m <= 50 ? m : 5; };
+  const cancelHours = () => { const h = parseInt(env("CAR_FREE_CANCEL_HOURS")); return Number.isFinite(h) && h >= 0 && h <= 240 ? h : 48; };
+  // Free-cancellation deadline in the pick-up location's local time ("YYYY-MM-DD HH:MM"), or null if pick-up is too soon.
+  // Pick-up times are local to the airport, so we compare using the airport-local clock we were given.
+  function cancelDeadline(ctx) {
+    const [y, mo, d] = ctx.pickupDate.split("-").map(Number), [h, mi] = ctx.pickupTime.split(":").map(Number);
+    const t = Date.UTC(y, mo - 1, d, h, mi) - cancelHours() * 3600000;
+    const x = new Date(t), p = (n) => String(n).padStart(2, "0");
+    const local = `${x.getUTCFullYear()}-${p(x.getUTCMonth() + 1)}-${p(x.getUTCDate())} ${p(x.getUTCHours())}:${p(x.getUTCMinutes())}`;
+    // Without the airport's time zone, treat "now" generously (UTC−10, the latest North American clock) so we never
+    // promise free cancellation that has already passed locally.
+    return t > Date.now() - 10 * 3600000 ? local : null;
+  }
   const stripe = () => (env("STRIPE_SECRET_KEY") ? require("stripe")(env("STRIPE_SECRET_KEY")) : null);
 
   db.exec(`CREATE TABLE IF NOT EXISTS car_bookings (
@@ -103,6 +117,7 @@ function createCars({ db, sendEmail }) {
       unlimitedMileage: !mileage || /^unl/i.test(String(mileage)), pickup: raw.PickUpLocation?.LocationCode || ctx.pickupCode, dropoff: raw.ReturnLocation?.LocationCode || ctx.returnCode,
       price, perDay: Math.round(price / days * 100) / 100, currency: currency || "USD", days,
       expiresAt: new Date(Date.now() + QUOTE_TTL).toISOString(),
+      freeCancelUntil: cancelDeadline(ctx), freeCancelHours: cancelHours(),
       // Order summary like Travellez: our markup sits in the base fare; taxes and charges are shown as they are
       breakdown: base != null && base < net ? { base: Math.round((price - (net - base)) * 100) / 100, chargesTax: Math.round((net - base) * 100) / 100 } : null,
     };
@@ -247,7 +262,7 @@ function createCars({ db, sendEmail }) {
   function summary(r) {
     if (!r) return null;
     const q = JSON.parse(r.quote_json || "{}"), d = JSON.parse(r.driver_json || "{}");
-    return { ref: r.ref, status: r.status, amount: r.amount, currency: r.currency, supplierRef: r.supplier_ref, car: q.car, ctx: q.ctx,
+    return { ref: r.ref, status: r.status, amount: r.amount, currency: r.currency, supplierRef: r.supplier_ref, car: q.car, ctx: q.ctx, freeCancelUntil: q.car?.freeCancelUntil || null,
       driver: { firstName: d.firstName, lastName: d.lastName, email: d.email }, error: r.status === "failed" ? "The rental company couldn't confirm this car. You have not been charged." : null };
   }
 
@@ -262,6 +277,7 @@ function createCars({ db, sendEmail }) {
       <p>Pick-up: <b>${esc(s.ctx.pickupCode)}</b>, ${esc(s.ctx.pickupDate)} at ${esc(s.ctx.pickupTime)}<br>Drop-off: <b>${esc(s.ctx.returnCode)}</b>, ${esc(s.ctx.returnDate)} at ${esc(s.ctx.returnTime)}</p>
       <p>Driver: ${esc(s.driver.firstName)} ${esc(s.driver.lastName)}<br>PlanurStay reference: <b>${esc(s.ref)}</b>${s.supplierRef ? `<br>Rental confirmation: <b>${esc(s.supplierRef)}</b>` : ""}</p>
       <p>Total paid: <b>${money(s.amount, s.currency)}</b></p>
+      <p>${s.freeCancelUntil ? `<b>Free cancellation until ${esc(s.freeCancelUntil)}</b> (local time at pick-up). After that, or if you don't pick up the car, there's no refund.` : "<b>This booking is non-refundable</b> because pick-up is less than 48 hours away."} To cancel, reply to this email with your reference.</p>
       <p style="color:#4a5572;font-size:13px">Bring the driver's licence, a credit card in the driver's name and this reference to the rental desk. ${s.status === "confirmed" ? "" : "The rental company is still confirming; we'll email you as soon as it's done."}</p></div>`;
     await sendEmail({ to: s.driver.email, subject: `Car rental ${s.status === "confirmed" ? "confirmed" : "received"}: ${s.car.vendor}, ${s.ctx.pickupCode} ${s.ctx.pickupDate}`, html });
     if (s.status !== "confirmed" && env("SUPPORT_EMAIL")) await sendEmail({ to: env("SUPPORT_EMAIL"), subject: `Car booking needs checking: ${s.ref}`, html: `<p>Travellez booking for ${esc(s.ref)} wasn't confirmed within 20 seconds. Payment was captured. Please check it in Travellez.</p>` });

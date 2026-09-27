@@ -156,6 +156,9 @@
     $("closeFilters").onclick = () => $("filters").classList.remove("mobile-open");
     $("moreBtn").onclick = () => { st.shown += 20; renderList(); };
 
+    // "2026-10-04 14:45" (local time at pick-up) → "Sun, Oct 4, 14:45"
+    const fmtDeadline = (d) => d ? `${PS.fmtDay(d.slice(0, 10))}, ${d.slice(11, 16)}` : "";
+    const cancelTag = (c) => c.freeCancelUntil ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation until ${PS.esc(fmtDeadline(c.freeCancelUntil))}</span>` : `<span class="tag">Non-refundable</span>`;
     function carCard(c) {
       const feats = [c.seats ? `${PS.icon("user", 14)}${c.seats} seats` : "", c.bags ? `${PS.icon("bag", 14)}${c.bags} bags` : "", c.automatic != null ? `${PS.icon("car", 14)}${c.automatic ? "Automatic" : "Manual"}` : "", c.fuel ? c.fuel : "", c.ac ? `${PS.icon("check", 14, 2.6)}A/C` : "", c.doors ? `${c.doors} doors` : ""].filter(Boolean);
       return `<article class="car-card">
@@ -164,7 +167,7 @@
           <h3>${PS.esc(c.type)}${c.body && !["SUV", "Van", "Minivan"].includes(c.body) ? ` <small>${PS.esc(c.body)}</small>` : ""}</h3>
           <div class="car-model">${PS.esc(c.model)}</div>
           <div class="car-feats">${feats.map(f => `<span>${f}</span>`).join("")}</div>
-          <div class="tags">${c.unlimitedMileage ? `<span class="tag green">${PS.icon("check", 13, 3)}Unlimited mileage</span>` : `<span class="tag">Limited mileage</span>`}<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation before pick-up</span></div>
+          <div class="tags">${c.unlimitedMileage ? `<span class="tag green">${PS.icon("check", 13, 3)}Unlimited mileage</span>` : `<span class="tag">Limited mileage</span>`}${cancelTag(c)}</div>
         </div>
         <div class="car-price"><span class="price-big">${PS.money(c.perDay, c.currency, 0)}</span><span class="price-sub">per day</span>
           <span class="price-total"><b>${PS.money(c.price, c.currency, 2)}</b> total · ${PS.plural(c.days, "day")}</span>
@@ -198,7 +201,9 @@
                 <div><small>Pick-up</small><b>${PS.fmtDay(q.pickupDate)} · ${PS.esc(q.pickupTime || "10:00")}</b><span>${PS.esc(q.pickupCity || c.pickup)} (${PS.esc(c.pickup)})</span></div>
                 <div><small>Drop-off</small><b>${PS.fmtDay(q.returnDate)} · ${PS.esc(q.returnTime || "10:00")}</b><span>${PS.esc(q.dropoffCity || q.pickupCity || c.dropoff)} (${PS.esc(c.dropoff)})</span></div>
               </div>
-              <div class="co-cancel ok"><b>${PS.icon("check", 16, 2.6)}Free cancellation before pick-up</b><p>Cancel any time before your pick-up date for a full refund.</p></div>
+              ${c.freeCancelUntil
+                ? `<div class="co-cancel ok"><b>${PS.icon("check", 16, 2.6)}Free cancellation until ${PS.esc(fmtDeadline(c.freeCancelUntil))}</b><p>Cancel up to ${c.freeCancelHours} hours before pick-up (local time) for a full refund. After that, or if you don't pick up the car, there's no refund.</p></div>`
+                : `<div class="co-cancel no"><b>${PS.icon("info", 16)}Non-refundable</b><p>Pick-up is less than ${c.freeCancelHours} hours away, so this booking can't be cancelled for a refund.</p></div>`}
               <details class="car-rules"><summary>Important rules from the rental company</summary><ul>
                 <li>A credit card in the driver's name is required at pick-up as a deposit, held by the rental company. Make sure it has enough available credit.</li>
                 <li>Bring the driver's licence. An International Driving Permit is required if the licence isn't in the Roman alphabet.</li>
@@ -323,9 +328,9 @@
               <div><span>Pick-up</span><b>${PS.esc(s.ctx.pickupCode)} · ${PS.fmtDay(s.ctx.pickupDate)} ${PS.esc(s.ctx.pickupTime)}</b></div>
               <div><span>Drop-off</span><b>${PS.esc(s.ctx.returnCode)} · ${PS.fmtDay(s.ctx.returnDate)} ${PS.esc(s.ctx.returnTime)}</b></div>
               <div><span>Driver</span><b>${PS.esc(s.driver.firstName)} ${PS.esc(s.driver.lastName)}</b></div>
-              <div><span>Cancellation</span><b>Free before pick-up</b></div>
+              <div><span>Cancellation</span><b>${s.freeCancelUntil ? `Free until ${PS.esc(fmtDeadline(s.freeCancelUntil))}` : "Non-refundable"}</b></div>
             </div><div class="divider"></div><div class="sum-total"><span>Total paid</span><b>${PS.money(s.amount, s.currency, 2)}</b></div></div>
-          <div class="alert info" style="margin-top:16px">${PS.icon("info", 18)}<div>At the desk, bring the driver's licence, a credit card in the driver's name for the deposit, and this reference. To cancel or change, contact us with your reference before pick-up.</div></div>
+          <div class="alert info" style="margin-top:16px">${PS.icon("info", 18)}<div>At the desk, bring the driver's licence, a credit card in the driver's name for the deposit, and this reference. ${s.freeCancelUntil ? `To cancel for a full refund, contact us with your reference before ${PS.esc(fmtDeadline(s.freeCancelUntil))} (local time). After that there's no refund.` : "This booking is non-refundable."}</div></div>
           <div style="display:flex;gap:10px;justify-content:center;margin-top:18px"><a class="btn btn-primary" href="/">Back to PlanurStay</a><button class="btn btn-ghost" onclick="window.print()">Print</button></div></div>`;
       PS.track("booked", { type: "car", value: s.amount, currency: s.currency, id: s.ref });
     }

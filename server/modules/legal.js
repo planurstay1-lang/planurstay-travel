@@ -94,6 +94,7 @@ function cancellation() {
       ["Hotels: non-refundable rates", `<p>Rates marked <b>Non-refundable</b> are cheaper because they can't be cancelled, changed or refunded, including if you don't show up. Consider travel insurance if your plans might change.</p>`],
       ["Hotels: no-shows and early departures", `<p>If you don't arrive, or leave early, the hotel may charge the full stay. Contact the hotel directly if you'll arrive late so the room is held.</p>`],
       ["Flights", `<p>Airline fare rules decide whether a ticket can be changed or refunded, and what it costs. Basic fares are usually non-refundable. If the airline cancels or significantly changes your flight, you're entitled to a refund or rebooking under the airline's rules and local passenger rights laws. We'll help you with it.</p>`],
+      ["Car rentals", `<p>Car rentals are paid in full when you book. You can cancel for a <b>full refund up to ${Number(process.env.CAR_FREE_CANCEL_HOURS) >= 0 && process.env.CAR_FREE_CANCEL_HOURS ? Number(process.env.CAR_FREE_CANCEL_HOURS) : 48} hours before your pick-up time</b> (local time at the pick-up location); the exact deadline is shown before you pay and in your confirmation. After that deadline, or if you don't pick up the car, there is no refund. If pick-up is less than that many hours away when you book, the booking is non-refundable. The rental company may hold a deposit on the driver's credit card at pick-up and charge for extras (fuel, extra drivers, child seats, local insurance); those are between you and the rental company.</p>`],
       ["How to cancel", `<p>Signed-in members can see their bookings under <a href="/my-bookings">My trips</a>. To cancel, email <a href="mailto:${esc(b.email)}">${esc(b.email)}</a> with your booking ID and the email used at checkout${b.phone ? `, or call ${esc(b.phone)}` : ""}. We'll confirm the cancellation in writing.</p>`],
       ["Refunds", `<p>Refunds go back to the card you paid with, usually within 5 to 10 business days after the cancellation is confirmed. Your bank may take longer to show it. Card or currency conversion fees charged by your bank are not refundable by us. Pay-at-hotel fees are settled with the hotel directly.</p>`],
       ["Rewards points and vouchers", `<p>Points from a cancelled booking are not released. If you used a Rewards voucher on a booking that is refunded, contact us and we'll reissue the voucher value.</p>`],
@@ -126,7 +127,7 @@ function contact() {
 const PAGES = {
   "/terms": { title: "Terms of service", desc: "The terms that apply when you book hotels and flights with PlanurStay.", body: terms },
   "/privacy": { title: "Privacy policy", desc: "How PlanurStay collects, uses and protects your personal information.", body: privacy },
-  "/cancellation-policy": { title: "Cancellations & refunds", desc: "How hotel and flight cancellations and refunds work at PlanurStay.", body: cancellation },
+  "/cancellation-policy": { title: "Cancellations & refunds", desc: "How hotel, flight and car rental cancellations and refunds work at PlanurStay.", body: cancellation },
   "/contact": { title: "Contact us", desc: "Get help with a PlanurStay booking by email or phone.", body: contact },
 };
 
