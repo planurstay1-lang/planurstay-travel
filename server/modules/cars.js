@@ -6,7 +6,7 @@
  *   2. We book the car on Travellez with PlanurStay's own Travellez account; Travellez charges the
  *      company card saved on that account (the net price).
  *   3. Booking confirmed → we capture the customer's payment. Booking failed → we release the hold.
- *   Our margin is CAR_MARKUP_PCT (default 5%) on top of the Travellez price.
+ *   Our margin is CAR_MARKUP_PCT (default 3%) on top of the Travellez price.
  *   Cancellation (like Rentalcars / Discover Cars): free until CAR_FREE_CANCEL_HOURS (default 48) before pick-up,
  *   no refund after that or for no-shows. Travellez refunds us until pick-up, so late cancellations don't cost us.
  *
@@ -28,7 +28,7 @@ function createCars({ db, sendEmail }) {
   const base = () => (env("TRAVELLEZ_API_BASE_URL") || "https://api.travellez.com").replace(/\/$/, "");
   const searchOn = () => !!(env("TRAVELLEZ_EMAIL") && env("TRAVELLEZ_PASSWORD"));
   const bookingOn = () => searchOn() && env("CARS_BOOKING_ENABLED") === "true" && !!env("STRIPE_SECRET_KEY") && !!env("STRIPE_PUBLISHABLE_KEY");
-  const markup = () => { const m = parseFloat(env("CAR_MARKUP_PCT")); return Number.isFinite(m) && m >= 0 && m <= 50 ? m : 5; };
+  const markup = () => { const m = parseFloat(env("CAR_MARKUP_PCT")); return Number.isFinite(m) && m >= 0 && m <= 50 ? m : 3; };
   const cancelHours = () => { const h = parseInt(env("CAR_FREE_CANCEL_HOURS")); return Number.isFinite(h) && h >= 0 && h <= 240 ? h : 48; };
   // Free-cancellation deadline in the pick-up location's local time ("YYYY-MM-DD HH:MM"), or null if pick-up is too soon.
   // Pick-up times are local to the airport, so we compare using the airport-local clock we were given.

@@ -45,7 +45,7 @@ Never commit the values. Set them in Render → Environment.
 | `SITATA_API_BASE` | optional | Sitata API address. Default `https://www.sitata.com`; set to their sandbox address if they give you one. |
 | `TRAVELLEZ_EMAIL`, `TRAVELLEZ_PASSWORD` | optional | PlanurStay's own Travellez account (Sabre car rentals). With these set, the **Cars** page and menu link appear and search works. |
 | `CARS_BOOKING_ENABLED` | optional | Set to `true` to allow real car bookings (needs the Stripe keys below). Leave unset until you've done one test booking yourself: there is no Travellez test environment. |
-| `CAR_MARKUP_PCT` | optional | Markup on the Travellez car price. Default `5`. |
+| `CAR_MARKUP_PCT` | optional | Markup on the Travellez car price. Default `3` (about break-even after Stripe fees; cars are priced to match other sites). |
 | `CAR_FREE_CANCEL_HOURS` | optional | Free cancellation for cars until this many hours before pick-up; no refund after. Default `48`. |
 | `TRAVELLEZ_CARD_ID` | optional | Which saved Travellez card pays for cars. Default: the account's default (or first) card. |
 | `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` | for car bookings | Customer card payments for cars. The card is only held first and charged once the car is confirmed. |
