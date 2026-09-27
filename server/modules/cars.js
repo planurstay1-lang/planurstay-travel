@@ -75,18 +75,20 @@ function createCars({ db, sendEmail }) {
   const BODY = { B: "2-door", C: "2/4-door", D: "4-door", W: "Wagon", V: "Van", L: "Limousine", S: "Sport", T: "Convertible", F: "SUV", J: "Off-road", X: "Special", P: "Pickup", Q: "Pickup", Z: "Special offer", E: "Coupe", M: "Minivan", R: "Recreational", H: "Motor home", Y: "2-wheeler", N: "Roadster", G: "Crossover", K: "Commercial van" };
   const acriss = (code = "") => {
     const c = String(code).toUpperCase();
-    return { category: CAT[c[0]] || null, body: BODY[c[1]] || null, automatic: ["A", "B", "D"].includes(c[2]) ? true : ["M", "N", "C"].includes(c[2]) ? false : null, ac: c[3] ? !["N", "Q", "X", "S", "C", "E", "H", "I", "K", "L"].includes(c[3]) : null };
+    const FUEL = { D: "Diesel", Q: "Diesel", H: "Hybrid", I: "Hybrid", E: "Electric", C: "Electric", L: "LPG", S: "LPG", A: "Hydrogen", B: "Hydrogen", M: "Multi-fuel", F: "Multi-fuel", V: "Petrol", Z: "Petrol", U: "Ethanol", X: "Ethanol" };
+    return { fuel: FUEL[c[3]] || null, category: CAT[c[0]] || null, body: BODY[c[1]] || null, automatic: ["A", "B", "D"].includes(c[2]) ? true : ["M", "N", "C"].includes(c[2]) ? false : null, ac: c[3] ? !["N", "Q", "X", "S", "C", "E", "H", "I", "K", "L"].includes(c[3]) : null };
   };
   const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
 
   function toCar(raw, ctx) {
     const rate = (raw.VehRentalRate || [])[0]; if (!rate) return null;
     const v = rate.Vehicle || {}, vendor = raw.Vendor || {};
-    let net = null, currency = null, mileage = null;
+    let net = null, base = null, currency = null, mileage = null;
     for (const ch of rate.VehicleCharges?.VehicleCharge || []) {
       if (ch.ChargeType === "ApproximateTotalPrice") { net = num(ch.Amount); currency = ch.CurrencyCode || currency; }
-      else if (ch.ChargeType === "BaseRateTotal") { if (net == null) net = num(ch.Amount); currency = currency || ch.CurrencyCode; mileage = ch.MileageAllowance || mileage; }
+      else if (ch.ChargeType === "BaseRateTotal") { base = num(ch.Amount); currency = currency || ch.CurrencyCode; mileage = ch.MileageAllowance || mileage; }
     }
+    if (net == null) net = base;
     if (!net || net <= 0 || !rate.RateKey) return null;
     const sb = v.SeatBeltsAndBagsInfo || {};
     const bags = (sb.BagsInfo?.Bags || []).reduce((a, b) => a + (parseInt(b.Quantity) || 0), 0) || null;
@@ -101,6 +103,8 @@ function createCars({ db, sendEmail }) {
       unlimitedMileage: !mileage || /^unl/i.test(String(mileage)), pickup: raw.PickUpLocation?.LocationCode || ctx.pickupCode, dropoff: raw.ReturnLocation?.LocationCode || ctx.returnCode,
       price, perDay: Math.round(price / days * 100) / 100, currency: currency || "USD", days,
       expiresAt: new Date(Date.now() + QUOTE_TTL).toISOString(),
+      // Order summary like Travellez: our markup sits in the base fare; taxes and charges are shown as they are
+      breakdown: base != null && base < net ? { base: Math.round((price - (net - base)) * 100) / 100, chargesTax: Math.round((net - base) * 100) / 100 } : null,
     };
     quotes.set(quoteId, { at: Date.now(), net, rateKey: rate.RateKey, rateCode: rate.RateCode, ctx, car });
     return car;
@@ -138,6 +142,7 @@ function createCars({ db, sendEmail }) {
     firstName: String(d.firstName || "").trim().slice(0, 60), lastName: String(d.lastName || "").trim().slice(0, 60),
     email: String(d.email || "").trim().toLowerCase().slice(0, 120), phone: String(d.phone || "").trim().slice(0, 30),
     dob: day(d.dob), gender: /^[mf]$/i.test(d.gender || "") ? d.gender.toLowerCase() : null,
+    note: String(d.note || "").replace(/\s+/g, " ").trim().slice(0, 300),
   });
   function driverError(d, pickupDate) {
     if (!d.firstName || !d.lastName) return "Enter the driver's name as on their licence";
@@ -198,7 +203,7 @@ function createCars({ db, sendEmail }) {
         const cardId = await companyCard();
         res = await tz("/vehicle/booking", { method: "POST", timeoutMs: 120000, body: {
           first_name: d.firstName, last_name: d.lastName, email: d.email, phone_number: d.phone, date_of_birth: d.dob, gender: d.gender,
-          phone_user_type: "B", additional_note: `PlanurStay ${ref}`, rateId: q.rateKey, payment_token: cardId, requested_by_comment: "",
+          phone_user_type: "B", additional_note: `PlanurStay ${ref}${d.note ? ` · ${d.note}` : ""}`, rateId: q.rateKey, payment_token: cardId, requested_by_comment: "",
           in_policy: true, is_personal: true, is_redeemed: false,
           pick_up_date: q.ctx.pickupDate, pick_up_time: q.ctx.pickupTime, return_date: q.ctx.returnDate, return_time: q.ctx.returnTime,
           rate_code: q.rateCode, image: "",

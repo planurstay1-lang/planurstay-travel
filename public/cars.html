@@ -157,7 +157,7 @@
     $("moreBtn").onclick = () => { st.shown += 20; renderList(); };
 
     function carCard(c) {
-      const feats = [c.seats ? `${PS.icon("user", 14)}${c.seats} seats` : "", c.bags ? `${PS.icon("bag", 14)}${c.bags} bags` : "", c.automatic != null ? `${PS.icon("car", 14)}${c.automatic ? "Automatic" : "Manual"}` : "", c.ac ? `${PS.icon("check", 14, 2.6)}A/C` : "", c.doors ? `${c.doors} doors` : ""].filter(Boolean);
+      const feats = [c.seats ? `${PS.icon("user", 14)}${c.seats} seats` : "", c.bags ? `${PS.icon("bag", 14)}${c.bags} bags` : "", c.automatic != null ? `${PS.icon("car", 14)}${c.automatic ? "Automatic" : "Manual"}` : "", c.fuel ? c.fuel : "", c.ac ? `${PS.icon("check", 14, 2.6)}A/C` : "", c.doors ? `${c.doors} doors` : ""].filter(Boolean);
       return `<article class="car-card">
         <div class="car-main">
           <div class="car-vendor">${c.logo ? `<img src="${PS.esc(c.logo)}" alt="" onerror="this.remove()">` : ""}<b>${PS.esc(c.vendor)}</b></div>
@@ -193,6 +193,7 @@
           <div>
             <section class="co-panel"><div class="co-head"><h2>Rent a ${PS.esc(c.type)}${c.body ? ` ${PS.esc(c.body)}` : ""}</h2></div>
               <p class="car-model">${PS.esc(c.model)} · ${PS.esc(c.vendor)}${c.code ? ` <small>(${PS.esc(c.code)})</small>` : ""}</p>
+              <p class="car-spec">${[c.seats ? PS.plural(c.seats, "seat") : "", c.bags ? PS.plural(c.bags, "bag") : "", c.automatic != null ? (c.automatic ? "Automatic" : "Manual") : "", c.fuel, c.ac ? "A/C" : "", c.unlimitedMileage ? "Unlimited mileage" : ""].filter(Boolean).map(PS.esc).join(" · ")} · <b>Renting for ${PS.plural(c.days, "day")}</b></p>
               <div class="car-when">
                 <div><small>Pick-up</small><b>${PS.fmtDay(q.pickupDate)} · ${PS.esc(q.pickupTime || "10:00")}</b><span>${PS.esc(q.pickupCity || c.pickup)} (${PS.esc(c.pickup)})</span></div>
                 <div><small>Drop-off</small><b>${PS.fmtDay(q.returnDate)} · ${PS.esc(q.returnTime || "10:00")}</b><span>${PS.esc(q.dropoffCity || q.pickupCity || c.dropoff)} (${PS.esc(c.dropoff)})</span></div>
@@ -216,6 +217,7 @@
                 <div class="field" data-f="dPhone"><label for="dPhone">Phone <i class="req">*</i></label><input id="dPhone" type="tel" autocomplete="tel" placeholder="+1 416 555 0123"></div>
                 <div class="field" data-f="dDob"><label for="dDob">Date of birth <i class="req">*</i></label><input id="dDob" type="date" max="${PS.iso(PS.addDays(today, -365 * 21))}"></div>
                 <div class="field" data-f="dGender"><label for="dGender">Gender <i class="req">*</i></label><select id="dGender"><option value="">Select</option><option value="m">Male</option><option value="f">Female</option></select></div>
+                <div class="field full"><label for="dNote">Additional information <small class="muted">(optional)</small></label><textarea id="dNote" rows="2" maxlength="300" placeholder="e.g. Arriving on AC 857, may be late"></textarea><div class="hint">Don't use this for medical or other sensitive information.</div></div>
               </div>
             </section>
             <div id="carMsg"></div>
@@ -231,11 +233,13 @@
             <div class="co-card">
               <h3 style="font-size:17px;margin-bottom:10px">${PS.esc(c.vendor)} · ${PS.esc(c.type)}</h3>
               <div class="co-lines">
-                <div class="co-line"><span>Car rental · ${PS.plural(c.days, "day")}</span><span>${PS.money(c.price, c.currency, 2)}</span></div>
-                <div class="co-line muted"><span>Taxes and mandatory fees</span><span>Included</span></div>
+                ${c.breakdown ? `<div class="co-line"><span>Base fare · ${PS.plural(c.days, "day")}</span><span>${PS.money(c.breakdown.base, c.currency, 2)}</span></div>
+                <div class="co-line"><span>Additional charges + tax</span><span>${PS.money(c.breakdown.chargesTax, c.currency, 2)}</span></div>`
+                : `<div class="co-line"><span>Car rental · ${PS.plural(c.days, "day")}</span><span>${PS.money(c.price, c.currency, 2)}</span></div>
+                <div class="co-line muted"><span>Taxes and mandatory fees</span><span>Included</span></div>`}
                 <div class="co-line muted"><span>Extras (fuel, child seats, GPS)</span><span>At the desk</span></div>
               </div>
-              <div class="co-total"><div><b>Total</b><b>${PS.money(c.price, c.currency, 2)}</b></div><small>${PS.money(c.perDay, c.currency, 2)} per day</small></div>
+              <div class="co-total"><div><b>Total</b><b>${PS.money(c.price, c.currency, 2)}</b></div><small>Includes all mandatory taxes and fees · ${PS.money(c.perDay, c.currency, 2)} per day</small></div>
             </div>
           </aside>
         </div>`;
@@ -268,13 +272,13 @@
         if (!validate()) return;
         const btn = $("carContinue"); btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Preparing secure payment…`;
         try {
-          const r = await PS.api("/api/cars/checkout", { method: "POST", body: { quoteId: c.quoteId, driver: { firstName: val("dFirst"), lastName: val("dLast"), email: val("dEmail"), phone: val("dPhone"), dob: val("dDob"), gender: val("dGender") } } });
+          const r = await PS.api("/api/cars/checkout", { method: "POST", body: { quoteId: c.quoteId, driver: { firstName: val("dFirst"), lastName: val("dLast"), email: val("dEmail"), phone: val("dPhone"), dob: val("dDob"), gender: val("dGender"), note: val("dNote") } } });
           ref = r.data.ref;
           await loadStripe();
           stripe = window.Stripe(cfg.publishableKey);
           elements = stripe.elements({ clientSecret: r.data.clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: "#1f5bff", borderRadius: "10px" } } });
           elements.create("payment", { layout: "tabs" }).mount("#payEl");
-          document.querySelectorAll("#carCheckout .co-panel:not(#carPay) input, #carCheckout .co-panel:not(#carPay) select").forEach(i => (i.disabled = true));
+          document.querySelectorAll("#carCheckout .co-panel:not(#carPay) input, #carCheckout .co-panel:not(#carPay) select, #carCheckout .co-panel:not(#carPay) textarea").forEach(i => (i.disabled = true));
           $("carPay").classList.remove("hidden"); btn.remove();
           $("carPay").scrollIntoView({ behavior: "smooth", block: "start" });
         } catch (e) {

@@ -2164,3 +2164,6 @@ button.fs-seat:not(:disabled):hover { outline: 2px solid var(--blue); }
 .car-rules ul { margin: 10px 0 0; padding-left: 18px; color: var(--text-2); display: grid; gap: 6px; font-size: 13.5px; }
 .cars-page [hidden] { display: none !important; }
 .car-form .dt { grid-template-columns: 1fr 118px; }
+.car-spec { margin: -4px 0 4px; font-size: 13.5px; color: var(--text-2); }
+.cars-page .field.full { grid-column: 1 / -1; }
+.cars-page textarea { width: 100%; resize: vertical; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
