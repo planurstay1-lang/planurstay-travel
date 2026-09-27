@@ -33,7 +33,7 @@
     .tp-pick img { width: 96px; height: 72px; object-fit: cover; border-radius: 10px; background: var(--line-2); }
     .tp-noimg { width: 96px; height: 72px; border-radius: 10px; background: var(--line-2); display: grid; place-items: center; color: var(--muted); }
     .tp-pick .nm { font-weight: 700; color: var(--ink); font-size: 14.5px; line-height: 1.3; }
-    .tp-pick .dt { color: var(--text-2); font-size: 12.5px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .tp-pick .dt, .tp-fl .dt { color: var(--text-2); font-size: 12.5px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
     .tp-pick .pr { text-align: right; }
     .tp-pick .pr b { font-size: 17px; color: var(--ink); display: block; }
     .tp-pick .pr small { color: var(--muted); font-size: 12px; }
@@ -98,7 +98,8 @@
     const nights = (a, b) => Math.round((PS.parse(b) - PS.parse(a)) / 86400000);
     const d = (s, o) => s ? PS.fmtDate(s, o || { weekday: "short", month: "short", day: "numeric" }) : "";
     const hm = (s) => (s || "").slice(11, 16);
-    const money = (n, c) => PS.money(n, c);
+    // "$" alone reads as the local dollar for Canadian, Australian… visitors; say US$ when the trip is in another currency
+    const money = (n, c) => { const s = PS.money(n, c); return c === "USD" && T?.live?.currency && T.live.currency !== "USD" && s.startsWith("$") ? "US" + s : s; };
     const stars = (n) => n ? "★".repeat(Math.round(n)) : "";
     const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 2 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 
@@ -137,14 +138,22 @@
           ${legLine(o.outbound, f.fromCode, f.toCode)}${legLine(o.inbound, f.toCode, f.fromCode)}</div>
         <div class="pr" style="text-align:right"><b style="font-size:17px;color:var(--ink)">${money(o.price, o.currency)}</b><br><small style="color:var(--muted);font-size:12px">${T.spec.adults > 1 ? `all ${T.spec.adults + T.spec.children} travellers` : "total"}</small></div></div>`;
 
+    const carRow = (o) => `<div class="tp-fl">
+        ${o.logo ? `<img src="${PS.esc(o.logo)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span>${PS.icon("car", 22)}</span>`}
+        <div class="legs"><div class="nm" style="font-weight:700;color:var(--ink)">${PS.esc(o.model)}${o.category ? ` <small style="color:var(--muted);font-weight:500">or similar · ${PS.esc(o.category)}</small>` : ""}</div>
+          <div class="dt" style="margin-top:4px"><span class="tp-tag">${PS.esc(o.label)}</span><span>${PS.esc(o.vendor)}</span>${o.automatic != null ? `<span>${o.automatic ? "Automatic" : "Manual"}</span>` : ""}${o.seats ? `<span>${o.seats} seats</span>` : ""}${o.bags ? `<span>${o.bags} bags</span>` : ""}${o.unlimitedMileage ? `<span class="tp-tag g">Unlimited mileage</span>` : ""}</div></div>
+        <div class="pr" style="text-align:right"><b style="font-size:17px;color:var(--ink)">${money(o.price, o.currency)}</b><br><small style="color:var(--muted);font-size:12px">${money(o.perDay, o.currency)} / day</small></div></div>`;
     function totals() {
       const L = T.live || { flights: [], stops: [] };
       const lines = [];
       L.flights.forEach((f) => { const o = f.options?.[f.sel]; lines.push({ label: `Flight ${f.fromCode || f.from} → ${f.toCode || f.to}${f.return ? " (return)" : ""}`, amt: o?.price, cur: o?.currency, url: f.url, kind: "flight" }); });
       L.stops.forEach((s) => { const o = s.options?.[s.sel]; lines.push({ label: `${o ? o.name : "Hotel"} · ${s.city}`, amt: o?.total, cur: o?.currency, url: o?.url || s.hotelsUrl, kind: "hotel" }); });
-      const cur = lines.find(l => l.cur)?.cur || T.live?.currency || PS.cur();
+      (L.cars || []).forEach((c) => { const o = c.options?.[c.sel]; lines.push({ label: `Rental car · ${c.airport || c.city}`, amt: o?.price, cur: o?.currency, url: c.url, kind: "car" }); });
+      const cur = lines.find(l => l.cur && l.kind !== "car")?.cur || T.live?.currency || PS.cur();
       const known = lines.filter(l => l.amt > 0 && l.cur === cur);
-      return { lines, cur, total: known.reduce((a, l) => a + l.amt, 0), partial: known.length < lines.length };
+      // Car prices come in the rental company's currency; when it differs we show them next to the total, not in it
+      const extra = lines.filter(l => l.amt > 0 && l.cur && l.cur !== cur);
+      return { lines, cur, extra, total: known.reduce((a, l) => a + l.amt, 0), partial: lines.some(l => !(l.amt > 0)) };
     }
 
     function render() {
@@ -157,6 +166,7 @@
       const items = [
         ...L.flights.map((f, i) => ({ date: f.depart, order: 0, html: flightCard(f, i) })),
         ...L.stops.map((s, i) => ({ date: s.checkin, order: 2, html: stayCard(s, i) })),
+        ...(L.cars || []).map((c, i) => ({ date: c.pickup, order: 0.5, html: carCard(c, i) })),
         ...S.ground.filter(g => g.from && g.to).map(g => ({ date: g.date || "9999", order: 1, html: `<div class="tp-item"><span class="pin g">${PS.icon("car", 10, 3)}</span><div class="tp-ground">${PS.icon("car", 18)}<div><b style="color:var(--ink)">${PS.esc(g.from)} → ${PS.esc(g.to)}</b>${g.date ? ` · ${d(g.date)}` : ""}<br>${PS.esc(g.how)}</div></div></div>` })),
       ].sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order);
 
@@ -165,7 +175,7 @@
         ? `<div class="tp-budget" style="background:var(--green-50);color:var(--green)">${PS.icon("check", 14, 2.6)} Within your budget of ${money(S.budget, t.cur)}</div>`
         : `<div class="tp-budget" style="background:var(--amber-50);color:#8a5a00">About ${money(t.total - S.budget, t.cur)} over your ${money(S.budget, t.cur)} budget. Try the "Lowest price" hotels.</div>`) : "";
       const share = `${location.origin}/trip/${encodeURIComponent(id)}`;
-      const waText = `${S.title}: ${d(start, { month: "short", day: "numeric" })} – ${d(end, { month: "short", day: "numeric" })}, about ${money(t.total, t.cur)} with flights and hotels. ${share}`;
+      const waText = `${S.title}: ${d(start, { month: "short", day: "numeric" })} – ${d(end, { month: "short", day: "numeric" })}, about ${money(t.total, t.cur)}${t.extra.map(l => " + " + money(l.amt, l.cur)).join("")} with ${(L.cars || []).length ? "flights, hotels and car" : "flights and hotels"}. ${share}`;
 
       app.innerHTML = `
         <section class="tp-head">
@@ -188,8 +198,9 @@
           </div>
           <aside class="tp-side">
             <div class="tp-sum" id="tpSum">
-              <div class="price-sub">${t.partial ? "Estimated total (some prices missing)" : "Trip total, flights and hotels"}</div>
+              <div class="price-sub">${t.partial ? "Estimated total (some prices missing)" : `Trip total, ${(L.cars || []).length ? "flights, hotels and car" : "flights and hotels"}`}</div>
               <div class="tot">${money(t.total, t.cur)}</div>
+              ${t.extra.length ? `<div class="price-sub">plus ${t.extra.map(l => money(l.amt, l.cur)).join(" + ")} for the car, charged in ${PS.esc(t.extra[0].cur)}</div>` : ""}
               <div class="price-sub" style="margin-bottom:8px">Live prices, checked ${ago(L.checkedAt)}. Final price is confirmed at checkout.</div>
               ${t.lines.map(l => `<div class="ln"><span>${PS.esc(l.label)}</span><b>${l.amt > 0 ? money(l.amt, l.cur) : "—"}</b></div>`).join("")}
               ${budget}
@@ -221,6 +232,20 @@
         </div></div></div>`;
     }
 
+    function carCard(c, i) {
+      const o = c.options?.[c.sel];
+      const k = "car" + i, isOpen = open.has(k);
+      return `<div class="tp-item"><span class="pin">${PS.icon("car", 10, 3)}</span><div class="tp-card">
+        <h3>${PS.icon("car", 18)}Rental car in ${PS.esc(c.city)}</h3>
+        <p class="tp-sub">${d(c.pickup)} – ${d(c.dropoff)} · pick up and return at ${PS.esc(c.airport || c.city)}${c.code ? ` (${PS.esc(c.code)})` : ""}</p>
+        ${c.why ? `<p class="tp-why">${PS.esc(c.why)}</p>` : ""}
+        ${o ? carRow(o) : `<p class="tp-err">${PS.esc(c.error || "No cars found.")}</p>`}
+        ${isOpen && c.options?.length > 1 ? `<div class="tp-opts">${c.options.map((x, j) => `<button type="button" class="${j === c.sel ? "on" : ""}" data-pick="car:${i}:${j}" ${T.canEdit ? "" : "disabled"}>${carRow(x)}</button>`).join("")}</div>` : ""}
+        <div class="tp-row">
+          ${c.url ? `<a class="btn btn-primary btn-sm" target="_blank" rel="noopener" href="${PS.esc(c.url)}">See cars &amp; book</a>` : ""}
+          ${c.options?.length > 1 ? `<button class="btn btn-ghost btn-sm" data-toggle="${k}">${isOpen ? "Close" : T.canEdit ? "Change car" : "Other options"}</button>` : ""}
+        </div></div></div>`;
+    }
     function stayCard(s, i) {
       const o = s.options?.[s.sel];
       const k = "hotel" + i, isOpen = open.has(k);

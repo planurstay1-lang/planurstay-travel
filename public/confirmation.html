@@ -155,6 +155,7 @@
           : type === "flight" && p.sel?.search?.to ? `<div class="xsell" style="margin-top:18px"><div><b>Need a hotel in ${PS.esc(p.sel.search.toCity || p.sel.search.to)}?</b><p>Book a stay for ${PS.fmtDate(p.sel.search.depart)}${p.sel.search.return ? " – " + PS.fmtDate(p.sel.search.return) : ""}.</p></div><a class="btn btn-white btn-sm" href="${PS.url("/", {})}#stays">${PS.icon("bed", 16)}Find hotels</a></div>` : ""}
           ${extrasHTML(b, p)}
           <div id="insureBox"></div>
+          <div id="carBox"></div>
           <div id="partnersBox"></div>
           <div id="saveTrip"></div>
           <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:22px">
@@ -165,7 +166,7 @@
       PS.track("booked", { type, value: Number(price) || undefined, currency: cur, id: b.bookingId || b.booking_id || prebookId });
       saveTrip(b);
       insurance(b, p);
-      partners(p);
+      carOffer(p).then((shown) => partners(p, shown));
     }
 
     // Add-ons bought with the booking. LiteAPI returns the Uber voucher link in the booking;
@@ -241,10 +242,34 @@
       if (chosen) { document.getElementById("insureOpen").click(); setTimeout(() => box.scrollIntoView({ behavior: "smooth", block: "start" }), 600); }
     }
 
+    // Our own car rentals (Travellez) at the destination airport, for the trip dates. Shown only when cars are switched on.
+    async function carOffer(p) {
+      try { if (!(await PS.api("/api/cars/config")).enabled) return false; } catch { return false; }
+      const s = p.sel?.search || {}, h = p.sel?.hotel || {}, st = p.sel?.stay || {};
+      let code = null, city = "", dest = "", from = "", to = "";
+      if (type === "flight") { code = s.to; city = dest = s.toCity || s.to; from = s.depart; to = s.return; }
+      else {
+        city = dest = h.city || ""; from = st.checkin; to = st.checkout;
+        if (city) {
+          try {
+            const list = (await PS.api(`/api/airports?q=${encodeURIComponent(city)}`)).data || [];
+            const a = list.find(x => /international|intercontinental/i.test(x.name || "")) || list[0];
+            if (a) { code = a.code; city = a.city || city; }
+          } catch { /* no airport found: no offer */ }
+        }
+      }
+      if (!/^[A-Z]{3}$/.test(code || "") || !from || from < PS.iso(PS.today())) return false;
+      if (!to || to <= from) to = PS.iso(PS.addDays(PS.parse(from), 3)); // one-way flight: a 3-day rental to start with
+      const url = PS.url("/cars", { pickup: code, pickupCity: city, pickupDate: from, pickupTime: "10:00", returnDate: to, returnTime: "10:00" });
+      document.getElementById("carBox").innerHTML = `<div class="xsell" style="margin-top:18px"><div><b>Need a car in ${PS.esc(dest)}?</b><p>Pick up at ${city && city !== dest ? `${PS.esc(city)} airport (${PS.esc(code)})` : PS.esc(code)} on ${PS.fmtDate(from)} and return ${PS.fmtDate(to)}. Compare rental companies and book with PlanurStay.</p></div><a class="btn btn-white btn-sm" href="${PS.esc(url)}">${PS.icon("car", 16)}Find cars</a></div>`;
+      return true;
+    }
+
     // Complete your trip: insurance, airport transfer, car hire (partner links configured on the server)
-    async function partners(p) {
+    async function partners(p, ownCars) {
       let d = {};
       try { d = (await PS.api("/api/partners")).data || {}; } catch { return; }
+      if (ownCars) delete d.carHire; // we already offered our own cars above
       const keys = Object.keys(d); if (!keys.length) return;
       const s = p.sel?.search || {}, h = p.sel?.hotel || {}, st = p.sel?.stay || {};
       const ctx = type === "hotel"
