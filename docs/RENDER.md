@@ -24,13 +24,15 @@ Never commit the values. Set them in Render → Environment.
 | `RESEND_API_KEY` | for email | Confirmations, cancel codes, ticket emails. |
 | `EMAIL_FROM` | for email | Sender on a domain verified in Resend, e.g. `PlanurStay <bookings@planurstay.com>`. |
 | `EMAIL_REPLY_TO` | optional | Reply-to address (default `info@planurstay.com`). |
-| `ANTHROPIC_API_KEY` | optional | Turns on the AI Help assistant. Without it the Help bubble shows a simple menu. |
-| `CHAT_MODEL` | optional | Assistant model (default `claude-sonnet-5`). |
+| `ANTHROPIC_API_KEY` | optional | Turns on the AI Help assistant and the AI trip planner (`/plan`). Without it the Help bubble shows a simple menu and the planner says it isn't available. |
+| `CHAT_MODEL` | optional | Assistant model (default `claude-haiku-4-5`, the cheapest: $1/$5 per million tokens). |
+| `TRIP_MODEL` | optional | Trip planner model (default `claude-haiku-4-5`; `claude-sonnet-5` plans a little better at 2× the price). |
 | `NUITEE_CHATBOT_KEY` | optional | Public key for the "Ask AI" chatbot (defaults to the account's public key). `NUITEE_CHATBOT=off` hides it. |
 | `CHATBOT` | optional | `off` hides the Help bubble. |
 | `LEGAL_NAME`, `LEGAL_ADDRESS`, `SUPPORT_PHONE`, `LEGAL_COUNTRY` | optional | Shown on /terms, /privacy, /contact. |
 | `GSC_HTML_FILE` | optional | Google Search Console verification file name, e.g. `google1a2b3c.html`. |
 | `PUBLIC_MARGIN`, `MEMBER_MARGIN` | optional | Defaults only; the markup is normally set in `/admin` (saved in the database). |
+| `FLEX_EXTRA_MARGIN` | optional | Extra margin points on free-cancellation hotel rates (default `6`), so non-refundable rates stay the cheap headline price. Also editable in `/admin`. |
 | `MAX_SSP_MARGIN` | optional | Highest margin used when pricing up to a hotel's own price (default `100`). Guards against bogus SSPs. |
 | `PARITY_GATE` | optional | `on` hides below-SSP prices from guests. Leave off. |
 | `PAID_EXTRA_ESSENTIAL`, `PAID_EXTRA_PLUS` | optional | Extra hotel discount for paid members, in margin points (default `2` and `3`). |

@@ -87,10 +87,11 @@
           <div class="ad-kpi"><small>Audience</small><b>${S.newsletter}</b><span>newsletter · ${S.priceAlerts} price alerts</span></div>
         </div>
         <div class="ad-card"><h3>Hotel markup</h3>
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Our commission on top of the hotel's net rate. Changes apply to new searches within a few minutes. Members currently save <b>${d.pricing.memberSavePct}%</b>. Below-SSP gate: <b>${d.pricing.parityGate ? "on" : "off"}</b>.</p>
+          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Our commission on top of the hotel's net rate. Changes apply to new searches within a few minutes. Members currently save <b>${d.pricing.memberSavePct}%</b>. Below-SSP gate: <b>${d.pricing.parityGate ? "on" : "off"}</b>. Free-cancellation rates get extra points on top (like Expedia: the non-refundable rate stays the cheap headline price).</p>
           <form id="mkForm" class="ad-bar" style="margin:0">
             <div class="field"><label>Guests %</label><input id="mkPub" type="number" min="0" max="40" step="0.5" value="${d.pricing.publicMargin}" style="width:110px"></div>
             <div class="field"><label>Members %</label><input id="mkMem" type="number" min="0" max="40" step="0.5" value="${d.pricing.memberMargin}" style="width:110px"></div>
+            <div class="field"><label>Free cancellation +%</label><input id="mkFlex" type="number" min="0" max="30" step="0.5" value="${d.pricing.flexExtra ?? 6}" style="width:130px" title="Extra points on free-cancellation rates"></div>
             <button class="btn btn-primary" type="submit">Save</button><span id="mkMsg" style="font-size:13px;align-self:center"></span>
           </form></div>
         <div id="tickets"></div>
@@ -174,9 +175,9 @@
       if (e.target.id !== "mkForm") return;
       e.preventDefault();
       const msg = document.getElementById("mkMsg");
-      const pub = document.getElementById("mkPub").value, mem = document.getElementById("mkMem").value;
-      if (!confirm(`Set guest markup to ${pub}% and member markup to ${mem}%? This changes live prices.`)) return;
-      const r = await fetch("/api/admin/pricing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ publicMargin: pub, memberMargin: mem }) }).then(r => r.json()).catch(() => ({ error: "Network error" }));
+      const pub = document.getElementById("mkPub").value, mem = document.getElementById("mkMem").value, flex = document.getElementById("mkFlex").value;
+      if (!confirm(`Set guest markup to ${pub}%, member markup to ${mem}% and +${flex}% on free-cancellation rates? This changes live prices.`)) return;
+      const r = await fetch("/api/admin/pricing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ publicMargin: pub, memberMargin: mem, flexExtra: flex }) }).then(r => r.json()).catch(() => ({ error: "Network error" }));
       msg.innerHTML = r.success ? `<span class="good">Saved. Members now save ${r.memberSavePct}%.</span>` : `<span class="bad">${esc(r.error)}</span>`;
     });
     document.getElementById("pgo").onclick = probe;

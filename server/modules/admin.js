@@ -23,7 +23,7 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
   db.exec("CREATE TABLE IF NOT EXISTS site_settings (key TEXT PRIMARY KEY, value TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
   const loadSettings = () => {
     const o = {};
-    for (const r of db.prepare("SELECT key, value FROM site_settings WHERE key IN ('publicMargin','memberMargin')").all()) o[r.key] = r.value === "" ? null : +r.value;
+    for (const r of db.prepare("SELECT key, value FROM site_settings WHERE key IN ('publicMargin','memberMargin','flexExtra')").all()) o[r.key] = r.value === "" ? null : +r.value;
     pricing.setOverrides(o);
   };
   loadSettings();
@@ -60,15 +60,17 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
     app.post("/api/admin/pricing", guard, (req, res) => {
       const b = req.body || {};
       const val = (v) => (v === "" || v == null ? null : +v);
-      const pub = val(b.publicMargin), mem = val(b.memberMargin);
+      const pub = val(b.publicMargin), mem = val(b.memberMargin), flex = "flexExtra" in b ? val(b.flexExtra) : undefined;
       const eff = { pub: pub ?? +(process.env.PUBLIC_MARGIN || 16), mem: mem ?? +(process.env.MEMBER_MARGIN || 6) };
       if ([pub, mem].some(v => v != null && !(Number.isFinite(v) && v >= 0 && v <= 40))) return res.status(400).json({ error: "Margins must be between 0 and 40" });
+      if (flex != null && !(Number.isFinite(flex) && flex >= 0 && flex <= 30)) return res.status(400).json({ error: "The free-cancellation extra must be between 0 and 30" });
       if (eff.mem > eff.pub) return res.status(400).json({ error: "Member margin can't be higher than the public margin" });
       const up = db.prepare("INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP");
       up.run("publicMargin", pub == null ? "" : String(pub));
       up.run("memberMargin", mem == null ? "" : String(mem));
+      if (flex !== undefined) up.run("flexExtra", flex == null ? "" : String(flex));
       loadSettings();
-      res.json({ success: true, publicMargin: pricing.PUBLIC_MARGIN(), memberMargin: pricing.MEMBER_MARGIN(), memberSavePct: pricing.memberSavePct() });
+      res.json({ success: true, publicMargin: pricing.PUBLIC_MARGIN(), memberMargin: pricing.MEMBER_MARGIN(), flexExtra: pricing.FLEX_EXTRA(), memberSavePct: pricing.memberSavePct() });
     });
 
     app.get("/api/admin/overview", guard, async (req, res) => {
@@ -82,7 +84,7 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
       const pts = one("SELECT COALESCE(SUM(CASE WHEN type IN ('earn','bonus','redeem','reverse') THEN points END),0) AS avail, COALESCE(SUM(CASE WHEN type='pending' THEN points END),0) AS pending FROM rewards_ledger") || {};
       res.json({
         success: true, from, to, database: dbInfo,
-        pricing: { publicMargin: pricing.PUBLIC_MARGIN(), memberMargin: pricing.MEMBER_MARGIN(), memberSavePct: pricing.memberSavePct(), parityGate: process.env.PARITY_GATE === "on" },
+        pricing: { publicMargin: pricing.PUBLIC_MARGIN(), memberMargin: pricing.MEMBER_MARGIN(), flexExtra: pricing.FLEX_EXTRA(), memberSavePct: pricing.memberSavePct(), parityGate: process.env.PARITY_GATE === "on" },
         liteapi: {
           totals: {
             sales: sumBy(report?.sales, "sales"), commission: sumBy(report?.commission, "commission"),

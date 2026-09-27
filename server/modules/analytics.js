@@ -7,7 +7,7 @@
  */
 const EVENTS = new Set([
   "home", "hotel_results", "hotel_view", "flight_results", "flight_view", "checkout", "booked",
-  "guides", "guide", "rewards", "trips", "login", "legal", "page",
+  "guides", "guide", "rewards", "trips", "login", "legal", "page", "plan", "trip_view", "trip_planned",
 ]);
 const BOT = /bot|crawl|spider|slurp|headless|lighthouse|preview|facebookexternalhit|monitor|curl|wget|python|axios|node-fetch/i;
 

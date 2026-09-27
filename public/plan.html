@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plan a trip with AI — PlanurStay</title>
+  <meta name="description" content="Describe your trip and get a day-by-day plan with live flights and hotels for every city, one total price and a link to share with your family.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/ps.css">
+  <style>
+    .pl-hero { text-align: center; padding: 44px 0 18px; }
+    .pl-hero .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; color: var(--blue); background: var(--blue-50); padding: 6px 12px; border-radius: 999px; }
+    .pl-hero h1 { font-size: clamp(28px, 4.4vw, 42px); letter-spacing: -.03em; margin: 14px 0 8px; color: var(--ink); }
+    .pl-hero p { font-size: 16.5px; color: var(--text-2); max-width: 600px; margin: 0 auto; line-height: 1.55; }
+    .pl-box { max-width: 760px; margin: 22px auto 0; background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 16px; box-shadow: var(--sh-2); }
+    .pl-box textarea { width: 100%; min-height: 118px; resize: vertical; border: 0; outline: 0; font: inherit; font-size: 16px; line-height: 1.55; color: var(--ink); padding: 6px 6px 0; background: transparent; }
+    .pl-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--line-2); padding-top: 12px; margin-top: 6px; }
+    .pl-foot small { color: var(--muted); font-size: 13px; }
+    .pl-ex { max-width: 760px; margin: 14px auto 0; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .pl-ex button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 13px; font: inherit; font-size: 13.5px; color: var(--text-2); cursor: pointer; }
+    .pl-ex button:hover { border-color: var(--blue); color: var(--blue); }
+    .pl-q { max-width: 760px; margin: 18px auto 0; display: flex; gap: 10px; align-items: flex-start; background: var(--blue-50); color: var(--ink); border-radius: 16px; padding: 14px 16px; font-size: 15px; line-height: 1.5; }
+    .pl-q svg { color: var(--blue); flex: none; margin-top: 2px; }
+    .pl-work { max-width: 520px; margin: 26px auto 0; }
+    .pl-step { display: flex; gap: 10px; align-items: center; padding: 9px 0; color: var(--muted); font-size: 15px; }
+    .pl-step.on { color: var(--ink); font-weight: 600; }
+    .pl-step.done { color: var(--green); }
+    .pl-step .dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--line); flex: none; }
+    .pl-step.on .dot { border-color: var(--blue); border-top-color: transparent; animation: plspin 0.9s linear infinite; }
+    .pl-step.done .dot { border-color: var(--green); background: var(--green); color: #fff; }
+    @keyframes plspin { to { transform: rotate(360deg); } }
+    .pl-how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; max-width: 900px; margin: 44px auto 0; }
+    .pl-how div { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+    .pl-how b { display: flex; gap: 8px; align-items: center; color: var(--ink); font-size: 15.5px; margin-bottom: 6px; }
+    .pl-how b svg { color: var(--blue); }
+    .pl-how p { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.55; }
+    .pl-recent { max-width: 760px; margin: 36px auto 0; }
+    .pl-recent h2 { font-size: 17px; color: var(--ink); margin: 0 0 10px; }
+    .pl-recent a { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; color: var(--ink); text-decoration: none; background: #fff; font-weight: 600; font-size: 14.5px; }
+    .pl-recent a span { color: var(--muted); font-weight: 500; font-size: 13px; white-space: nowrap; }
+    @media (max-width: 720px) { .pl-how { grid-template-columns: 1fr; } .pl-hero { padding-top: 28px; } }
+  </style>
+</head>
+<body>
+  <main class="container" style="padding-bottom:64px">
+    <section class="pl-hero">
+      <span class="eyebrow" id="eyebrow"></span>
+      <h1>Plan your whole trip in one go</h1>
+      <p>Tell us where, when and who's travelling. You get a day-by-day plan with live flights and hotels for every city, one total price, and a link to share with family.</p>
+    </section>
+
+    <div id="question"></div>
+    <form class="pl-box" id="form">
+      <textarea id="prompt" maxlength="1500" placeholder="e.g. Toronto to Delhi and Amritsar, Dec 10–24, 2 adults and 2 kids, comfortable hotels, budget CA$6,000"></textarea>
+      <div class="pl-foot">
+        <small>Include your home city, dates or month, travellers and any budget.</small>
+        <button class="btn btn-primary" id="go" type="submit"></button>
+      </div>
+    </form>
+    <div class="pl-ex" id="examples"></div>
+    <div id="work"></div>
+
+    <section class="pl-how" id="how"></section>
+    <section class="pl-recent" id="recent"></section>
+  </main>
+
+  <script src="/js/ps.js"></script>
+  <script>
+  (function () {
+    PS.header({ active: "plan" });
+    PS.footer();
+    const $ = (id) => document.getElementById(id);
+    $("eyebrow").innerHTML = `${PS.icon("sparkle", 15)}AI trip planner`;
+    $("go").innerHTML = `${PS.icon("sparkle", 16)}Plan my trip`;
+
+    const EXAMPLES = [
+      "Toronto to Delhi and Amritsar, 2 weeks in December, 2 adults 2 kids",
+      "Vancouver to Dubai for 5 nights in February, couple, luxury",
+      "Family trip from Toronto to Goa and Mumbai in January, 4 adults, budget CA$8,000",
+      "Calgary to Punjab for a wedding, March 5–20, 3 adults",
+    ];
+    $("examples").innerHTML = EXAMPLES.map(e => `<button type="button">${PS.esc(e)}</button>`).join("");
+    $("examples").querySelectorAll("button").forEach((b, i) => b.onclick = () => { $("prompt").value = EXAMPLES[i]; $("prompt").focus(); });
+
+    $("how").innerHTML = [
+      ["sparkle", "Describe it", "Cities, dates or month, who's coming, the kind of hotels you like. Any language."],
+      ["search", "We check live prices", "Real flights and hotels for every stop, with the cheapest and best-rated options."],
+      ["send", "Tweak, share, book", "Swap hotels, send the link on WhatsApp, and book each part when you're ready."],
+    ].map(([i, t, d]) => `<div><b>${PS.icon(i, 18)}${t}</b><p>${d}</p></div>`).join("");
+
+    const keys = () => PS.local.get("ps_trip_keys") || {};
+    const recent = Object.entries(keys()).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 5);
+    if (recent.length) $("recent").innerHTML = `<h2>Your recent trips</h2>` + recent.map(t => `<a href="/trip/${encodeURIComponent(t.id)}">${PS.esc(t.title || "Trip")}<span>${t.at ? new Date(t.at).toLocaleDateString(PS.locale(), { month: "short", day: "numeric" }) : ""}</span></a>`).join("");
+
+    const q = new URLSearchParams(location.search);
+    if (q.get("q")) $("prompt").value = q.get("q").slice(0, 1500);
+
+    let asked = "";
+    const STEPS = ["Reading your trip", "Checking live flights", "Finding hotels in each city", "Putting your plan together"];
+    function progress() {
+      let k = 0;
+      const paint = () => { $("work").innerHTML = `<div class="pl-work">${STEPS.map((s, i) => `<div class="pl-step ${i < k ? "done" : i === k ? "on" : ""}"><span class="dot">${i < k ? PS.icon("check", 13, 3) : ""}</span>${s}…</div>`).join("")}<p class="price-sub" style="margin-top:8px">This takes about a minute. We're searching real prices, not guessing.</p></div>`; };
+      paint();
+      const t = [8000, 22000, 45000].map((ms, i) => setTimeout(() => { k = i + 1; paint(); }, ms));
+      return () => { t.forEach(clearTimeout); $("work").innerHTML = ""; };
+    }
+
+    $("form").onsubmit = async (e) => {
+      e.preventDefault();
+      const text = $("prompt").value.trim();
+      if (text.length < 8) { $("prompt").focus(); return; }
+      const prompt = asked ? `${asked}\n${text}` : text;
+      $("go").disabled = true; $("question").innerHTML = "";
+      const stop = progress();
+      try {
+        const r = await PS.api("/api/trips/plan", { method: "POST", body: { prompt, currency: PS.cur() } });
+        stop();
+        if (r.question) {
+          asked = prompt;
+          $("question").innerHTML = `<div class="pl-q">${PS.icon("sparkle", 18)}<div>${PS.esc(r.question)}</div></div>`;
+          $("prompt").value = ""; $("prompt").placeholder = "Type your answer…"; $("prompt").focus();
+          $("go").disabled = false;
+          return;
+        }
+        PS.local.set("ps_trip_keys", { ...keys(), [r.id]: { key: r.editKey, at: Date.now(), title: prompt.split("\n")[0].slice(0, 80) } });
+        PS.track("trip_planned");
+        location.href = "/trip/" + encodeURIComponent(r.id);
+      } catch (err) {
+        stop();
+        $("question").innerHTML = `<div class="alert error" style="max-width:760px;margin:18px auto 0">${PS.icon("alert", 18)}<div>${PS.esc(err.message)}</div></div>`;
+        $("go").disabled = false;
+      }
+    };
+  })();
+  </script>
+</body>
+</html>

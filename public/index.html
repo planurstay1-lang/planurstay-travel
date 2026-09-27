@@ -37,6 +37,16 @@
     <div class="container"><h2 class="mini-h">Continue your search</h2><div class="resume-row" id="resumeRow"></div></div>
   </section>
 
+  <section class="section-sm" style="padding-bottom:0">
+    <div class="container">
+      <a class="plan-promo" href="/plan">
+        <span class="pp-ic" data-pp-ic></span>
+        <span class="pp-tx"><b>New: plan your whole trip with AI</b><span>Describe it once. Get a day-by-day plan with live flights and hotels for every city, one total and a link to share.</span></span>
+        <span class="btn btn-white btn-sm">Plan a trip</span>
+      </a>
+    </div>
+  </section>
+
   <section class="deals">
     <div class="container">
       <div class="deals-head">
@@ -277,5 +287,6 @@
       await Promise.all([worker(), worker(), worker()]);
     }, { rootMargin: "200px" }).observe(row);
   </script>
+  <script>document.querySelectorAll("[data-pp-ic]").forEach(e => e.innerHTML = PS.icon("sparkle", 22));</script>
 </body>
 </html>

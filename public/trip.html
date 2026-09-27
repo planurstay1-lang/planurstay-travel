@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your trip — PlanurStay</title>
+  <meta name="description" content="A trip planned on PlanurStay: day-by-day plan with live flight and hotel prices.">
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/ps.css">
+  <style>
+    .tp-head { padding: 28px 0 8px; }
+    .tp-head .eyebrow { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12.5px; color: var(--blue); background: var(--blue-50); padding: 5px 11px; border-radius: 999px; }
+    .tp-head h1 { font-size: clamp(24px, 3.6vw, 34px); letter-spacing: -.025em; color: var(--ink); margin: 12px 0 6px; }
+    .tp-head p { color: var(--text-2); font-size: 15.5px; line-height: 1.55; margin: 0 0 10px; max-width: 760px; }
+    .tp-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--text-2); font-size: 14px; }
+    .tp-meta span { display: inline-flex; gap: 6px; align-items: center; }
+    .tp-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    .tp-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; margin-top: 18px; }
+    .tp-line { position: relative; padding-left: 26px; }
+    .tp-line::before { content: ""; position: absolute; left: 8px; top: 8px; bottom: 8px; width: 2px; background: var(--line); }
+    .tp-item { position: relative; margin-bottom: 16px; }
+    .tp-item > .pin { position: absolute; left: -26px; top: 16px; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 2px solid var(--blue); display: grid; place-items: center; color: var(--blue); }
+    .tp-item > .pin.g { border-color: var(--muted); color: var(--muted); }
+    .tp-card { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+    .tp-card h3 { margin: 0; font-size: 17px; color: var(--ink); display: flex; gap: 8px; align-items: center; }
+    .tp-card h3 svg { color: var(--blue); }
+    .tp-sub { color: var(--text-2); font-size: 13.5px; margin: 3px 0 0; }
+    .tp-why { color: var(--text-2); font-size: 14px; margin: 8px 0 0; line-height: 1.5; }
+    .tp-pick { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-top: 12px; padding: 10px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--soft); }
+    .tp-pick img { width: 96px; height: 72px; object-fit: cover; border-radius: 10px; background: var(--line-2); }
+    .tp-noimg { width: 96px; height: 72px; border-radius: 10px; background: var(--line-2); display: grid; place-items: center; color: var(--muted); }
+    .tp-pick .nm { font-weight: 700; color: var(--ink); font-size: 14.5px; line-height: 1.3; }
+    .tp-pick .dt { color: var(--text-2); font-size: 12.5px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .tp-pick .pr { text-align: right; }
+    .tp-pick .pr b { font-size: 17px; color: var(--ink); display: block; }
+    .tp-pick .pr small { color: var(--muted); font-size: 12px; }
+    .tp-tag { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: var(--blue-50); color: var(--blue); }
+    .tp-tag.g { background: var(--green-50); color: var(--green); }
+    .tp-fl { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--soft); }
+    .tp-fl img { width: 32px; height: 32px; object-fit: contain; }
+    .tp-fl .legs div { font-size: 13.5px; color: var(--ink); }
+    .tp-fl .legs small { color: var(--text-2); }
+    .tp-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+    .tp-opts { margin-top: 10px; display: grid; gap: 8px; }
+    .tp-opts button { text-align: left; font: inherit; border: 1px solid var(--line); background: #fff; border-radius: 14px; padding: 0; cursor: pointer; }
+    .tp-opts button.on { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-50); }
+    .tp-opts button .tp-pick, .tp-opts button .tp-fl { margin: 0; border: 0; background: transparent; }
+    .tp-opts button[disabled] { cursor: default; }
+    .tp-days { margin-top: 12px; }
+    .tp-days summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--blue); }
+    .tp-day { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 10px; padding: 9px 0; border-top: 1px solid var(--line-2); font-size: 14px; }
+    .tp-day:first-of-type { border-top: 0; }
+    .tp-day b { color: var(--ink); }
+    .tp-day small { color: var(--muted); font-weight: 600; }
+    .tp-day p { margin: 2px 0 0; color: var(--text-2); line-height: 1.5; }
+    .tp-ground { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 14px; color: var(--text-2); font-size: 14px; background: #fff; }
+    .tp-ground svg { color: var(--muted); flex: none; }
+    .tp-err { margin-top: 10px; font-size: 13.5px; color: var(--text-2); }
+    .tp-side { position: sticky; top: 84px; display: grid; gap: 14px; }
+    .tp-sum { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px; box-shadow: var(--sh-2); }
+    .tp-sum .tot { font-size: 30px; font-weight: 800; color: var(--ink); letter-spacing: -.02em; }
+    .tp-sum .ln { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; color: var(--text-2); padding: 5px 0; }
+    .tp-sum .ln b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+    .tp-budget { margin-top: 10px; font-size: 13.5px; padding: 9px 11px; border-radius: 10px; }
+    .tp-steps { margin: 12px 0 0; padding: 0; list-style: none; counter-reset: s; }
+    .tp-steps li { counter-increment: s; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid var(--line-2); font-size: 13.5px; color: var(--ink); }
+    .tp-steps li > span { display: flex; gap: 8px; align-items: center; min-width: 0; }
+    .tp-steps li > span::before { content: counter(s); flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--blue-50); color: var(--blue); font-weight: 800; font-size: 12px; display: grid; place-items: center; }
+    .tp-note { font-size: 13px; color: var(--text-2); line-height: 1.5; background: var(--amber-50); border-radius: 12px; padding: 10px 12px; }
+    .tp-tips { margin: 0; padding-left: 18px; color: var(--text-2); font-size: 14px; line-height: 1.6; }
+    .tp-copy { background: var(--blue-50); border-radius: 14px; padding: 12px 14px; font-size: 14px; color: var(--ink); display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+    .tp-mtot { display: none; }
+    @media (max-width: 960px) { .tp-mtot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: var(--ink); color: #fff; text-decoration: none; font-size: 14px; } .tp-mtot b { font-size: 17px; margin-left: 6px; } .tp-mtot span:last-child { display: inline-flex; gap: 4px; align-items: center; opacity: .85; } }
+    @media (max-width: 960px) { .tp-grid { grid-template-columns: 1fr; } .tp-side { position: static; } }
+    @media (max-width: 560px) { .tp-pick { grid-template-columns: 72px minmax(0, 1fr); } .tp-pick img, .tp-noimg { width: 72px; height: 60px; } .tp-pick .pr { grid-column: 1 / -1; text-align: left; display: flex; gap: 8px; align-items: baseline; } }
+  </style>
+</head>
+<body>
+  <main class="container" style="padding-bottom:64px" id="app">
+    <div class="loading-note" style="margin:40px 0"><span class="spinner"></span>Loading your trip…</div>
+  </main>
+
+  <script src="/js/ps.js"></script>
+  <script>
+  (async function () {
+    PS.header({ active: "plan" });
+    PS.footer();
+    const app = document.getElementById("app");
+    const id = decodeURIComponent(location.pathname.split("/")[2] || "");
+    const keys = PS.local.get("ps_trip_keys") || {};
+    const headers = keys[id]?.key ? { "x-trip-key": keys[id].key } : {};
+    const open = new Set();
+    let T = null;
+
+    const nights = (a, b) => Math.round((PS.parse(b) - PS.parse(a)) / 86400000);
+    const d = (s, o) => s ? PS.fmtDate(s, o || { weekday: "short", month: "short", day: "numeric" }) : "";
+    const hm = (s) => (s || "").slice(11, 16);
+    const money = (n, c) => PS.money(n, c);
+    const stars = (n) => n ? "★".repeat(Math.round(n)) : "";
+    const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 2 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+
+    async function load() {
+      try { T = (await PS.api(`/api/trips/${encodeURIComponent(id)}`, { headers })).data; }
+      catch (e) { app.innerHTML = `<div class="empty" style="padding:60px 20px"><h3>${e.status === 404 ? "Trip not found" : "Couldn't load this trip"}</h3><p>${PS.esc(e.message)}</p><a class="btn btn-primary" href="/plan">Plan a trip</a></div>`; return; }
+      if (T.canEdit && keys[id]) { keys[id].title = T.spec.title; PS.local.set("ps_trip_keys", keys); }
+      document.title = `${T.spec.title} — PlanurStay`;
+      render();
+      // Prices older than 6 hours are refreshed automatically when the trip is opened
+      if (T.live && Date.now() - Date.parse(T.live.checkedAt) > 6 * 3600000) refresh(true);
+    }
+
+    async function refresh(quiet) {
+      const btn = document.getElementById("refreshBtn");
+      if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner"></span>Checking prices…`; }
+      try { T = (await PS.api(`/api/trips/${encodeURIComponent(id)}/refresh`, { method: "POST", headers, body: { currency: PS.cur() } })).data; render(); if (!quiet) PS.toast("Prices updated"); }
+      catch (e) { if (!quiet) PS.toast(e.message); render(); }
+    }
+
+    async function choose(kind, index, option) {
+      if (!T.canEdit) return;
+      try { T = (await PS.api(`/api/trips/${encodeURIComponent(id)}/select`, { method: "POST", headers, body: { kind, index, option } })).data; open.delete(kind + index); render(); }
+      catch (e) { PS.toast(e.message); }
+    }
+
+    const hotelRow = (o) => `<div class="tp-pick">
+        ${o.photo ? `<img src="${PS.esc(o.photo)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span class="tp-noimg">${PS.icon("bed", 22)}</span>`}
+        <div><div class="nm">${PS.esc(o.name)}</div>
+          <div class="dt"><span class="tp-tag">${PS.esc(o.label)}</span>${o.stars ? `<span>${stars(o.stars)}</span>` : ""}${o.rating ? `<span><b>${(Math.round(o.rating * 10) / 10).toFixed(1)}</b>/10${o.reviews ? ` (${o.reviews.toLocaleString()})` : ""}</span>` : ""}${o.refundable ? `<span class="tp-tag g">Free cancellation</span>` : ""}${o.board && !/room only/i.test(o.board) ? `<span>${PS.esc(o.board)}</span>` : ""}</div></div>
+        <div class="pr"><b>${money(o.total, o.currency)}</b><small>${money(o.perNight, o.currency)} / night${o.member || o.packagePrice ? " · member price" : ""}</small></div></div>`;
+    const legLine = (l, from, to) => l ? `<div>${hm(l.depart)} ${PS.esc(from)} → ${hm(l.arrive)} ${PS.esc(to)} <small>· ${l.stops ? `${l.stops} stop${l.stops > 1 ? "s" : ""}${l.via?.length ? " via " + PS.esc(l.via.join(", ")) : ""}` : "non-stop"}</small></div>` : "";
+    const flightRow = (o, f) => `<div class="tp-fl">
+        ${o.logo ? `<img src="${PS.esc(o.logo)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span>${PS.icon("plane", 22)}</span>`}
+        <div class="legs"><div class="dt" style="margin-bottom:3px"><span class="tp-tag">${PS.esc(o.label)}</span> <small>${PS.esc(o.airlines.join(", "))}</small></div>
+          ${legLine(o.outbound, f.fromCode, f.toCode)}${legLine(o.inbound, f.toCode, f.fromCode)}</div>
+        <div class="pr" style="text-align:right"><b style="font-size:17px;color:var(--ink)">${money(o.price, o.currency)}</b><br><small style="color:var(--muted);font-size:12px">${T.spec.adults > 1 ? `all ${T.spec.adults + T.spec.children} travellers` : "total"}</small></div></div>`;
+
+    function totals() {
+      const L = T.live || { flights: [], stops: [] };
+      const lines = [];
+      L.flights.forEach((f) => { const o = f.options?.[f.sel]; lines.push({ label: `Flight ${f.fromCode || f.from} → ${f.toCode || f.to}${f.return ? " (return)" : ""}`, amt: o?.price, cur: o?.currency, url: f.url, kind: "flight" }); });
+      L.stops.forEach((s) => { const o = s.options?.[s.sel]; lines.push({ label: `${o ? o.name : "Hotel"} · ${s.city}`, amt: o?.total, cur: o?.currency, url: o?.url || s.hotelsUrl, kind: "hotel" }); });
+      const cur = lines.find(l => l.cur)?.cur || T.live?.currency || PS.cur();
+      const known = lines.filter(l => l.amt > 0 && l.cur === cur);
+      return { lines, cur, total: known.reduce((a, l) => a + l.amt, 0), partial: known.length < lines.length };
+    }
+
+    function render() {
+      const S = T.spec, L = T.live || { flights: [], stops: [] };
+      const start = [...S.flights.map(f => f.depart), ...S.stops.map(s => s.checkin)].sort()[0];
+      const end = [...S.flights.map(f => f.return || f.depart), ...S.stops.map(s => s.checkout)].sort().pop();
+      const who = [PS.plural(S.adults, "adult"), S.children ? PS.plural(S.children, "child", "children") : ""].filter(Boolean).join(", ");
+
+      // Timeline: flights, stays and ground moves in date order
+      const items = [
+        ...L.flights.map((f, i) => ({ date: f.depart, order: 0, html: flightCard(f, i) })),
+        ...L.stops.map((s, i) => ({ date: s.checkin, order: 2, html: stayCard(s, i) })),
+        ...S.ground.filter(g => g.from && g.to).map(g => ({ date: g.date || "9999", order: 1, html: `<div class="tp-item"><span class="pin g">${PS.icon("car", 10, 3)}</span><div class="tp-ground">${PS.icon("car", 18)}<div><b style="color:var(--ink)">${PS.esc(g.from)} → ${PS.esc(g.to)}</b>${g.date ? ` · ${d(g.date)}` : ""}<br>${PS.esc(g.how)}</div></div></div>` })),
+      ].sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order);
+
+      const t = totals();
+      const budget = S.budget > 0 ? (t.total <= S.budget
+        ? `<div class="tp-budget" style="background:var(--green-50);color:var(--green)">${PS.icon("check", 14, 2.6)} Within your budget of ${money(S.budget, t.cur)}</div>`
+        : `<div class="tp-budget" style="background:var(--amber-50);color:#8a5a00">About ${money(t.total - S.budget, t.cur)} over your ${money(S.budget, t.cur)} budget. Try the "Lowest price" hotels.</div>`) : "";
+      const share = `${location.origin}/trip/${encodeURIComponent(id)}`;
+      const waText = `${S.title}: ${d(start, { month: "short", day: "numeric" })} – ${d(end, { month: "short", day: "numeric" })}, about ${money(t.total, t.cur)} with flights and hotels. ${share}`;
+
+      app.innerHTML = `
+        <section class="tp-head">
+          <span class="eyebrow">${PS.icon("sparkle", 14)}Planned with PlanurStay AI</span>
+          <h1>${PS.esc(S.title)}</h1>
+          ${S.summary ? `<p>${PS.esc(S.summary)}</p>` : ""}
+          <div class="tp-meta"><span>${PS.icon("cal", 16)}${d(start)} – ${d(end)}</span><span>${PS.icon("users", 16)}${who}</span><span>${PS.icon("pin", 16)}${S.stops.map(s => PS.esc(s.city)).join(" → ")}</span></div>
+          <div class="tp-actions">
+            <a class="btn btn-primary btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(waText)}">${PS.icon("send", 15)}Share on WhatsApp</a>
+            <button class="btn btn-ghost btn-sm" id="copyBtn">${PS.icon("check", 15)}Copy link</button>
+            <button class="btn btn-ghost btn-sm" id="refreshBtn">${PS.icon("refresh", 15)}Refresh prices</button>
+            <a class="btn btn-ghost btn-sm" href="/plan">${PS.icon("sparkle", 15)}Plan another trip</a>
+          </div>
+          <a class="tp-mtot" href="#tpSum"><span>Trip total <b>${money(t.total, t.cur)}</b></span><span>How to book ${PS.icon("down", 14)}</span></a>
+          ${T.canEdit ? "" : `<div class="tp-copy"><span>Someone shared this trip with you. Prices are live; you can book any part.</span><a class="btn btn-white btn-sm" href="/plan?q=${encodeURIComponent(T.prompt || "")}">Plan your own version</a></div>`}
+        </section>
+        <div class="tp-grid">
+          <div class="tp-line">${items.map(x => x.html).join("")}
+            ${S.tips.length ? `<div class="tp-item"><span class="pin">${PS.icon("info", 10, 3)}</span><div class="tp-card"><h3>${PS.icon("info", 18)}Good to know</h3><ul class="tp-tips" style="margin-top:8px">${S.tips.map(x => `<li>${PS.esc(x)}</li>`).join("")}</ul></div></div>` : ""}
+          </div>
+          <aside class="tp-side">
+            <div class="tp-sum" id="tpSum">
+              <div class="price-sub">${t.partial ? "Estimated total (some prices missing)" : "Trip total, flights and hotels"}</div>
+              <div class="tot">${money(t.total, t.cur)}</div>
+              <div class="price-sub" style="margin-bottom:8px">Live prices, checked ${ago(L.checkedAt)}. Final price is confirmed at checkout.</div>
+              ${t.lines.map(l => `<div class="ln"><span>${PS.esc(l.label)}</span><b>${l.amt > 0 ? money(l.amt, l.cur) : "—"}</b></div>`).join("")}
+              ${budget}
+              <h3 style="font-size:15px;margin:16px 0 0;color:var(--ink)">Book in ${t.lines.length} step${t.lines.length > 1 ? "s" : ""}</h3>
+              <ol class="tp-steps">${t.lines.map(l => `<li><span>${PS.esc(l.label)}</span><a class="btn btn-primary btn-sm" target="_blank" rel="noopener" href="${PS.esc(l.url || "#")}">Book</a></li>`).join("")}</ol>
+            </div>
+            ${L.flights.length && L.stops.length ? `<div class="tp-note"><b>Tip:</b> book your flight first. Hotels near your destination then drop to package prices (about <span data-save-pct>${PS.savePct ? PS.savePct() : 8}</span>% off) for your trip dates.</div>` : ""}
+          </aside>
+        </div>`;
+
+      document.getElementById("copyBtn").onclick = async () => { try { await navigator.clipboard.writeText(share); PS.toast("Link copied"); } catch { prompt("Copy this link", share); } };
+      document.getElementById("refreshBtn").onclick = () => refresh(false);
+      app.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => { const k = b.dataset.toggle; open.has(k) ? open.delete(k) : open.add(k); render(); });
+      app.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => { const [kind, i, o] = b.dataset.pick.split(":"); choose(kind, +i, +o); });
+    }
+
+    function flightCard(f, i) {
+      const o = f.options?.[f.sel];
+      const k = "flight" + i, isOpen = open.has(k);
+      const when = f.return ? `${d(f.depart)} – ${d(f.return)} · round trip` : `${d(f.depart)} · one way`;
+      return `<div class="tp-item"><span class="pin">${PS.icon("plane", 10, 3)}</span><div class="tp-card">
+        <h3>${PS.icon("plane", 18)}${PS.esc(f.fromCity || f.from)} → ${PS.esc(f.toCity || f.to)}</h3>
+        <p class="tp-sub">${when}</p>
+        ${o ? flightRow(o, f) : `<p class="tp-err">${PS.esc(f.error || "No flights found.")}</p>`}
+        ${isOpen && f.options?.length > 1 ? `<div class="tp-opts">${f.options.map((x, j) => `<button type="button" class="${j === f.sel ? "on" : ""}" data-pick="flight:${i}:${j}" ${T.canEdit ? "" : "disabled"}>${flightRow(x, f)}</button>`).join("")}</div>` : ""}
+        <div class="tp-row">
+          ${f.url ? `<a class="btn btn-primary btn-sm" target="_blank" rel="noopener" href="${PS.esc(f.url)}">See flights &amp; book</a>` : ""}
+          ${f.options?.length > 1 ? `<button class="btn btn-ghost btn-sm" data-toggle="${k}">${isOpen ? "Close" : T.canEdit ? "Change flight" : "Other options"}</button>` : ""}
+        </div></div></div>`;
+    }
+
+    function stayCard(s, i) {
+      const o = s.options?.[s.sel];
+      const k = "hotel" + i, isOpen = open.has(k);
+      const n = nights(s.checkin, s.checkout);
+      const days = T.spec.days.filter(x => x.date >= s.checkin && x.date < s.checkout);
+      return `<div class="tp-item"><span class="pin">${PS.icon("bed", 10, 3)}</span><div class="tp-card">
+        <h3>${PS.icon("pin", 18)}${PS.esc(s.city)}${s.country ? `<small style="color:var(--muted);font-weight:500;font-size:13px">${PS.esc(s.country)}</small>` : ""}</h3>
+        <p class="tp-sub">${d(s.checkin)} – ${d(s.checkout)} · ${PS.plural(n, "night")}</p>
+        ${s.why ? `<p class="tp-why">${PS.esc(s.why)}</p>` : ""}
+        ${o ? hotelRow(o) : `<p class="tp-err">${PS.esc(s.error || "No hotels found.")}</p>`}
+        ${isOpen ? `<div class="tp-opts">${s.options.map((x, j) => `<button type="button" class="${j === s.sel ? "on" : ""}" data-pick="hotel:${i}:${j}" ${T.canEdit ? "" : "disabled"}>${hotelRow(x)}</button>`).join("")}</div>` : ""}
+        <div class="tp-row">
+          ${o ? `<a class="btn btn-primary btn-sm" target="_blank" rel="noopener" href="${PS.esc(o.url)}">View &amp; book</a>` : ""}
+          ${s.options?.length > 1 ? `<button class="btn btn-ghost btn-sm" data-toggle="${k}">${isOpen ? "Close" : T.canEdit ? "Change hotel" : "Other options"}</button>` : ""}
+          ${s.hotelsUrl ? `<a class="link" style="font-size:13.5px" target="_blank" rel="noopener" href="${PS.esc(s.hotelsUrl)}">All hotels in ${PS.esc(s.city)}</a>` : ""}
+        </div>
+        ${days.length ? `<details class="tp-days"${i === 0 ? " open" : ""}><summary>Day by day (${PS.plural(days.length, "day")})</summary>${days.map(x => `<div class="tp-day"><small>${d(x.date, { weekday: "short", day: "numeric" })}</small><div><b>${PS.esc(x.title)}</b><p>${PS.esc(x.plan)}</p></div></div>`).join("")}</details>` : ""}
+      </div></div>`;
+    }
+
+    load();
+  })();
+  </script>
+</body>
+</html>
