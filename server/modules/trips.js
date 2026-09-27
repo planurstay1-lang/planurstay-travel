@@ -135,7 +135,7 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
   // ─── Claude: request → structured plan ───
   async function planWithClaude(prompt, currency) {
     const m = model();
-    const call = (extra) => fetch("https://api.anthropic.com/v1/messages", {
+    const call = (extra) => fetch(`${(process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/$/, "")}/v1/messages`, {
       method: "POST",
       headers: { "x-api-key": key(), "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({ model: m, max_tokens: 8000, system: systemPrompt(currency), messages: [{ role: "user", content: prompt }], ...extra }),
@@ -210,7 +210,7 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
     // Fastest among reasonably priced ones (≤ 1.4× the cheapest), so "fastest" is never absurd
     const fastest = [...js].filter(j => j.price <= cheapest.price * 1.4).sort((a, b) => (a.minutes || 1e9) - (b.minutes || 1e9))[0];
     const options = [{ label: "Cheapest", ...cheapest }, ...(fastest && fastest !== cheapest ? [{ label: "Fastest", ...fastest }] : [])];
-    return { ...f, fromCode: from.code, toCode: to.code, fromCity: from.city, toCity: to.city, url, options };
+    return { ...f, fromCode: from.code, toCode: to.code, fromCity: from.city, toCity: to.city, url, options, found: js.length };
   }
 
   async function searchStay(stop, spec, ctx, keepId) {
@@ -248,7 +248,7 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
     if (kept && !seen.has(kept.id)) options.unshift({ label: "Your pick", id: kept.id, name: kept.name, photo: kept.thumb || kept.photo, stars: kept.stars, rating: kept.rating, reviews: kept.reviews, area: kept.address || kept.city, total: kept.total, perNight: kept.perNight, currency: kept.currency, nights: kept.nights, refundable: !!kept.refundable, board: kept.board, member: !!kept.memberPrice, packagePrice: !!kept.packagePrice, url: `/hotel/${kept.id}?${qs({ checkin: stop.checkin, checkout: stop.checkout, adults: spec.adults, rooms: spec.rooms, dest, placeId: place.placeId })}` });
     const pref = { budget: "Lowest price", comfort: "Best value", luxury: "Top rated" }[stop.style];
     const sel = keepId ? Math.max(0, options.findIndex(o => o.id === keepId)) : Math.max(0, options.findIndex(o => o.label === pref));
-    return { ...stop, placeId: place.placeId, dest, hotelsUrl, options, sel };
+    return { ...stop, placeId: place.placeId, dest, hotelsUrl, options, sel, found: hotels.length };
   }
 
   // Rental car at the stop's main airport (Travellez/Sabre). Prices come in the rental company's currency.
@@ -273,7 +273,7 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
       if (!x || seen.has(x.quoteId)) continue; seen.add(x.quoteId);
       options.push({ label, vendor: x.vendor, logo: x.logo, model: x.model, category: x.category, body: x.body, automatic: x.automatic, ac: x.ac, seats: x.seats, bags: x.bags, unlimitedMileage: x.unlimitedMileage, price: x.price, perDay: x.perDay, currency: x.currency, days: x.days, payAtPickup: !!x.payAtPickup });
     }
-    return { ...out, options };
+    return { ...out, options, found: cars.length };
   }
 
   // At most 3 searches at once (LiteAPI rate limits)
@@ -284,14 +284,35 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
     return out;
   }
 
-  async function runSearches(spec, ctx, prev) {
+  // Short, human progress lines for the live planning screen
+  const money = (n, cur) => { try { return new Intl.NumberFormat("en-US", { style: "currency", currency: cur || "USD", maximumFractionDigits: 0 }).format(n); } catch { return `${cur} ${Math.round(n)}`; } };
+  const shortDate = (d) => { try { return new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }); } catch { return d; } };
+  function doneLine(kind, r) {
+    if (!r || r.error || !(r.options || []).length) return { state: "fail", detail: r?.error || "Nothing found" };
+    const o = r.options[r.sel || 0] || r.options[0];
+    if (kind === "flight") return { state: "done", detail: `${r.found} options · from ${money(Math.min(...r.options.map(x => x.price)), o.currency)}` };
+    if (kind === "hotel") return { state: "done", detail: `${r.found} hotels · ${o.name}, ${money(o.perNight, o.currency)}/night` };
+    return { state: "done", detail: `${r.found} cars · from ${money(Math.min(...r.options.map(x => x.price)), o.currency)}` };
+  }
+
+  async function runSearches(spec, ctx, prev, onEvent = () => {}) {
     const keep = (i) => prev?.stops?.[i]?.options?.[prev.stops[i].sel]?.id;
     // Cars only when car rentals are switched on (Travellez account set)
     const carSpecs = (spec.cars || []).length && (await internal("/api/cars/config").catch(() => ({}))).enabled ? spec.cars : [];
+    // Each search reports "started" and "finished" so the planning screen can show it live
+    const task = (kind, index, label, fn) => async () => {
+      const id = `${kind}${index}`;
+      onEvent({ t: "step", id, kind, label, state: "run" });
+      let r;
+      try { r = await fn(); } catch (e) { onEvent({ t: "step", id, kind, label, state: "fail", detail: "Search took too long" }); throw e; }
+      onEvent({ t: "step", id, kind, label, ...doneLine(kind, r) });
+      onEvent({ t: "item", kind, index, data: r });
+      return r;
+    };
     const res = await pool3([
-      ...spec.flights.map((f) => () => searchFlight(f, spec, ctx)),
-      ...spec.stops.map((s, i) => () => searchStay(s, spec, ctx, keep(i))),
-      ...carSpecs.map((c) => () => searchCar(c, spec, ctx)),
+      ...spec.flights.map((f, i) => task("flight", i, `Searching flights ${f.from} → ${f.to}`, () => searchFlight(f, spec, ctx))),
+      ...spec.stops.map((s, i) => task("hotel", i, `Finding hotels in ${s.city} · ${shortDate(s.checkin)}–${shortDate(s.checkout)}`, () => searchStay(s, spec, ctx, keep(i)))),
+      ...carSpecs.map((c, i) => task("car", i, `Checking rental cars in ${c.city}`, () => searchCar(c, spec, ctx))),
     ]);
     const nf = spec.flights.length, ns = spec.stops.length;
     // Keep the option chosen earlier (by position for flights, by label for cars)
@@ -337,6 +358,40 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
         console.error("Trip plan error:", err.message);
         res.status(502).json({ error: err.user || "The planner is busy right now. Please try again in a moment." });
       }
+    });
+
+    // Same as /api/trips/plan, but streams each step as it happens (one JSON object per line) for the live planning screen
+    app.post("/api/trips/plan-stream", async (req, res) => {
+      if (!key()) return res.status(503).json({ error: "The trip planner isn't available right now." });
+      const prompt = String(req.body?.prompt || "").trim().slice(0, 1500);
+      if (prompt.length < 8) return res.status(400).json({ error: "Tell us a bit more: where, when and who's travelling." });
+      if (limited(req, "plan", 8)) return res.status(429).json({ error: "You've planned several trips in a short time. Please try again in a little while." });
+      const currency = /^[A-Z]{3}$/.test(req.body?.currency || "") ? req.body.currency : "USD";
+      res.status(200).set({ "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
+      let closed = false; res.on("close", () => { closed = true; });
+      const send = (o) => { if (closed) return; res.write(JSON.stringify(o) + "\n"); res.flush?.(); };
+      const ping = setInterval(() => send({ t: "ping" }), 10000); // keeps proxies from closing a quiet connection
+      try {
+        send({ t: "step", id: "read", kind: "read", label: "Reading your trip and working out the route", state: "run" });
+        const raw = await planWithClaude(prompt, currency);
+        if (!raw.ready) { send({ t: "step", id: "read", kind: "read", label: "Reading your trip", state: "done", detail: "One quick question first" }); send({ t: "question", question: String(raw.question || "Where would you like to go, and when?").slice(0, 300) }); return; }
+        const spec = clean(raw);
+        if (!spec.stops.length) { send({ t: "question", question: raw.question || "Which dates are you travelling? (We can only plan trips starting from tomorrow.)" }); return; }
+        const first = spec.stops[0].checkin, last = spec.stops[spec.stops.length - 1].checkout;
+        const who = `${spec.adults} adult${spec.adults > 1 ? "s" : ""}${spec.children ? `, ${spec.children} child${spec.children > 1 ? "ren" : ""}` : ""}`;
+        send({ t: "step", id: "read", kind: "read", label: "Reading your trip", state: "done", detail: `${spec.stops.map(x => x.city).join(" → ")} · ${shortDate(first)}–${shortDate(last)} · ${who}` });
+        send({ t: "plan", spec: { title: spec.title, summary: spec.summary, origin: spec.origin, adults: spec.adults, children: spec.children, budget: spec.budget, stops: spec.stops, flights: spec.flights, cars: spec.cars, ground: spec.ground } });
+        const live = await runSearches(spec, { cookie: req.headers.cookie || "", currency }, null, send);
+        send({ t: "step", id: "save", kind: "save", label: "Putting your plan together", state: "run" });
+        const id = crypto.randomBytes(6).toString("base64url"), editKey = crypto.randomBytes(18).toString("hex");
+        db.prepare("INSERT INTO trips (id, edit_key, user_id, prompt, currency, spec, live) VALUES (?, ?, ?, ?, ?, ?, ?)")
+          .run(id, editKey, userId(req), prompt, currency, JSON.stringify(spec), JSON.stringify(live));
+        send({ t: "step", id: "save", kind: "save", label: "Putting your plan together", state: "done", detail: `${spec.days.length} day${spec.days.length === 1 ? "" : "s"} planned` });
+        send({ t: "done", id, editKey, title: spec.title });
+      } catch (err) {
+        console.error("Trip plan error:", err.message);
+        send({ t: "error", error: err.user || "The planner is busy right now. Please try again in a moment." });
+      } finally { clearInterval(ping); res.end(); }
     });
 
     app.get("/api/trips/:id", (req, res) => {

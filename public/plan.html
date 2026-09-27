@@ -40,6 +40,49 @@
     .pl-recent h2 { font-size: 17px; color: var(--ink); margin: 0 0 10px; }
     .pl-recent a { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; color: var(--ink); text-decoration: none; background: #fff; font-weight: 600; font-size: 14.5px; }
     .pl-recent a span { color: var(--muted); font-weight: 500; font-size: 13px; white-space: nowrap; }
+    main [hidden] { display: none !important; }
+    /* Live planning screen: timeline on the left, the trip taking shape on the right */
+    .pl-live { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 22px; max-width: 1040px; margin: 26px auto 0; align-items: start; }
+    .pl-feed { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 18px 20px; }
+    .pl-feed h3, .pl-side h3 { font-size: 16px; color: var(--ink); margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+    .pl-feed h3 .live { width: 8px; height: 8px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 0 0 rgba(31,91,255,.5); animation: plpulse 1.4s infinite; }
+    .pl-feed.finished h3 .live { background: var(--green); animation: none; }
+    @keyframes plpulse { 0% { box-shadow: 0 0 0 0 rgba(31,91,255,.45); } 70% { box-shadow: 0 0 0 10px rgba(31,91,255,0); } 100% { box-shadow: 0 0 0 0 rgba(31,91,255,0); } }
+    .pl-line { position: relative; display: flex; gap: 12px; padding: 0 0 16px; animation: plin .35s ease both; }
+    .pl-line:not(:last-child)::before { content: ""; position: absolute; left: 10px; top: 24px; bottom: 2px; width: 2px; background: var(--line-2); }
+    .pl-line.done:not(:last-child)::before { background: #bfe8d2; }
+    .pl-line .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); flex: none; display: grid; place-items: center; background: #fff; position: relative; z-index: 1; }
+    .pl-line.run .dot { border-color: var(--blue); border-top-color: transparent; animation: plspin .9s linear infinite; }
+    .pl-line.done .dot { border-color: var(--green); background: var(--green); color: #fff; }
+    .pl-line.fail .dot { border-color: #e0a100; background: #fff4e5; color: #a65b00; }
+    .pl-line b { display: block; font-size: 14.5px; color: var(--ink); font-weight: 600; }
+    .pl-line.run b { color: var(--blue); }
+    .pl-line small { display: block; color: var(--text-2); font-size: 13px; margin-top: 2px; animation: plin .3s ease both; }
+    .pl-line.fail small { color: #a65b00; }
+    @keyframes plin { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .pl-side { position: sticky; top: 90px; background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 18px; box-shadow: var(--sh-2); }
+    .pl-side .ttl { font-size: 18px; font-weight: 800; color: var(--ink); line-height: 1.3; }
+    .pl-side .sub { color: var(--text-2); font-size: 13.5px; margin: 4px 0 12px; }
+    .pl-route { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 14px; }
+    .pl-route span { padding: 4px 10px; border-radius: 999px; background: var(--blue-50); color: var(--blue); font-weight: 700; font-size: 12.5px; }
+    .pl-route i { color: var(--muted); font-style: normal; }
+    .pl-sec { font-size: 11.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); margin: 12px 0 6px; }
+    .pl-slot { display: flex; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--line-2); border-radius: 14px; margin-bottom: 8px; min-height: 58px; }
+    .pl-slot.wait .ph { flex: 1; height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--line-2), #f4f6fb, var(--line-2)); background-size: 200% 100%; animation: plshimmer 1.2s infinite; }
+    .pl-slot.wait small { color: var(--muted); font-size: 12.5px; display: block; margin-bottom: 6px; }
+    @keyframes plshimmer { to { background-position: -200% 0; } }
+    .pl-slot.ok { animation: plin .35s ease both; }
+    .pl-slot img { width: 52px; height: 40px; object-fit: cover; border-radius: 8px; flex: none; background: var(--line-2); }
+    .pl-slot img.logo { object-fit: contain; background: #fff; }
+    .pl-slot .t { flex: 1; min-width: 0; }
+    .pl-slot .t b { display: block; font-size: 13.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pl-slot .t small { display: block; font-size: 12px; color: var(--text-2); }
+    .pl-slot .p { font-weight: 800; color: var(--ink); font-size: 14px; white-space: nowrap; }
+    .pl-slot.miss { color: #a65b00; font-size: 13px; }
+    .pl-total { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px solid var(--line-2); margin-top: 10px; padding-top: 12px; font-weight: 700; color: var(--ink); }
+    .pl-total b { font-size: 20px; }
+    .pl-ready { margin-top: 14px; }
+    @media (max-width: 900px) { .pl-live { grid-template-columns: 1fr; } .pl-side { position: static; order: -1; } }
     @media (max-width: 720px) { .pl-how { grid-template-columns: 1fr; } .pl-hero { padding-top: 28px; } }
   </style>
 </head>
@@ -98,13 +141,87 @@
     if (q.get("q")) $("prompt").value = q.get("q").slice(0, 1500);
 
     let asked = "";
-    const STEPS = ["Reading your trip", "Checking live flights", "Finding hotels in each city", "Putting your plan together"];
-    function progress() {
-      let k = 0;
-      const paint = () => { $("work").innerHTML = `<div class="pl-work">${STEPS.map((s, i) => `<div class="pl-step ${i < k ? "done" : i === k ? "on" : ""}"><span class="dot">${i < k ? PS.icon("check", 13, 3) : ""}</span>${s}…</div>`).join("")}<p class="price-sub" style="margin-top:8px">This takes about a minute. We're searching real prices, not guessing.</p></div>`; };
-      paint();
-      const t = [8000, 22000, 45000].map((ms, i) => setTimeout(() => { k = i + 1; paint(); }, ms));
-      return () => { t.forEach(clearTimeout); $("work").innerHTML = ""; };
+    // ─── Live planning: the server streams each step; the side panel fills in as results arrive ───
+    const money = (n, c) => PS.money(n, c, 0);
+    const shortD = (d) => d ? PS.fmtDate(d) : "";
+    function liveView() {
+      $("how").hidden = true; $("recent").hidden = true; $("examples").hidden = true;
+      $("work").innerHTML = `<div class="pl-live">
+        <section class="pl-feed" id="feed"><h3><span class="live"></span><span id="feedTitle">Planning your trip…</span></h3><div id="lines"></div></section>
+        <aside class="pl-side" id="side"><div class="ttl" id="sTitle">Your trip</div><div class="sub" id="sSub">Working out the route…</div>
+          <div class="pl-slot wait"><div class="t"><small>Route, dates and travellers</small><div class="ph"></div></div></div></aside>
+      </div>`;
+      $("work").scrollIntoView({ behavior: "smooth", block: "start" });
+      const lines = $("lines"), got = { flight: [], hotel: [], car: [] };
+      let spec = null;
+      function line(ev) {
+        let el = lines.querySelector(`[data-id="${ev.id}"]`);
+        if (!el) { el = document.createElement("div"); el.dataset.id = ev.id; lines.appendChild(el); }
+        el.className = `pl-line ${ev.state}`;
+        el.innerHTML = `<span class="dot">${ev.state === "done" ? PS.icon("check", 12, 3) : ev.state === "fail" ? "!" : ""}</span><div><b>${PS.esc(ev.label)}${ev.state === "run" ? "…" : ""}</b>${ev.detail ? `<small>${PS.esc(ev.detail)}</small>` : ""}</div>`;
+      }
+      function slot(kind, i, label) { return `<div class="pl-slot wait" id="slot-${kind}${i}"><div class="t"><small>${PS.esc(label)}</small><div class="ph"></div></div></div>`; }
+      function paintPlan() {
+        const S = spec, last = S.stops[S.stops.length - 1];
+        $("sTitle").textContent = S.title;
+        $("sSub").textContent = `${shortD(S.stops[0].checkin)} – ${shortD(last.checkout)} · ${PS.plural(S.adults, "adult")}${S.children ? ", " + PS.plural(S.children, "child", "children") : ""}`;
+        const route = [S.origin, ...S.stops.map(x => x.city), S.flights.some(f => f.return) ? S.origin : ""].filter(Boolean);
+        $("side").innerHTML = `<div class="ttl">${PS.esc(S.title)}</div><div class="sub">${PS.esc($("sSub").textContent)}</div>
+          <div class="pl-route">${route.map(c => `<span>${PS.esc(c)}</span>`).join("<i>→</i>")}</div>
+          ${S.flights.length ? `<div class="pl-sec">Flights</div>${S.flights.map((f, i) => slot("flight", i, `${f.from} → ${f.to} · ${shortD(f.depart)}${f.return ? " – " + shortD(f.return) : ""}`)).join("")}` : ""}
+          <div class="pl-sec">Stays</div>${S.stops.map((x, i) => slot("hotel", i, `${x.city} · ${shortD(x.checkin)} – ${shortD(x.checkout)}`)).join("")}
+          ${(S.cars || []).length ? `<div class="pl-sec">Car</div>${S.cars.map((c, i) => slot("car", i, `${c.city} · ${shortD(c.pickup)} – ${shortD(c.dropoff)}`)).join("")}` : ""}
+          <div class="pl-total"><span>Trip total so far</span><b id="sTotal">—</b></div><div id="sReady"></div>`;
+      }
+      function fill(ev) {
+        const el = $(`slot-${ev.kind}${ev.index}`); if (!el) return;
+        const r = ev.data || {}, o = (r.options || [])[r.sel || 0];
+        if (!o) { el.className = "pl-slot miss"; el.innerHTML = `${PS.icon("alert", 16)}<div class="t"><b>${PS.esc(ev.kind === "hotel" ? r.city : ev.kind === "car" ? r.city : `${r.from} → ${r.to}`)}</b><small>${PS.esc(r.error || "Nothing found")}</small></div>`; return; }
+        got[ev.kind][ev.index] = o;
+        el.className = "pl-slot ok";
+        if (ev.kind === "flight") el.innerHTML = `${o.logo ? `<img class="logo" src="${PS.esc(o.logo)}" alt="">` : PS.icon("plane", 22)}<div class="t"><b>${PS.esc((o.airlines || []).join(", ") || "Flight")}</b><small>${PS.esc(r.fromCode || "")} → ${PS.esc(r.toCode || "")} · ${o.outbound ? (o.outbound.stops ? PS.plural(o.outbound.stops, "stop") : "Nonstop") : ""}</small></div><span class="p">${money(o.price, o.currency)}</span>`;
+        else if (ev.kind === "hotel") el.innerHTML = `${o.photo ? `<img src="${PS.esc(o.photo)}" alt="">` : PS.icon("bed", 22)}<div class="t"><b>${PS.esc(o.name)}</b><small>${o.rating ? `${Number(o.rating).toFixed(1)} · ` : ""}${money(o.perNight, o.currency)}/night · ${PS.esc(o.label)}</small></div><span class="p">${money(o.total, o.currency)}</span>`;
+        else el.innerHTML = `${o.logo ? `<img class="logo" src="${PS.esc(o.logo)}" alt="">` : PS.icon("car", 22)}<div class="t"><b>${PS.esc(o.vendor)} · ${PS.esc(o.category || "Car")}</b><small>${PS.esc(o.model || "")}${o.payAtPickup ? " · pay at pick-up" : ""}</small></div><span class="p">${money(o.price, o.currency)}</span>`;
+        // Running total in the trip currency (other currencies are left out of the sum)
+        const cur = PS.cur(), all = [...got.flight, ...got.hotel, ...got.car].filter(Boolean);
+        const sum = all.filter(x => (x.currency || cur) === cur).reduce((a, x) => a + (+(x.total ?? x.price) || 0), 0);
+        if (sum) $("sTotal").textContent = money(sum, cur);
+      }
+      return {
+        on(ev) {
+          if (ev.t === "step") line(ev);
+          else if (ev.t === "plan") { spec = ev.spec; paintPlan(); }
+          else if (ev.t === "item") fill(ev);
+        },
+        finish(id) {
+          $("feed").classList.add("finished"); $("feedTitle").textContent = "Your trip is ready";
+          const ready = $("sReady"), link = "/trip/" + encodeURIComponent(id);
+          if (ready) ready.innerHTML = `<a class="btn btn-primary btn-block pl-ready" href="${link}">${PS.icon("right", 16)}Open your trip</a>`;
+          setTimeout(() => { location.href = link; }, 2200);
+        },
+      };
+    }
+
+    async function planStream(prompt) {
+      const r = await fetch("/api/trips/plan-stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, currency: PS.cur() }) });
+      if (!r.ok || !r.body) { const j = await r.json().catch(() => ({})); throw new Error(j.error || "The planner is busy right now. Please try again in a moment."); }
+      const view = liveView();
+      const reader = r.body.getReader(), dec = new TextDecoder();
+      let buf = "", result = null;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (value) buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const raw = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+          if (!raw) continue;
+          let ev; try { ev = JSON.parse(raw); } catch { continue; }
+          if (ev.t === "question" || ev.t === "error" || ev.t === "done") result = ev;
+          else view.on(ev);
+        }
+        if (done) break;
+      }
+      return { result: result || { t: "error", error: "The connection dropped. Please try again." }, view };
     }
 
     $("form").onsubmit = async (e) => {
@@ -113,24 +230,23 @@
       if (text.length < 8) { $("prompt").focus(); return; }
       const prompt = asked ? `${asked}\n${text}` : text;
       $("go").disabled = true; $("question").innerHTML = "";
-      const stop = progress();
+      const showForm = () => { $("work").innerHTML = ""; $("how").hidden = false; $("recent").hidden = false; $("examples").hidden = false; $("go").disabled = false; };
       try {
-        const r = await PS.api("/api/trips/plan", { method: "POST", body: { prompt, currency: PS.cur() } });
-        stop();
-        if (r.question) {
-          asked = prompt;
-          $("question").innerHTML = `<div class="pl-q">${PS.icon("sparkle", 18)}<div>${PS.esc(r.question)}</div></div>`;
+        const { result, view } = await planStream(prompt);
+        if (result.t === "question") {
+          showForm(); asked = prompt;
+          $("question").innerHTML = `<div class="pl-q">${PS.icon("sparkle", 18)}<div>${PS.esc(result.question)}</div></div>`;
           $("prompt").value = ""; $("prompt").placeholder = "Type your answer…"; $("prompt").focus();
-          $("go").disabled = false;
+          $("question").scrollIntoView({ behavior: "smooth", block: "center" });
           return;
         }
-        PS.local.set("ps_trip_keys", { ...keys(), [r.id]: { key: r.editKey, at: Date.now(), title: prompt.split("\n")[0].slice(0, 80) } });
+        if (result.t === "error") throw new Error(result.error);
+        PS.local.set("ps_trip_keys", { ...keys(), [result.id]: { key: result.editKey, at: Date.now(), title: result.title || prompt.split("\n")[0].slice(0, 80) } });
         PS.track("trip_planned");
-        location.href = "/trip/" + encodeURIComponent(r.id);
+        view.finish(result.id);
       } catch (err) {
-        stop();
+        showForm();
         $("question").innerHTML = `<div class="alert error" style="max-width:760px;margin:18px auto 0">${PS.icon("alert", 18)}<div>${PS.esc(err.message)}</div></div>`;
-        $("go").disabled = false;
       }
     };
   })();
