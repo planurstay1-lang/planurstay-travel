@@ -271,7 +271,7 @@ function createTrips({ db, port, jwt, JWT_SECRET }) {
     const seen = new Set(), options = [];
     for (const [label, x] of picks) {
       if (!x || seen.has(x.quoteId)) continue; seen.add(x.quoteId);
-      options.push({ label, vendor: x.vendor, logo: x.logo, model: x.model, category: x.category, body: x.body, automatic: x.automatic, ac: x.ac, seats: x.seats, bags: x.bags, unlimitedMileage: x.unlimitedMileage, price: x.price, perDay: x.perDay, currency: x.currency, days: x.days });
+      options.push({ label, vendor: x.vendor, logo: x.logo, model: x.model, category: x.category, body: x.body, automatic: x.automatic, ac: x.ac, seats: x.seats, bags: x.bags, unlimitedMileage: x.unlimitedMileage, price: x.price, perDay: x.perDay, currency: x.currency, days: x.days, payAtPickup: !!x.payAtPickup });
     }
     return { ...out, options };
   }

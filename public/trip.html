@@ -148,7 +148,7 @@
       const lines = [];
       L.flights.forEach((f) => { const o = f.options?.[f.sel]; lines.push({ label: `Flight ${f.fromCode || f.from} → ${f.toCode || f.to}${f.return ? " (return)" : ""}`, amt: o?.price, cur: o?.currency, url: f.url, kind: "flight" }); });
       L.stops.forEach((s) => { const o = s.options?.[s.sel]; lines.push({ label: `${o ? o.name : "Hotel"} · ${s.city}`, amt: o?.total, cur: o?.currency, url: o?.url || s.hotelsUrl, kind: "hotel" }); });
-      (L.cars || []).forEach((c) => { const o = c.options?.[c.sel]; lines.push({ label: `Rental car · ${c.airport || c.city}`, amt: o?.price, cur: o?.currency, url: c.url, kind: "car" }); });
+      (L.cars || []).forEach((c) => { const o = c.options?.[c.sel]; lines.push({ label: `Rental car · ${c.airport || c.city}${o?.payAtPickup ? " (pay at pick-up)" : ""}`, amt: o?.price, cur: o?.currency, url: c.url, kind: "car" }); });
       const cur = lines.find(l => l.cur && l.kind !== "car")?.cur || T.live?.currency || PS.cur();
       const known = lines.filter(l => l.amt > 0 && l.cur === cur);
       // Car prices come in the rental company's currency; when it differs we show them next to the total, not in it
