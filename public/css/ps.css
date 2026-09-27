@@ -2093,3 +2093,74 @@ button.fs-seat:not(:disabled):hover { outline: 2px solid var(--blue); }
 .plan-promo .pp-tx span { font-size: 14px; opacity: .9; line-height: 1.45; }
 .plan-promo .btn { flex: none; }
 @media (max-width: 640px) { .plan-promo { flex-wrap: wrap; } .plan-promo .btn { width: 100%; justify-content: center; } }
+/* Protect your trip (Sitata insurance widget on the confirmation page) */
+.insure-panel { margin-top: 18px; }
+.insure-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 14px; }
+.insure-head h3 { font-size: 17px; margin: 0 0 4px; }
+.insure-head p { margin: 0; color: var(--text-2); font-size: 14px; }
+.insure-ic { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--blue-50); color: var(--blue); }
+.insure-wdg:empty { display: none; }
+.insure-wdg { margin-top: 6px; }
+
+/* Protect your trip at checkout (fixed-price plans, Trip.com style) */
+#insPanel.err { border-color: var(--red); box-shadow: 0 0 0 3px rgba(229,72,77,.12); }
+#insPanel.err .ins-lead::after { content: "Choose a plan or \"No thanks\" to continue."; display: block; margin-top: 6px; color: var(--red); font-weight: 700; }
+#insPanel .co-head h2 { display: flex; align-items: center; gap: 8px; }
+#insPanel .co-head h2 svg { color: var(--blue); }
+.ins-lead { margin: 0 0 12px; color: var(--text-2); font-size: 14px; }
+.ins-opts { display: grid; gap: 10px; }
+.ins-opt { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1.5px solid var(--line); border-radius: 14px; cursor: pointer; transition: border-color .15s, background .15s; }
+.ins-opt:hover { border-color: #b9c7ea; }
+.ins-opt.on { border-color: var(--blue); background: var(--blue-50); }
+.ins-opt input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--blue); flex: none; }
+.ins-body { flex: 1; min-width: 0; }
+.ins-body > small { display: block; color: var(--text-2); font-size: 13px; margin-top: 2px; }
+.ins-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.ins-price { font-weight: 800; color: var(--ink); text-align: right; white-space: nowrap; }
+.ins-price small { display: block; font-weight: 600; font-size: 12px; color: var(--muted); }
+.ins-body ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13.5px; color: var(--text-2); }
+.ins-body li { display: flex; align-items: center; gap: 6px; }
+.ins-body li svg { color: var(--green, #0a7d46); flex: none; }
+.ins-body li span { color: var(--muted); }
+.co-ins-sum { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 12px 14px; border: 1px dashed var(--blue); border-radius: 14px; background: var(--blue-50); font-size: 14px; }
+.co-ins-sum > svg { color: var(--blue); flex: none; }
+.co-ins-sum div { flex: 1; min-width: 0; }
+.co-ins-sum small { display: block; color: var(--text-2); font-size: 12px; }
+.insure-panel.chosen { border: 2px solid var(--blue); }
+.insure-step { display: inline-block; margin-bottom: 4px; padding: 2px 8px; border-radius: 999px; background: var(--blue); color: #fff; font-size: 11.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+
+/* ─── Car rentals ─── */
+.cars-page { padding-top: 24px; padding-bottom: 60px; }
+.car-search { padding: 20px; margin-bottom: 22px; }
+.car-search h1 { font-size: 24px; margin: 0 0 14px; }
+.car-form { display: grid; grid-template-columns: 1.4fr 1.4fr 1fr 1fr auto; gap: 12px; align-items: end; }
+.car-form .car-ap.hidden { display: none; }
+.car-form:has(.car-ap.hidden) { grid-template-columns: 2fr 1fr 1fr auto; }
+.car-form .field input { width: 100%; }
+.car-form .dt { display: grid; grid-template-columns: 1fr 96px; gap: 6px; }
+.car-go { height: 48px; white-space: nowrap; }
+.car-diff { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); cursor: pointer; }
+.car-diff input { width: 17px; height: 17px; accent-color: var(--blue); margin: 0; }
+@media (max-width: 900px) { .car-form, .car-form:has(.car-ap.hidden) { grid-template-columns: 1fr; } }
+.car-card { display: grid; grid-template-columns: 1fr 200px; gap: 16px; padding: 18px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+.car-card:hover { box-shadow: var(--sh-2); }
+.car-vendor { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
+.car-vendor img { height: 20px; max-width: 80px; object-fit: contain; }
+.car-card h3 { font-size: 18px; margin: 0; }
+.car-card h3 small { font-weight: 600; color: var(--muted); font-size: 13px; }
+.car-model { color: var(--text-2); font-size: 14px; margin: 2px 0 10px; }
+.car-feats { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13.5px; color: var(--text-2); margin-bottom: 10px; }
+.car-feats span { display: inline-flex; align-items: center; gap: 5px; }
+.car-price { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 2px; text-align: right; border-left: 1px solid var(--line-2); padding-left: 16px; }
+.car-price .btn { margin-top: 8px; }
+@media (max-width: 640px) { .car-card { grid-template-columns: 1fr; } .car-price { border-left: 0; padding-left: 0; border-top: 1px solid var(--line-2); padding-top: 12px; align-items: stretch; text-align: left; } }
+.co-back-link { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px; padding: 0; }
+.car-when { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0 14px; }
+.car-when > div { padding: 12px 14px; border-radius: 12px; background: var(--line-2); display: grid; gap: 2px; }
+.car-when small { color: var(--muted); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: .4px; }
+.car-when span { color: var(--text-2); font-size: 13.5px; }
+.car-rules { margin-top: 12px; font-size: 14px; }
+.car-rules summary { cursor: pointer; font-weight: 700; color: var(--blue); }
+.car-rules ul { margin: 10px 0 0; padding-left: 18px; color: var(--text-2); display: grid; gap: 6px; font-size: 13.5px; }
+.cars-page [hidden] { display: none !important; }
+.car-form .dt { grid-template-columns: 1fr 118px; }

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Car rentals — PlanurStay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/ps.css">
+</head>
+<body>
+  <main class="container cars-page">
+    <section class="car-search panel" id="carSearch">
+      <h1>Car rentals</h1>
+      <form class="car-form" id="carForm" novalidate>
+        <div class="field car-ap" id="apPick"><label for="pickAp">Pick-up airport</label><input id="pickAp" autocomplete="off" placeholder="City or airport, e.g. Toronto"></div>
+        <div class="field car-ap hidden" id="apDrop"><label for="dropAp">Drop-off airport</label><input id="dropAp" autocomplete="off" placeholder="City or airport"></div>
+        <div class="field"><label for="pDate">Pick-up</label><div class="dt"><input type="date" id="pDate"><input type="time" id="pTime" value="10:00" step="900"></div></div>
+        <div class="field"><label for="rDate">Drop-off</label><div class="dt"><input type="date" id="rDate"><input type="time" id="rTime" value="10:00" step="900"></div></div>
+        <button class="btn btn-primary car-go" type="submit" id="carGo">Search cars</button>
+        <label class="car-diff"><input type="checkbox" id="diffDrop"> Drop off at a different airport</label>
+      </form>
+    </section>
+
+    <div class="results-layout" id="carResultsWrap" hidden>
+      <aside class="filters" id="filters" aria-label="Filters">
+        <div class="filters-mobile-head"><h3>Filters</h3><button class="btn btn-sm btn-ghost" id="closeFilters">Done</button></div>
+        <div class="fbox"><div class="fbox-head"><h3>Filters</h3><button type="button" class="link-btn" id="clearFilters">Clear filters</button></div><div id="fBody"></div></div>
+      </aside>
+      <section>
+        <div class="res-toolbar">
+          <div class="res-title"><h2 id="resTitle">Cars</h2><p id="resMeta"></p></div>
+          <div class="res-actions"><button class="btn btn-sm btn-ghost show-mobile" id="openFilters"></button></div>
+        </div>
+        <div id="carResults"></div>
+        <div style="text-align:center;margin-top:8px"><button class="btn btn-ghost hidden" id="moreBtn">Show more cars</button></div>
+      </section>
+    </div>
+
+    <div id="carCheckout" hidden></div>
+  </main>
+
+  <script src="/js/ps.js"></script>
+  <script>
+  (async function () {
+    PS.header({ active: "cars" });
+    PS.footer();
+    const $ = (id) => document.getElementById(id);
+    const q = PS.qs();
+    let cfg = { enabled: false };
+    try { cfg = await PS.api("/api/cars/config"); } catch {}
+    if (!cfg.enabled) {
+      $("carSearch").innerHTML = `<div class="empty"><div class="ei">${PS.icon("car", 28)}</div><h3>Car rentals are coming soon</h3><p>Book a flight or hotel now and we'll let you know when cars are available.</p><a class="btn btn-primary" href="/">Back to PlanurStay</a></div>`;
+      return;
+    }
+
+    // ─── Search form ───
+    let pick = q.pickup ? { code: q.pickup, city: q.pickupCity || q.pickup } : null, drop = q.dropoff && q.dropoff !== q.pickup ? { code: q.dropoff, city: q.dropoffCity || q.dropoff } : null;
+    const label = (a) => a ? (a.city && a.city !== a.code ? `${a.city} (${a.code})` : a.code) : "";
+    const today = PS.today();
+    $("pDate").min = PS.iso(today); $("rDate").min = PS.iso(today);
+    $("pDate").value = q.pickupDate || PS.iso(PS.addDays(today, 14));
+    $("rDate").value = q.returnDate || PS.iso(PS.addDays(PS.parse($("pDate").value), 3));
+    if (q.pickupTime) $("pTime").value = q.pickupTime;
+    if (q.returnTime) $("rTime").value = q.returnTime;
+    $("pickAp").value = label(pick);
+    if (drop) { $("diffDrop").checked = true; $("apDrop").classList.remove("hidden"); $("dropAp").value = label(drop); }
+    $("diffDrop").onchange = () => { $("apDrop").classList.toggle("hidden", !$("diffDrop").checked); if (!$("diffDrop").checked) { drop = null; $("dropAp").value = ""; } };
+    $("pDate").onchange = () => { if ($("rDate").value <= $("pDate").value) $("rDate").value = PS.iso(PS.addDays(PS.parse($("pDate").value), 3)); $("rDate").min = $("pDate").value; };
+    const ac = (fieldId, set) => PS.autocomplete($(fieldId), {
+      fetcher: async (s) => (await PS.api(`/api/airports?q=${encodeURIComponent(s)}`)).data,
+      render: (a) => `<span class="ac-icon">${PS.icon("plane", 18)}</span><span style="min-width:0"><div class="ac-main">${PS.esc(a.city)}</div><div class="ac-sub">${PS.esc(a.name)}</div></span><span class="ac-code">${a.code}</span>`,
+      onSelect: (a) => { set(a); $(fieldId).querySelector("input").value = label(a); },
+      empty: "No airports found",
+    });
+    ac("apPick", (a) => (pick = a)); ac("apDrop", (a) => (drop = a));
+    $("pickAp").addEventListener("input", () => (pick = null));
+    $("dropAp").addEventListener("input", () => (drop = null));
+    const resolve = async (input, cur) => {
+      if (cur) return cur;
+      const t = input.value.trim(); if (t.length < 2) return null;
+      const code = (t.match(/\(([A-Z]{3})\)/) || [])[1] || (/^[a-z]{3}$/i.test(t) ? t.toUpperCase() : null);
+      try { return (await PS.api(`/api/airports?q=${encodeURIComponent(code || t)}`)).data[0] || null; } catch { return null; }
+    };
+    $("carForm").onsubmit = async (e) => {
+      e.preventDefault();
+      pick = await resolve($("pickAp"), pick);
+      if (!pick) { $("pickAp").focus(); return PS.toast("Choose a pick-up airport"); }
+      if ($("diffDrop").checked) { drop = await resolve($("dropAp"), drop); if (!drop) { $("dropAp").focus(); return PS.toast("Choose a drop-off airport"); } }
+      if (!$("pDate").value || !$("rDate").value) return PS.toast("Choose your dates");
+      if (`${$("rDate").value}T${$("rTime").value}` <= `${$("pDate").value}T${$("pTime").value}`) return PS.toast("Drop-off must be after pick-up");
+      location.href = PS.url("/cars", { pickup: pick.code, pickupCity: pick.city, dropoff: drop?.code || "", dropoffCity: drop?.city || "", pickupDate: $("pDate").value, pickupTime: $("pTime").value, returnDate: $("rDate").value, returnTime: $("rTime").value });
+    };
+
+    if (q.ref) return showConfirmation(q.ref);
+    if (!q.pickup || !q.pickupDate || !q.returnDate) return;
+
+    // ─── Results ───
+    $("carResultsWrap").hidden = false;
+    $("resTitle").textContent = `Cars at ${q.pickupCity || q.pickup}`;
+    const when = `${PS.fmtDay(q.pickupDate)} ${q.pickupTime || "10:00"} – ${PS.fmtDay(q.returnDate)} ${q.returnTime || "10:00"}`;
+    $("resMeta").textContent = when;
+    $("carResults").innerHTML = PS.skeleton?.hotels ? PS.skeleton.hotels(3) : `<div class="loading-note"><span class="spinner"></span>Finding cars…</div>`;
+    $("filters").classList.add("is-loading");
+    let all = [];
+    try {
+      const r = await PS.api("/api/cars/search", { method: "POST", body: { pickupCode: q.pickup, returnCode: q.dropoff || q.pickup, pickupDate: q.pickupDate, pickupTime: q.pickupTime || "10:00", returnDate: q.returnDate, returnTime: q.returnTime || "10:00" } });
+      all = r.data.cars || [];
+    } catch (e) {
+      $("carResults").innerHTML = empty("alert", "We couldn't load cars", PS.esc(e.message || "Please try again."), `<button class="btn btn-primary" onclick="location.reload()">Try again</button>`);
+      $("filters").hidden = true; return;
+    }
+    $("filters").classList.remove("is-loading");
+    if (!all.length) { $("carResults").innerHTML = empty("car", "No cars available", "Try different times or a nearby airport."); $("filters").hidden = true; return; }
+
+    const cur = all[0].currency;
+    const TYPES = ["Mini", "Economy", "Compact", "Intermediate", "Standard", "Full-size", "Premium", "Luxury", "Oversize", "Special"];
+    const typeOf = (c) => (c.body === "SUV" || c.body === "Crossover" || c.body === "Off-road") ? "SUV" : (c.body === "Van" || c.body === "Minivan" || c.body === "Commercial van") ? "Van / minivan" : (c.category || "Other").replace(" elite", "");
+    all.forEach(c => { c.type = typeOf(c); });
+    const pMax = Math.ceil(Math.max(...all.map(c => c.price)));
+    const blank = () => ({ types: new Set(), vendors: new Set(), auto: false, seats: 0, unl: false, max: pMax, sort: "price", shown: 20 });
+    let st = blank();
+    const pass = (c, skip) => (skip === "types" || !st.types.size || st.types.has(c.type)) && (skip === "vendors" || !st.vendors.size || st.vendors.has(c.vendor)) &&
+      (!st.auto || c.automatic) && (!st.seats || (c.seats || 0) >= st.seats) && (!st.unl || c.unlimitedMileage) && (st.max >= pMax || c.price <= st.max);
+    const cnt = (skip, test) => all.filter(c => pass(c, skip) && test(c)).length;
+    const minBy = (list) => list.length ? Math.min(...list.map(c => c.price)) : null;
+
+    function renderFilters() {
+      const types = [...new Set(all.map(c => c.type))].sort((a, b) => (TYPES.indexOf(a) + 99 * (TYPES.indexOf(a) < 0)) - (TYPES.indexOf(b) + 99 * (TYPES.indexOf(b) < 0)));
+      const vendors = [...new Set(all.map(c => c.vendor))].sort((a, b) => minBy(all.filter(c => c.vendor === a)) - minBy(all.filter(c => c.vendor === b)));
+      const box = (k, v, lbl, n) => `<label class="f-check"><input type="checkbox" data-k="${k}" data-v="${PS.esc(v)}" ${st[k].has(v) ? "checked" : ""} ${n || st[k].has(v) ? "" : "disabled"}><span>${lbl}</span><span class="cnt">${n}</span></label>`;
+      const bool = (k, lbl, n) => `<label class="f-check"><input type="checkbox" data-b="${k}" ${st[k] ? "checked" : ""}><span>${lbl}</span><span class="cnt">${n}</span></label>`;
+      $("fBody").innerHTML = `
+        <div class="f-group"><h4>Price <span class="f-val" id="fPriceVal">${st.max >= pMax ? "Any" : "Up to " + PS.money(st.max, cur, 0)}</span></h4>
+          <input type="range" class="range" id="fPrice" min="${Math.floor(Math.min(...all.map(c => c.price)))}" max="${pMax}" value="${st.max}" aria-label="Maximum price"></div>
+        <div class="f-group"><h4>Car type</h4>${types.map(t => box("types", t, PS.esc(t), cnt("types", c => c.type === t))).join("")}</div>
+        <div class="f-group"><h4>Features</h4>
+          ${bool("auto", "Automatic", cnt("auto", c => c.automatic))}
+          ${bool("unl", "Unlimited mileage", cnt("unl", c => c.unlimitedMileage))}
+          <div class="pill-row" style="margin-top:8px">${[[0, "Any seats"], [4, "4+ seats"], [5, "5+ seats"], [7, "7+ seats"]].map(([v, l]) => `<button type="button" class="pill ${st.seats === v ? "active" : ""}" data-seats="${v}">${l}</button>`).join("")}</div></div>
+        <div class="f-group"><h4>Rental company</h4>${vendors.map(v => box("vendors", v, PS.esc(v), cnt("vendors", c => c.vendor === v))).join("")}</div>`;
+      $("clearFilters").classList.toggle("off", !(st.types.size || st.vendors.size || st.auto || st.seats || st.unl || st.max < pMax));
+      const pr = $("fPrice"); pr.oninput = () => { st.max = +pr.value; $("fPriceVal").textContent = st.max >= pMax ? "Any" : "Up to " + PS.money(st.max, cur, 0); renderList(); }; pr.onchange = apply;
+    }
+    $("fBody").addEventListener("change", (e) => {
+      const i = e.target;
+      if (i.dataset.k) { i.checked ? st[i.dataset.k].add(i.dataset.v) : st[i.dataset.k].delete(i.dataset.v); }
+      else if (i.dataset.b) st[i.dataset.b] = i.checked; else return;
+      st.shown = 20; apply();
+    });
+    $("fBody").addEventListener("click", (e) => { const b = e.target.closest("[data-seats]"); if (b) { st.seats = +b.dataset.seats; st.shown = 20; apply(); } });
+    $("clearFilters").onclick = () => { st = blank(); apply(); };
+    $("openFilters").innerHTML = PS.icon("filter", 16) + "Filters";
+    $("openFilters").onclick = () => $("filters").classList.add("mobile-open");
+    $("closeFilters").onclick = () => $("filters").classList.remove("mobile-open");
+    $("moreBtn").onclick = () => { st.shown += 20; renderList(); };
+
+    function carCard(c) {
+      const feats = [c.seats ? `${PS.icon("user", 14)}${c.seats} seats` : "", c.bags ? `${PS.icon("bag", 14)}${c.bags} bags` : "", c.automatic != null ? `${PS.icon("car", 14)}${c.automatic ? "Automatic" : "Manual"}` : "", c.ac ? `${PS.icon("check", 14, 2.6)}A/C` : "", c.doors ? `${c.doors} doors` : ""].filter(Boolean);
+      return `<article class="car-card">
+        <div class="car-main">
+          <div class="car-vendor">${c.logo ? `<img src="${PS.esc(c.logo)}" alt="" onerror="this.remove()">` : ""}<b>${PS.esc(c.vendor)}</b></div>
+          <h3>${PS.esc(c.type)}${c.body && !["SUV", "Van", "Minivan"].includes(c.body) ? ` <small>${PS.esc(c.body)}</small>` : ""}</h3>
+          <div class="car-model">${PS.esc(c.model)}</div>
+          <div class="car-feats">${feats.map(f => `<span>${f}</span>`).join("")}</div>
+          <div class="tags">${c.unlimitedMileage ? `<span class="tag green">${PS.icon("check", 13, 3)}Unlimited mileage</span>` : `<span class="tag">Limited mileage</span>`}<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation before pick-up</span></div>
+        </div>
+        <div class="car-price"><span class="price-big">${PS.money(c.perDay, c.currency, 0)}</span><span class="price-sub">per day</span>
+          <span class="price-total"><b>${PS.money(c.price, c.currency, 2)}</b> total · ${PS.plural(c.days, "day")}</span>
+          <button class="btn btn-primary btn-sm" data-pick="${c.quoteId}">${cfg.bookingEnabled ? "Select" : "View"}</button></div>
+      </article>`;
+    }
+    function renderList() {
+      const list = all.filter(c => pass(c)).sort((a, b) => a.price - b.price);
+      $("resMeta").textContent = `${list.length} of ${all.length} cars · ${when}`;
+      if (!list.length) { $("carResults").innerHTML = empty("filter", "No cars match your filters", "Try removing a filter.", `<button class="btn btn-primary" id="emptyClear">Clear filters</button>`); $("emptyClear").onclick = () => { st = blank(); apply(); }; $("moreBtn").classList.add("hidden"); return; }
+      $("carResults").innerHTML = list.slice(0, st.shown).map(carCard).join("");
+      $("moreBtn").classList.toggle("hidden", list.length <= st.shown);
+      $("carResults").querySelectorAll("[data-pick]").forEach(b => b.onclick = () => openCheckout(all.find(c => c.quoteId === b.dataset.pick)));
+    }
+    function apply() { renderFilters(); renderList(); }
+    apply();
+
+    // ─── Checkout: rules, driver, card (held first, charged once the car is confirmed) ───
+    let timerId = null;
+    function openCheckout(c) {
+      $("carResultsWrap").hidden = true; $("carSearch").hidden = true;
+      const box = $("carCheckout"); box.hidden = false;
+      window.scrollTo(0, 0);
+      box.innerHTML = `<button class="link-btn co-back-link" id="backToCars">${PS.icon("left", 16)}Back to cars</button>
+        <div class="co-layout">
+          <div>
+            <section class="co-panel"><div class="co-head"><h2>Rent a ${PS.esc(c.type)}${c.body ? ` ${PS.esc(c.body)}` : ""}</h2></div>
+              <p class="car-model">${PS.esc(c.model)} · ${PS.esc(c.vendor)}${c.code ? ` <small>(${PS.esc(c.code)})</small>` : ""}</p>
+              <div class="car-when">
+                <div><small>Pick-up</small><b>${PS.fmtDay(q.pickupDate)} · ${PS.esc(q.pickupTime || "10:00")}</b><span>${PS.esc(q.pickupCity || c.pickup)} (${PS.esc(c.pickup)})</span></div>
+                <div><small>Drop-off</small><b>${PS.fmtDay(q.returnDate)} · ${PS.esc(q.returnTime || "10:00")}</b><span>${PS.esc(q.dropoffCity || q.pickupCity || c.dropoff)} (${PS.esc(c.dropoff)})</span></div>
+              </div>
+              <div class="co-cancel ok"><b>${PS.icon("check", 16, 2.6)}Free cancellation before pick-up</b><p>Cancel any time before your pick-up date for a full refund.</p></div>
+              <details class="car-rules"><summary>Important rules from the rental company</summary><ul>
+                <li>A credit card in the driver's name is required at pick-up as a deposit, held by the rental company. Make sure it has enough available credit.</li>
+                <li>Bring the driver's licence. An International Driving Permit is required if the licence isn't in the Roman alphabet.</li>
+                <li>Extra charges or restrictions may apply for drivers under 25 or over 70.</li>
+                <li>Fuel, extra drivers, child seats, GPS and other extras aren't included and are paid at the desk.</li>
+                <li>Some companies don't allow cross-border travel, or charge extra for it, even with unlimited mileage.</li>
+                <li>Local mandatory insurance may be charged at the desk. The total price includes all mandatory taxes and fees.</li>
+              </ul></details>
+            </section>
+            <section class="co-panel"><div class="co-head"><h2>Driver details</h2></div>
+              <div class="alert info" style="margin-bottom:14px">${PS.icon("info", 18)}<div>Enter the main driver's name exactly as on their driving licence. They must be at least 21.</div></div>
+              <div class="form-grid">
+                <div class="field" data-f="dFirst"><label for="dFirst">First name <i class="req">*</i></label><input id="dFirst" autocomplete="given-name"></div>
+                <div class="field" data-f="dLast"><label for="dLast">Last name <i class="req">*</i></label><input id="dLast" autocomplete="family-name"></div>
+                <div class="field" data-f="dEmail"><label for="dEmail">Email <i class="req">*</i></label><input id="dEmail" type="email" autocomplete="email"></div>
+                <div class="field" data-f="dPhone"><label for="dPhone">Phone <i class="req">*</i></label><input id="dPhone" type="tel" autocomplete="tel" placeholder="+1 416 555 0123"></div>
+                <div class="field" data-f="dDob"><label for="dDob">Date of birth <i class="req">*</i></label><input id="dDob" type="date" max="${PS.iso(PS.addDays(today, -365 * 21))}"></div>
+                <div class="field" data-f="dGender"><label for="dGender">Gender <i class="req">*</i></label><select id="dGender"><option value="">Select</option><option value="m">Male</option><option value="f">Female</option></select></div>
+              </div>
+            </section>
+            <div id="carMsg"></div>
+            <section class="co-panel hidden" id="carPay"><div class="co-head"><h2>Payment</h2><span class="tag green">${PS.icon("lock", 13)}Secure</span></div>
+              <p class="price-sub" style="margin:0 0 12px">We only place a hold on your card now. You're charged once the rental company confirms your car; if it can't, the hold is released.</p>
+              <div id="payEl"></div>
+              <button class="btn btn-primary btn-lg btn-block" id="payBtn" style="margin-top:14px">Book now · ${PS.money(c.price, c.currency, 2)}</button></section>
+            <button class="btn btn-primary btn-lg btn-block co-go" id="carContinue">${cfg.bookingEnabled ? `Continue to payment ${PS.icon("right", 18)}` : "Online booking opens soon"}</button>
+            <p class="agree-note">By booking you agree to our <a href="/terms" target="_blank">Terms</a>, <a href="/cancellation-policy" target="_blank">Cancellation policy</a> and the rental company's rules above.</p>
+          </div>
+          <aside class="co-sum">
+            <div class="co-timer" id="carTimer">${PS.icon("clock", 18)}<span>Price held for</span><b id="carTimerVal">--:--</b></div>
+            <div class="co-card">
+              <h3 style="font-size:17px;margin-bottom:10px">${PS.esc(c.vendor)} · ${PS.esc(c.type)}</h3>
+              <div class="co-lines">
+                <div class="co-line"><span>Car rental · ${PS.plural(c.days, "day")}</span><span>${PS.money(c.price, c.currency, 2)}</span></div>
+                <div class="co-line muted"><span>Taxes and mandatory fees</span><span>Included</span></div>
+                <div class="co-line muted"><span>Extras (fuel, child seats, GPS)</span><span>At the desk</span></div>
+              </div>
+              <div class="co-total"><div><b>Total</b><b>${PS.money(c.price, c.currency, 2)}</b></div><small>${PS.money(c.perDay, c.currency, 2)} per day</small></div>
+            </div>
+          </aside>
+        </div>`;
+      $("backToCars").onclick = () => { clearInterval(timerId); box.hidden = true; box.innerHTML = ""; $("carResultsWrap").hidden = false; $("carSearch").hidden = false; };
+      PS.auth().then(a => { if (a.loggedIn && !$("dEmail").value) $("dEmail").value = a.user.email; });
+      // Rate timer
+      const exp = Date.parse(c.expiresAt);
+      const tick = () => {
+        const left = Math.max(0, exp - Date.now());
+        const el = $("carTimerVal"); if (!el) return clearInterval(timerId);
+        el.textContent = `${String(Math.floor(left / 60000)).padStart(2, "0")}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")}`;
+        $("carTimer").classList.toggle("low", left < 3 * 60000);
+        if (!left) { clearInterval(timerId); $("carTimer").outerHTML = `<div class="co-timer done">${PS.icon("alert", 18)}<span>This price has expired.</span><a class="link" href="${location.href}">Search again</a></div>`; $("carContinue").disabled = true; $("payBtn") && ($("payBtn").disabled = true); }
+      };
+      clearInterval(timerId); timerId = setInterval(tick, 1000); tick();
+      if (!cfg.bookingEnabled) { $("carContinue").disabled = true; return; }
+
+      const val = (id) => ($(id)?.value || "").trim();
+      const setErr = (id, msg) => { const w = document.querySelector(`[data-f="${id}"]`); w.classList.toggle("err", !!msg); w.querySelector(".err-msg")?.remove(); if (msg) w.insertAdjacentHTML("beforeend", `<div class="err-msg">${msg}</div>`); };
+      function validate() {
+        let ok = true; const need = (id, msg, t = (v) => !!v) => { const g = t(val(id)); setErr(id, g ? "" : msg); if (!g) ok = false; };
+        need("dFirst", "Required"); need("dLast", "Required"); need("dEmail", "Enter a valid email", v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v));
+        need("dPhone", "Enter a valid phone number", v => v.replace(/\D/g, "").length >= 7); need("dDob", "The driver must be 21 or older", v => !!v && v <= $("dDob").max); need("dGender", "Required");
+        if (!ok) document.querySelector(".field.err input, .field.err select")?.focus();
+        return ok;
+      }
+      let stripe = null, elements = null, ref = null;
+      $("carContinue").onclick = async () => {
+        $("carMsg").innerHTML = "";
+        if (!validate()) return;
+        const btn = $("carContinue"); btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Preparing secure payment…`;
+        try {
+          const r = await PS.api("/api/cars/checkout", { method: "POST", body: { quoteId: c.quoteId, driver: { firstName: val("dFirst"), lastName: val("dLast"), email: val("dEmail"), phone: val("dPhone"), dob: val("dDob"), gender: val("dGender") } } });
+          ref = r.data.ref;
+          await loadStripe();
+          stripe = window.Stripe(cfg.publishableKey);
+          elements = stripe.elements({ clientSecret: r.data.clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: "#1f5bff", borderRadius: "10px" } } });
+          elements.create("payment", { layout: "tabs" }).mount("#payEl");
+          document.querySelectorAll("#carCheckout .co-panel:not(#carPay) input, #carCheckout .co-panel:not(#carPay) select").forEach(i => (i.disabled = true));
+          $("carPay").classList.remove("hidden"); btn.remove();
+          $("carPay").scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch (e) {
+          btn.disabled = false; btn.innerHTML = `Continue to payment ${PS.icon("right", 18)}`;
+          $("carMsg").innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>${PS.esc(e.message)}</div></div>`;
+        }
+      };
+      $("payBtn").onclick = async () => {
+        const pb = $("payBtn"); pb.disabled = true; pb.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Checking your card…`;
+        const { error, paymentIntent } = await stripe.confirmPayment({ elements, redirect: "if_required", confirmParams: { return_url: location.origin + PS.url("/cars", { ref }) } });
+        if (error) { pb.disabled = false; pb.textContent = `Book now · ${PS.money(c.price, c.currency, 2)}`; $("carMsg").innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>${PS.esc(error.message)}</div></div>`; return; }
+        if (paymentIntent && paymentIntent.status !== "requires_capture") { pb.disabled = false; $("carMsg").innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>Your card couldn't be authorized. Please try another card.</div></div>`; return; }
+        pb.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Confirming with ${PS.esc(c.vendor)}… (up to 30 seconds)`;
+        clearInterval(timerId);
+        location.href = PS.url("/cars", { ref });
+      };
+    }
+
+    function loadStripe() {
+      if (window.Stripe) return Promise.resolve();
+      return new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://js.stripe.com/v3/"; s.onload = res; s.onerror = () => rej(new Error("The payment form couldn't load. Check your connection and try again.")); document.head.appendChild(s); });
+    }
+
+    // ─── Confirmation (also where Stripe returns after a bank check) ───
+    async function showConfirmation(ref) {
+      $("carSearch").hidden = true;
+      const box = $("carCheckout"); box.hidden = false;
+      box.innerHTML = `<div class="confirm-hero"><span class="spinner" style="width:40px;height:40px;border-width:4px"></span><h1>Booking your car…</h1><p>We're confirming with the rental company. Please keep this page open (up to 30 seconds).</p></div>`;
+      let s;
+      try { s = (await PS.api("/api/cars/book", { method: "POST", body: { ref } })).data; }
+      catch (e) {
+        try { s = (await PS.api(`/api/cars/booking/${encodeURIComponent(ref)}`)).data; } catch {}
+        if (!s || s.status === "awaiting_payment") { box.innerHTML = `<div class="empty"><div class="ei">${PS.icon("alert", 28)}</div><h3>We couldn't finish this booking</h3><p>${PS.esc(e.message)}</p><p>Reference: <b>${PS.esc(ref)}</b></p><a class="btn btn-primary" href="/cars">Search cars again</a></div>`; return; }
+      }
+      if (s.status === "failed") { box.innerHTML = `<div class="empty"><div class="ei">${PS.icon("alert", 28)}</div><h3>This car couldn't be confirmed</h3><p>${PS.esc(s.error || "")} The hold on your card has been released.</p><a class="btn btn-primary" href="${PS.url("/cars", { pickup: s.ctx.pickupCode, pickupDate: s.ctx.pickupDate, pickupTime: s.ctx.pickupTime, returnDate: s.ctx.returnDate, returnTime: s.ctx.returnTime })}">Choose another car</a></div>`; return; }
+      const ok = s.status === "confirmed";
+      box.innerHTML = `<div class="confirm-hero ${ok ? "" : "pending"}"><div class="ci">${PS.icon(ok ? "check" : "clock", 40, 2.6)}</div><h1>${ok ? "Your car is booked!" : "Booking received"}</h1>
+          <p>${ok ? `We've sent the details to <b>${PS.esc(s.driver.email)}</b>.` : "The rental company is still confirming. We'll email you as soon as it's done."}</p></div>
+        <div class="confirm-card"><div class="ref-box"><div><small>PlanurStay reference</small><b>${PS.esc(s.ref)}</b></div><div><small>Rental confirmation</small><b>${PS.esc(s.supplierRef || "Sent by email")}</b></div></div>
+          <div class="panel"><h3>${PS.esc(s.car.vendor)} · ${PS.esc(s.car.model)}</h3>
+            <div class="sum-lines" style="margin-top:10px">
+              <div><span>Pick-up</span><b>${PS.esc(s.ctx.pickupCode)} · ${PS.fmtDay(s.ctx.pickupDate)} ${PS.esc(s.ctx.pickupTime)}</b></div>
+              <div><span>Drop-off</span><b>${PS.esc(s.ctx.returnCode)} · ${PS.fmtDay(s.ctx.returnDate)} ${PS.esc(s.ctx.returnTime)}</b></div>
+              <div><span>Driver</span><b>${PS.esc(s.driver.firstName)} ${PS.esc(s.driver.lastName)}</b></div>
+              <div><span>Cancellation</span><b>Free before pick-up</b></div>
+            </div><div class="divider"></div><div class="sum-total"><span>Total paid</span><b>${PS.money(s.amount, s.currency, 2)}</b></div></div>
+          <div class="alert info" style="margin-top:16px">${PS.icon("info", 18)}<div>At the desk, bring the driver's licence, a credit card in the driver's name for the deposit, and this reference. To cancel or change, contact us with your reference before pick-up.</div></div>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:18px"><a class="btn btn-primary" href="/">Back to PlanurStay</a><button class="btn btn-ghost" onclick="window.print()">Print</button></div></div>`;
+      PS.track("booked", { type: "car", value: s.amount, currency: s.currency, id: s.ref });
+    }
+
+    function empty(icon, h, p, extra) { return `<div class="empty"><div class="ei">${PS.icon(icon, 28)}</div><h3>${h}</h3><p>${p}</p>${extra || ""}</div>`; }
+  })();
+  </script>
+</body>
+</html>

@@ -185,6 +185,8 @@ require("./modules/reminders").createReminders({ db, apiKey: () => key, jwt, JWT
 require("./modules/webhooks").createWebhooks({ db, sendEmail }).register(app);
 const growth = require("./modules/growth").createGrowth({ db, jwt, JWT_SECRET, sendEmail, appUrl: () => APP_URL });
 growth.register(app);
+require("./modules/insurance").createInsurance().register(app);
+require("./modules/cars").createCars({ db, sendEmail }).register(app);
 require("./modules/flight-alerts").createFlightAlerts({ db, sendEmail, appUrl: () => APP_URL }).register(app, { jwt, JWT_SECRET });
 require("./modules/chat").createChat({ port: PORT, support }).register(app);
 require("./modules/trips").createTrips({ db, port: PORT, jwt, JWT_SECRET }).register(app);
@@ -971,6 +973,10 @@ app.get("/hotels", (req, res) => {
 
 app.get("/hotel/:id", (req, res) => {
   res.sendFile(path.join(__dirname, "../public/hotel-detail.html"));
+});
+
+app.get("/cars", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/cars.html"));
 });
 
 app.get("/flights", (req, res) => {
