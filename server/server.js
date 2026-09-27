@@ -12,10 +12,10 @@ const { Resend } = require("resend");
 require("dotenv").config();
 
 // ─── Config ───
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const APP_URL = process.env.APP_URL || "http://localhost:3000";
+const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 // Prod key wins when it looks real (prefix "prod_"); see modules/api-key.js
 const liveKey = require("./modules/api-key");
 const key = liveKey.liteApiKey();
