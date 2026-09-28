@@ -558,7 +558,9 @@
           loyaltyPrograms: val(`p${i}_ffnum`) && val(`p${i}_ffair`) ? [{ airlineCode: val(`p${i}_ffair`), programNumber: val(`p${i}_ffnum`) }] : undefined,
           email: i === 0 ? val("email") : undefined,
         }));
-        pb = (await PS.api("/api/flights/prebook", { method: "POST", body: {
+        // Fares from the Travellez MCP (Duffel, Mystifly, Sabre…) are held and paid through our own Stripe
+        const viaMcp = String(sel.offer.offerId || "").startsWith("tz:");
+        pb = (await PS.api(viaMcp ? "/api/mcp/flights/hold" : "/api/flights/prebook", { method: "POST", body: {
           offerId: sel.offer.offerId, usePaymentSdk: true, voucherCode,
           // LiteAPI wants the national number and the country code separately
           contact: { firstName: passengers[0].firstName, lastName: passengers[0].lastName, email: val("email"), phoneNumber: val("phone").replace(/\D/g, "").replace(/^0+/, ""), phoneCountryCode: val("dial").replace("+", "") },
@@ -638,6 +640,7 @@
         : { firstName: pb._passengers[0].firstName, lastName: pb._passengers[0].lastName, email: val("email"), phone: phoneFull() };
       const pending = {
         type, prebookId: pb.prebookId, transactionId: pb.transactionId, holder, sel, extras: { ...extras }, voucherCode: val("voucher") || undefined,
+        via: pb.processor === "stripe" ? "mcp" : undefined,
         guest: someoneElse ? { firstName: val("gFirst"), lastName: val("gLast") } : null,
         remarks: type === "hotel" ? val("remarks") || undefined : undefined,
         work: document.querySelector('input[name="work"]:checked')?.value === "yes",
@@ -679,6 +682,24 @@
       repaint();
       showPayment(held, true);
     }
+    // Card payment through PlanurStay's Stripe (MCP fares): the card is held, and only charged once the airline confirms
+    async function stripePayment(pb, portal) {
+      try {
+        if (!window.Stripe) await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://js.stripe.com/v3/"; sc.onload = res; sc.onerror = () => rej(new Error("The payment form couldn't load. Check your connection and try again.")); document.head.appendChild(sc); });
+        const stripe = window.Stripe(pb.publishableKey);
+        const elements = stripe.elements({ clientSecret: pb.secretKey, appearance: { theme: "stripe", variables: { colorPrimary: "#1f5bff", borderRadius: "10px" } } });
+        portal.innerHTML = `<div id="payEl"></div><p class="price-sub" style="margin:10px 0 0">We only hold the amount now. You're charged once the airline confirms your booking; if it can't, the hold is released.</p>
+          <button class="btn btn-primary btn-lg btn-block" id="payNow" style="margin-top:12px">${PS.icon("lock", 16)}Pay ${PS.money(pb.price, pb.currency, 2)}</button><div id="payErr"></div>`;
+        elements.create("payment", { layout: "tabs" }).mount("#payEl");
+        const back = `${location.origin}${PS.url("/confirmation", { type, prebookId: pb.prebookId, transactionId: pb.transactionId })}`;
+        document.getElementById("payNow").onclick = async (e) => {
+          const b = e.currentTarget; b.disabled = true; b.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Checking your card…`;
+          const { error } = await stripe.confirmPayment({ elements, redirect: "if_required", confirmParams: { return_url: back } });
+          if (error) { b.disabled = false; b.innerHTML = `${PS.icon("lock", 16)}Pay ${PS.money(pb.price, pb.currency, 2)}`; document.getElementById("payErr").innerHTML = `<div class="alert error" style="margin-top:10px">${PS.icon("alert", 18)}<div>${PS.esc(error.message)}</div></div>`; return; }
+          location.href = back;
+        };
+      } catch (err) { portal.innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>${PS.esc(err.message)}</div></div>`; }
+    }
     async function showPayment(pb, keepScroll) {
       const panel = document.getElementById("payPanel");
       panel.classList.remove("hidden");
@@ -699,7 +720,7 @@
       }
       repaint();
       document.getElementById("priceNote").innerHTML = changed ? `<div class="alert warn" style="margin-bottom:14px">${PS.icon("alert", 18)}<div><b>The price changed</b> from ${PS.money(expected, pb.currency, 2)} to <b>${PS.money(pb.price, pb.currency, 2)}</b> while we held your ${type === "hotel" ? "room" : "seats"}. The new total is shown in the summary.</div></div>` : "";
-      if (type === "flight" && svcFor !== pb.prebookId && window.FS) {
+      if (type === "flight" && svcFor !== pb.prebookId && window.FS && !pb.processor) {
         svcFor = pb.prebookId;
         FS.mount(document.getElementById("svcBox"), { pb, sel, passengers: pb._passengers || [], voucherCode: val("voucher") || undefined, onAttached });
       }
@@ -708,6 +729,7 @@
       sdkFor = pb.transactionId;
       const portal = document.getElementById("paymentPortal");
       portal.innerHTML = `<div class="loading-note" style="border:0;padding:0"><span class="spinner"></span>Loading secure payment…</div>`;
+      if (pb.processor === "stripe") return stripePayment(pb, portal);
       let cfg = { publicKey: "sandbox" };
       try { const c = await PS.api("/api/payment-sdk/config"); cfg = c.configTemplate || cfg; if (c.isSandbox) document.getElementById("sandboxNote").innerHTML = `<div class="alert info" style="margin-bottom:14px">${PS.icon("info", 18)}<div><b>Test mode.</b> Use card 4242 4242 4242 4242, any future expiry and any CVC. No real charge is made.</div></div>`; } catch {}
       if (typeof LiteAPIPayment !== "function") {

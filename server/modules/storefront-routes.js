@@ -658,13 +658,17 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     try {
       const flightEngine = require("../flight-engine");
       const fq = { legs: b.legs.map(l => ({ origin: l.origin, destination: l.destination, date: l.date })), adults: b.adults || 1, currency: b.currency || "USD", country: b.country || "US" };
+      // Travellez MCP (Duffel, Mystifly, Sabre…) runs alongside LiteAPI; either one alone is enough to show results.
+      const mcp = require("./mcp");
+      const mcpP = cached("mcpflights:" + JSON.stringify(fq), 5 * MIN, () => mcp.searchFlights(fq), (v) => Array.isArray(v) && v.length > 0).catch(() => []);
       // Offers stay bookable well beyond 10 minutes; prebook re-checks the price anyway.
-      const result = await cached("flights:" + JSON.stringify(fq), 10 * MIN, () => flightEngine.searchFlights(fq));
-      if (!result.success) {
+      const result = await cached("flights:" + JSON.stringify(fq), 10 * MIN, () => flightEngine.searchFlights(fq)).catch(e => ({ success: false, error: { message: e.message } }));
+      const mcpJourneys = await mcpP;
+      if (!result.success && !mcpJourneys.length) {
         const e = result.error || {};
         return res.status(e.code === 408 ? 504 : 502).json({ error: e.message || "Flight search failed", code: e.code });
       }
-      const block = result.data?.data?.[0] || {};
+      const block = (result.success && result.data?.data?.[0]) || {};
       const slimOffer = (o, withAmenities) => o && ({
         offerId: o.offerId,
         expiration: o.expiration,
@@ -697,7 +701,8 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         cheapestOffer: slimOffer(j.cheapestOffer, true),
         offers: (j.offers || []).map(o => slimOffer(o, false)),
       }));
-      res.json({ success: true, data: { journeys, sortMetadata: block.sortMetadata || {} } });
+      const merged = mcpJourneys.length ? mcp.mergeJourneys(journeys, mcpJourneys) : journeys;
+      res.json({ success: true, data: { journeys: merged, sortMetadata: mcpJourneys.length ? {} : block.sortMetadata || {} } });
     } catch (err) {
       console.error("Flight offers error:", err.message);
       res.status(500).json({ error: "Server error" });

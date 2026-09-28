@@ -69,6 +69,12 @@
         }});
         return r.data;
       }
+      // Fares from the Travellez MCP: we finish the booking (card was only held until the airline confirms)
+      if (pending.via === "mcp") {
+        const m = (await PS.api("/api/mcp/flights/book", { method: "POST", body: { ref: prebookId } })).data;
+        if (m?.status === "FAILED") throw Object.assign(new Error(m.error || "The airline couldn't confirm this fare."), { status: 409 });
+        return m;
+      }
       const r = await PS.api("/api/flights/book", { method: "POST", body: {
         prebookId, payment: { method: "TRANSACTION_ID", transactionId: transactionId || pending.transactionId },
         holder: { firstName: h.firstName, lastName: h.lastName, email: h.email },
@@ -86,6 +92,11 @@
         PS.local.set(doneKey, { booking, pending, at: Date.now() });
         render(booking, pending);
       } catch (e) {
+        if (pending.via === "mcp" && e.status === 409) { // airline refused: the card hold was released, nothing charged
+          root.innerHTML = hero(PS.icon("x", 40, 2.6), "bad", "This fare couldn't be booked", `${PS.esc(e.message)} You haven't been charged.`) +
+            `<div style="text-align:center;margin-top:20px"><a class="btn btn-primary" href="${PS.url("/flights", pending.sel?.search || {})}">Choose another flight</a></div>`;
+          return;
+        }
         // Timeouts and upstream errors can still mean success on the supplier side; retry a couple of times.
         if (attempt < 3 && (!e.status || e.status >= 500)) { setTimeout(run, 2500 * attempt); return; }
         root.innerHTML = hero(PS.icon("alert", 40), "bad", "We couldn't confirm your booking yet",

@@ -187,6 +187,7 @@ const growth = require("./modules/growth").createGrowth({ db, jwt, JWT_SECRET, s
 growth.register(app);
 require("./modules/insurance").createInsurance().register(app);
 require("./modules/cars").createCars({ db, sendEmail }).register(app);
+require("./modules/mcp").createMcp({ db, sendEmail }).register(app);
 require("./modules/flight-alerts").createFlightAlerts({ db, sendEmail, appUrl: () => APP_URL }).register(app, { jwt, JWT_SECRET });
 require("./modules/chat").createChat({ port: PORT, support }).register(app);
 require("./modules/trips").createTrips({ db, port: PORT, jwt, JWT_SECRET }).register(app);

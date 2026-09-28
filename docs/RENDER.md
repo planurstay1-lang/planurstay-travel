@@ -47,6 +47,11 @@ Never commit the values. Set them in Render → Environment.
 | `CARS_BOOKING_ENABLED` | optional | Set to `true` to allow real car reservations. Leave unset until you've done one test booking yourself and confirmed with Travellez what the company card is used for: there is no Travellez test environment. |
 | `CARS_PAYMENT` | optional | `counter` (default): **reserve now, pay at pick-up**. Sabre car rates are pay-at-counter, so PlanurStay charges nothing and adds no markup. `prepay`: PlanurStay charges the customer through Stripe (price + `CAR_MARKUP_PCT`); only use this for rates Travellez actually prepays. |
 | `CAR_COMMISSION_VENDORS` | optional | Sabre vendor codes that pay you commission, comma-separated. Default `EY` (Economy Rent a Car). These cars get a "Recommended" badge and rank higher in the Recommended sort. |
+| `TRAVELLEZ_MCP_URL` | optional | Address of the Travellez MCP (e.g. `https://mcp.example.com`). PlanurStay signs in with `TRAVELLEZ_EMAIL` / `TRAVELLEZ_PASSWORD` and uses its `/api/v2` endpoints for every Travellez supplier. |
+| `MCP_FLIGHTS` | optional | `on`: flights from the MCP (Duffel, Mystifly, Sabre…) are merged into search, cheapest per flight wins, **only once booking is on**. `preview`: show them without booking (team testing). Unset = LiteAPI only. |
+| `MCP_BOOKING` | optional | `on` lets customers book MCP fares: the card is held with PlanurStay's Stripe, the flight is booked through the MCP (company card), then the card is charged; released if the airline refuses. Needs `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY`. |
+| `MCP_FLIGHT_MARKUP_PCT` | optional | Markup on MCP flight prices. Default `3`. |
+| `MCP_SEARCH_TIMEOUT_MS` | optional | How long flight search waits for the MCP before showing LiteAPI results alone. Default `25000`. |
 | `CAR_MARKUP_PCT` | optional | Pay-now mode only: markup on the Travellez car price. Default `3`. |
 | `CAR_FREE_CANCEL_HOURS` | optional | Pay-now mode only: free cancellation until this many hours before pick-up; no refund after. Default `48`. |
 | `TRAVELLEZ_CARD_ID` | optional | Which saved Travellez card pays for cars. Default: the account's default (or first) card. |
