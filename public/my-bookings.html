@@ -73,13 +73,13 @@
     const tripHTML = (t) => {
       const s = String(t.status || "").toUpperCase();
       const cls = ["CONFIRMED", "BOOKED", "TICKETED"].includes(s) ? "ok" : /CANCEL|FAIL/.test(s) ? "bad" : "pend";
-      const extras = t.type === "flight" && t.bookingId && cls !== "bad" && (t.checkin || "") >= today;
+      const extras = t.type === "flight" && t.source !== "mcp" && t.bookingId && cls !== "bad" && (t.checkin || "") >= today; // seats & bags: LiteAPI flights only
       return `<div class="trip">
-        <div class="trip-ico">${PS.icon(t.type === "flight" ? "plane" : "bed", 24)}</div>
+        <div class="trip-ico">${PS.icon(t.type === "flight" ? "plane" : t.type === "car" ? "car" : "bed", 24)}</div>
         <div class="trip-main">
-          <h3>${PS.esc(t.name || (t.type === "flight" ? "Flight" : "Hotel stay"))}</h3>
+          <h3>${PS.esc(t.name || (t.type === "flight" ? "Flight" : t.type === "car" ? "Car rental" : "Hotel stay"))}</h3>
           <p>${t.checkin ? PS.fmtDay(t.checkin) : ""}${t.checkout ? " – " + PS.fmtDay(t.checkout) : ""}${t.guest ? " · " + PS.esc(t.guest) : ""}</p>
-          <p style="font-size:12.5px;color:var(--muted)">Booking ID ${PS.esc(t.bookingId || t.id)}${t.pnr ? " · PNR " + PS.esc(t.pnr) : ""}</p>
+          <p style="font-size:12.5px;color:var(--muted)">Booking ID ${PS.esc(t.bookingId || t.id)}${t.pnr ? " · PNR " + PS.esc(t.pnr) : ""}${t.confirmation ? " · Confirmation " + PS.esc(t.confirmation) : ""}${t.payAtPickup ? " · Pay at pick-up" : ""}</p>
         </div>
         <div class="trip-right">
           <div style="font-weight:800;color:var(--ink)">${t.price ? PS.money(Number(t.price), t.currency || "USD", 0) : ""}</div>

@@ -23,7 +23,7 @@
  */
 const crypto = require("crypto");
 
-function createCars({ db, sendEmail }) {
+function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
   const env = (k) => String(process.env[k] || "").trim();
   const base = () => (env("TRAVELLEZ_API_BASE_URL") || "https://api.travellez.com").replace(/\/$/, "");
   const searchOn = () => !!(env("TRAVELLEZ_EMAIL") && env("TRAVELLEZ_PASSWORD"));
@@ -53,6 +53,9 @@ function createCars({ db, sendEmail }) {
     ref TEXT PRIMARY KEY, status TEXT NOT NULL, payment_intent TEXT, amount REAL, currency TEXT, net REAL,
     quote_json TEXT, driver_json TEXT, travellez_booking_id TEXT, travellez_car_id TEXT, supplier_ref TEXT, error TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+
+  try { db.exec("ALTER TABLE car_bookings ADD COLUMN user_id INTEGER"); } catch { /* exists */ }
+  const uid = (req) => { try { return jwt && req ? jwt.verify(req.cookies?.token || "", JWT_SECRET).id || null : null; } catch { return null; } };
 
   // ─── Travellez session (one PlanurStay account; token re-used until it expires) ───
   let token = null, tokenExp = 0, loggingIn = null;
@@ -178,7 +181,7 @@ function createCars({ db, sendEmail }) {
     return null;
   }
 
-  async function checkout(b) {
+  async function checkout(b, req) {
     if (!bookingOn() || payMode() !== "prepay") throw Object.assign(new Error("Car booking isn't open yet."), { status: 403 });
     const q = quotes.get(String(b.quoteId || ""));
     if (!q || Date.now() - q.at > QUOTE_TTL) throw Object.assign(new Error("This price has expired. Please search again."), { status: 410 });
@@ -193,8 +196,8 @@ function createCars({ db, sendEmail }) {
       description: `PlanurStay car rental ${ref}: ${q.car.vendor} ${q.car.model}, ${q.ctx.pickupCode} ${q.ctx.pickupDate}–${q.ctx.returnDate}`,
       receipt_email: d.email, metadata: { type: "car", ref },
     }, { idempotencyKey: `car-${ref}` });
-    db.prepare("INSERT INTO car_bookings (ref, status, payment_intent, amount, currency, net, quote_json, driver_json) VALUES (?, 'awaiting_payment', ?, ?, ?, ?, ?, ?)")
-      .run(ref, pi.id, q.car.price, cur, q.net, JSON.stringify({ rateKey: q.rateKey, rateCode: q.rateCode, ctx: q.ctx, car: q.car }), JSON.stringify(d));
+    db.prepare("INSERT INTO car_bookings (ref, status, payment_intent, amount, currency, net, quote_json, driver_json, user_id) VALUES (?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?)")
+      .run(ref, pi.id, q.car.price, cur, q.net, JSON.stringify({ rateKey: q.rateKey, rateCode: q.rateCode, ctx: q.ctx, car: q.car }), JSON.stringify(d), uid(req));
     return { ref, clientSecret: pi.client_secret, amount: q.car.price, currency: cur };
   }
 
@@ -240,7 +243,7 @@ function createCars({ db, sendEmail }) {
   }
 
   // Pay at pick-up: reserve only. Nothing is charged on PlanurStay.
-  async function reserve(b) {
+  async function reserve(b, req) {
     if (!bookingOn() || payMode() !== "counter") throw Object.assign(new Error("Car booking isn't open yet."), { status: 403 });
     const q = quotes.get(String(b.quoteId || ""));
     if (!q || Date.now() - q.at > QUOTE_TTL) throw Object.assign(new Error("This price has expired. Please search again."), { status: 410 });
@@ -249,8 +252,8 @@ function createCars({ db, sendEmail }) {
     if (q.reservedRef) return summary(row(q.reservedRef)); // double-click / retry: same reservation
     const ref = "CAR-" + crypto.randomBytes(5).toString("hex").toUpperCase();
     q.reservedRef = ref;
-    db.prepare("INSERT INTO car_bookings (ref, status, payment_intent, amount, currency, net, quote_json, driver_json) VALUES (?, 'booking', NULL, ?, ?, ?, ?, ?)")
-      .run(ref, q.car.price, q.car.currency.toUpperCase(), q.net, JSON.stringify({ rateKey: q.rateKey, rateCode: q.rateCode, ctx: q.ctx, car: q.car }), JSON.stringify(d));
+    db.prepare("INSERT INTO car_bookings (ref, status, payment_intent, amount, currency, net, quote_json, driver_json, user_id) VALUES (?, 'booking', NULL, ?, ?, ?, ?, ?, ?)")
+      .run(ref, q.car.price, q.car.currency.toUpperCase(), q.net, JSON.stringify({ rateKey: q.rateKey, rateCode: q.rateCode, ctx: q.ctx, car: q.car }), JSON.stringify(d), uid(req));
     const out = await placeBooking(ref, q, d);
     setRow(ref, { status: out.status, supplier_ref: out.supplierRef ? String(out.supplierRef) : null, error: out.error || null });
     if (out.status === "failed") q.reservedRef = null; // let them try again or pick another car
@@ -323,7 +326,7 @@ function createCars({ db, sendEmail }) {
   function register(app) {
     app.get("/api/cars/config", (req, res) => res.json({ success: true, enabled: searchOn(), bookingEnabled: bookingOn(), payment: payMode(), publishableKey: bookingOn() && payMode() === "prepay" ? env("STRIPE_PUBLISHABLE_KEY") : null }));
     app.post("/api/cars/reserve", async (req, res) => {
-      try { res.json({ success: true, data: await reserve(req.body || {}) }); }
+      try { res.json({ success: true, data: await reserve(req.body || {}, req) }); }
       catch (e) { if (!e.status) console.warn("Car reserve:", e.message); res.status(e.status || 500).json({ error: e.status ? e.message : "We couldn't reserve this car. Please try again." }); }
     });
     app.post("/api/cars/search", async (req, res) => {
@@ -332,7 +335,7 @@ function createCars({ db, sendEmail }) {
       catch (e) { if (!e.status) console.warn("Car search:", e.message); res.status(e.status || 502).json({ error: e.status ? e.message : "Car search is unavailable right now. Please try again." }); }
     });
     app.post("/api/cars/checkout", async (req, res) => {
-      try { res.json({ success: true, data: await checkout(req.body || {}) }); }
+      try { res.json({ success: true, data: await checkout(req.body || {}, req) }); }
       catch (e) { if (!e.status) console.warn("Car checkout:", e.message); res.status(e.status || 500).json({ error: e.status ? e.message : "We couldn't start the payment. Please try again." }); }
     });
     app.post("/api/cars/book", async (req, res) => {

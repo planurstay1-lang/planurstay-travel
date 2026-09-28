@@ -619,12 +619,31 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
             return { type: "flight", ...f, name: first.originCode && last.destinationCode ? `${first.originCode} → ${last.destinationCode}` : "Flight", checkin: (first.departureTime || "").slice(0, 10) };
           });
       } catch { /* flight table may not exist yet */ }
-      res.json({ success: true, data: [...hotels, ...flights].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
+      const extra = otherTrips("user_id = ?", [user.id]);
+      res.json({ success: true, data: [...hotels, ...flights, ...extra].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
     } catch (err) {
       console.error("Trips error:", err.message);
       res.status(500).json({ error: "Server error" });
     }
   });
+
+  // Flights and hotels booked through the Travellez MCP, and car rentals (their own tables)
+  function otherTrips(where, args) {
+    const out = [];
+    try {
+      out.push(...db.prepare(`SELECT ref AS bookingId, kind, status, title AS name, start_date AS checkin, end_date AS checkout, amount AS price, currency, supplier_ref, created_at AS createdAt
+        FROM mcp_bookings WHERE ${where} AND status IN ('confirmed','pending_confirmation') ORDER BY created_at DESC`).all(...args)
+        .map(r => ({ type: r.kind, source: "mcp", bookingId: r.bookingId, status: r.status === "confirmed" ? "CONFIRMED" : "PENDING", name: r.name, checkin: r.checkin, checkout: r.kind === "hotel" ? r.checkout : null,
+          price: r.price, currency: r.currency, pnr: r.kind === "flight" ? r.supplier_ref : null, confirmation: r.kind === "hotel" ? r.supplier_ref : null, createdAt: r.createdAt })));
+    } catch { /* table not created yet */ }
+    try {
+      out.push(...db.prepare(`SELECT ref, status, amount, currency, quote_json, supplier_ref, payment_intent, created_at FROM car_bookings WHERE ${where.replace("email", "lower(json_extract(driver_json, '$.email'))")} AND status IN ('confirmed','pending_confirmation') ORDER BY created_at DESC`).all(...args)
+        .map(r => { let q = {}; try { q = JSON.parse(r.quote_json || "{}"); } catch {}
+          return { type: "car", bookingId: r.ref, status: r.status === "confirmed" ? "CONFIRMED" : "PENDING", name: `${q.car?.vendor || "Car rental"} · ${q.ctx?.pickupCode || ""}`.trim(),
+            checkin: q.ctx?.pickupDate || null, checkout: q.ctx?.returnDate || null, price: r.amount, currency: r.currency, confirmation: r.supplier_ref, payAtPickup: !r.payment_intent, createdAt: r.created_at }; }));
+    } catch { /* table not created yet */ }
+    return out;
+  }
 
   // ─── Guest booking lookup: booking ID + the email used at checkout ───
   app.get("/api/trips/lookup", (req, res) => {
@@ -634,7 +653,11 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     const b = db.prepare(`
       SELECT liteapi_booking_id AS bookingId, status, hotel_name AS name, checkin, checkout, price, currency, guest_name AS guest
       FROM bookings WHERE liteapi_booking_id = ? AND lower(guest_email) = ? LIMIT 1`).get(bookingId, email);
-    if (!b) return res.status(404).json({ error: "We couldn't find a booking with that ID and email" });
+    if (!b) {
+      const other = otherTrips("ref = ? AND lower(email) = ?", [bookingId, email])[0];
+      if (other) return res.json({ success: true, data: other });
+      return res.status(404).json({ error: "We couldn't find a booking with that ID and email" });
+    }
     res.json({ success: true, data: { type: "hotel", ...b } });
   });
 
@@ -649,6 +672,11 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     if (prebookId) {
       changed += db.prepare("UPDATE bookings SET user_id = ? WHERE prebook_id = ? AND user_id IS NULL").run(user.id, prebookId).changes;
       try { changed += db.prepare("UPDATE flight_bookings SET user_id = ? WHERE prebook_id = ? AND user_id IS NULL").run(user.id, prebookId).changes; } catch {}
+      try { changed += db.prepare("UPDATE mcp_bookings SET user_id = ? WHERE ref = ? AND user_id IS NULL").run(user.id, prebookId).changes; } catch {}
+    }
+    if (!changed && bookingId && email) {
+      try { changed += db.prepare("UPDATE mcp_bookings SET user_id = ? WHERE ref = ? AND lower(email) = lower(?) AND user_id IS NULL").run(user.id, String(bookingId).trim(), String(email).trim()).changes; } catch {}
+      try { changed += db.prepare("UPDATE car_bookings SET user_id = ? WHERE ref = ? AND lower(json_extract(driver_json, '$.email')) = lower(?) AND user_id IS NULL").run(user.id, String(bookingId).trim(), String(email).trim()).changes; } catch {}
     }
     if (!changed && bookingId && email) {
       changed += db.prepare("UPDATE bookings SET user_id = ? WHERE liteapi_booking_id = ? AND lower(guest_email) = lower(?) AND user_id IS NULL")
@@ -657,7 +685,8 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     const owned = prebookId
       ? db.prepare("SELECT 1 FROM bookings WHERE prebook_id = ? AND user_id = ?").get(prebookId, user.id)
       : bookingId ? db.prepare("SELECT 1 FROM bookings WHERE liteapi_booking_id = ? AND user_id = ?").get(String(bookingId).trim(), user.id) : null;
-    if (!changed && !owned) return res.status(404).json({ error: "We couldn't match that booking. Check the booking ID and email." });
+    const ownedOther = (() => { try { const id = prebookId || String(bookingId || "").trim(); return id && (db.prepare("SELECT 1 FROM mcp_bookings WHERE ref = ? AND user_id = ?").get(id, user.id) || db.prepare("SELECT 1 FROM car_bookings WHERE ref = ? AND user_id = ?").get(id, user.id)); } catch { return null; } })();
+    if (!changed && !owned && !ownedOther) return res.status(404).json({ error: "We couldn't match that booking. Check the booking ID and email." });
     res.json({ success: true, claimed: changed });
   });
 

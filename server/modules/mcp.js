@@ -272,11 +272,15 @@ async function hotelRooms(id, stay) {
   return offers.sort((a, b) => a.total - b.total);
 }
 
-function createMcp({ db, sendEmail }) {
+function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
   db.exec(`CREATE TABLE IF NOT EXISTS mcp_bookings (
     ref TEXT PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL, payment_intent TEXT, amount REAL, currency TEXT, net REAL,
     offer_json TEXT, passengers_json TEXT, contact_json TEXT, supplier TEXT, supplier_booking_id TEXT, supplier_ref TEXT, error TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+  // For My trips: who booked, their email, a readable name and the travel dates
+  for (const col of ["user_id INTEGER", "email TEXT", "title TEXT", "start_date TEXT", "end_date TEXT"]) { try { db.exec(`ALTER TABLE mcp_bookings ADD COLUMN ${col}`); } catch { /* exists */ } }
+  const uid = (req) => { try { return jwt && req ? jwt.verify(req.cookies?.token || "", JWT_SECRET).id || null : null; } catch { return null; } };
+  const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null);
   const row = (ref) => db.prepare("SELECT * FROM mcp_bookings WHERE ref = ?").get(ref);
   const setRow = (ref, f) => { const k = Object.keys(f); db.prepare(`UPDATE mcp_bookings SET ${k.map(x => `${x} = ?`).join(", ")}, updated_at = CURRENT_TIMESTAMP WHERE ref = ?`).run(...k.map(x => f[x]), ref); };
   const fail = (msg, status) => Object.assign(new Error(msg), { status });
@@ -293,7 +297,7 @@ function createMcp({ db, sendEmail }) {
     };
   }
 
-  async function hold(b) {
+  async function hold(b, req) {
     if (!bookingOn()) throw fail("This fare can't be booked online yet.", 403);
     const o = unb64(String(b.offerId || "").replace(/^tz:/, ""));
     if (!o?.i || !o?.r) throw fail("Invalid offer", 400);
@@ -315,8 +319,10 @@ function createMcp({ db, sendEmail }) {
       description: `PlanurStay flight ${ref}`, receipt_email: contact.email, metadata: { type: "flight", ref, supplier: o.p },
     }, { idempotencyKey: `fl-${ref}` });
     const passengers = pax.map((p, i) => toPassenger(p, ids[i], contact));
-    db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, passengers_json, contact_json, supplier) VALUES (?, 'flight', 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(ref, pi.id, price, cur, net, JSON.stringify({ offer_id: o.i, offer_request_id: o.r, provider: o.p, flight_type: o.t || "roundtrip", total_amount: String(off.total_amount), expires_at: off.expires_at }), JSON.stringify(passengers), JSON.stringify(contact), o.p);
+    const sum = b.summary || {};
+    db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, passengers_json, contact_json, supplier, user_id, email, title, start_date, end_date) VALUES (?, 'flight', 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(ref, pi.id, price, cur, net, JSON.stringify({ offer_id: o.i, offer_request_id: o.r, provider: o.p, flight_type: o.t || "roundtrip", total_amount: String(off.total_amount), expires_at: off.expires_at }), JSON.stringify(passengers), JSON.stringify(contact), o.p,
+        uid(req), contact.email, String(sum.title || "Flight").slice(0, 120), day(sum.start), day(sum.end));
     return { prebookId: ref, transactionId: pi.id, secretKey: pi.client_secret, price, currency: cur, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY"), expiresAt: off.expires_at || null };
   }
 
@@ -397,7 +403,7 @@ function createMcp({ db, sendEmail }) {
   }
 
   // ─── Hotels: pay upfront (hold → book through the MCP → charge, or release) ───
-  async function holdHotel(b) {
+  async function holdHotel(b, req) {
     if (!hotelsOn() || !payOn()) throw fail("This room can't be booked online yet.", 403);
     const o = roomOffers.get(String(b.offerId || ""));
     if (!o || Date.now() - o.at > OFFER_TTL) throw fail("This price has expired. Please reload the hotel page to see the latest rooms.", 410);
@@ -412,8 +418,10 @@ function createMcp({ db, sendEmail }) {
       automatic_payment_methods: { enabled: true, allow_redirects: "never" },
       description: `PlanurStay hotel ${ref}`, metadata: { type: "hotel", ref, supplier: SUPPLIER[o.provider_type] || o.provider_type },
     }, { idempotencyKey: `ht-${ref}` });
-    db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, supplier) VALUES (?, 'hotel', 'awaiting_payment', ?, ?, ?, ?, ?, ?)")
-      .run(ref, pi.id, price, o.currency, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, stay: o.stay, hotelId: o.hotelId, room: o.room }), SUPPLIER[o.provider_type] || o.provider_type);
+    const hotelName = hotelsSeen.get(o.hotelId)?.raw?.name || String(b.summary?.title || "Hotel stay");
+    db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, supplier, user_id, title, start_date, end_date) VALUES (?, 'hotel', 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(ref, pi.id, price, o.currency, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName }), SUPPLIER[o.provider_type] || o.provider_type,
+        uid(req), hotelName.slice(0, 120), day(o.stay.checkin), day(o.stay.checkout));
     return { prebookId: ref, transactionId: pi.id, secretKey: pi.client_secret, price, currency: o.currency, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY") };
   }
 
@@ -435,7 +443,7 @@ function createMcp({ db, sendEmail }) {
       if (pi.metadata?.ref !== ref) throw fail("Payment doesn't match this booking", 400);
       if (pi.status !== "requires_capture") throw fail("Your card hasn't been authorized yet", 402);
       const o = JSON.parse(r0.offer_json);
-      setRow(ref, { status: "booking", contact_json: JSON.stringify(t) });
+      setRow(ref, { status: "booking", contact_json: JSON.stringify(t), email: t.email });
       const res = await mcp("/api/v2/hotels/book", { method: "POST", timeoutMs: 120000, body: {
         rate_id: o.rate_id, provider_type: o.provider_type, amount: r0.net.toFixed(2), currency: r0.currency,
         check_in: o.stay.checkin, check_out: o.stay.checkout, rooms: o.stay.rooms, guests: o.stay.adults, traveller: t, comment: `PlanurStay ${ref}`,
@@ -470,7 +478,7 @@ function createMcp({ db, sendEmail }) {
     const c = JSON.parse(r.contact_json || "{}"), o = JSON.parse(r.offer_json || "{}");
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, x => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[x]));
     const money = (n, cur) => { try { return new Intl.NumberFormat("en-US", { style: "currency", currency: cur }).format(n); } catch { return `${cur} ${n}`; } };
-    const name = hotelsSeen.get(o.hotelId)?.raw?.name || "your hotel";
+    const name = o.hotelName || hotelsSeen.get(o.hotelId)?.raw?.name || "your hotel";
     await sendEmail({ to: c.email, subject: `Hotel booked: ${name}, ${o.stay?.checkin}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0b1b3f"><div style="font-weight:800;font-size:18px;color:#1f5bff">PlanurStay</div>
         <h1 style="font-size:22px">${r.status === "confirmed" ? "Your room is booked" : "We're confirming your room"}</h1>
@@ -486,9 +494,11 @@ function createMcp({ db, sendEmail }) {
       try { const d = await hotelDetails(req.params.id, { checkin: req.query.checkin, checkout: req.query.checkout }); if (!d) return res.status(404).json({ error: "Hotel not found" }); res.json(d); }
       catch (e) { res.status(500).json({ error: "Server error" }); }
     });
-    for (const sub of ["highlights", "reviews"]) app.get(`/api/hotels/:id/${sub}`, (req, res, next) => String(req.params.id).startsWith("tz-") ? res.json({ success: true, data: [] }) : next());
+    // No LiteAPI highlights or reviews for MCP-only hotels: answer with the empty shapes the hotel page expects
+    app.get("/api/hotels/:id/highlights", (req, res, next) => String(req.params.id).startsWith("tz-") ? res.json({ success: true, data: null }) : next());
+    app.get("/api/hotels/:id/reviews", (req, res, next) => String(req.params.id).startsWith("tz-") ? res.json({ success: true, data: { reviews: [], types: [] } }) : next());
     app.post("/api/mcp/hotels/hold", async (req, res) => {
-      try { res.json({ success: true, data: await holdHotel(req.body || {}) }); }
+      try { res.json({ success: true, data: await holdHotel(req.body || {}, req) }); }
       catch (e) { if (!e.status) console.warn("MCP hotel hold:", e.message); res.status(e.status || 502).json({ error: e.status ? e.message : "We couldn't hold this room. Please try again." }); }
     });
     app.post("/api/mcp/hotels/book", async (req, res) => {
@@ -497,7 +507,7 @@ function createMcp({ db, sendEmail }) {
     });
     app.get("/api/mcp/status", (req, res) => res.json({ success: true, connected: connected(), flights: flightsOn(), hotels: hotelsOn(), booking: payOn() }));
     app.post("/api/mcp/flights/hold", async (req, res) => {
-      try { res.json({ success: true, data: await hold(req.body || {}) }); }
+      try { res.json({ success: true, data: await hold(req.body || {}, req) }); }
       catch (e) { if (!e.status) console.warn("MCP flight hold:", e.message); res.status(e.status || 502).json({ error: e.status ? e.message : "We couldn't hold this fare. Please try again." }); }
     });
     app.post("/api/mcp/flights/book", async (req, res) => {

@@ -566,6 +566,7 @@
         // Fares from the Travellez MCP (Duffel, Mystifly, Sabre…) are held and paid through our own Stripe
         const viaMcp = String(sel.offer.offerId || "").startsWith("tz:");
         pb = (await PS.api(viaMcp ? "/api/mcp/flights/hold" : "/api/flights/prebook", { method: "POST", body: {
+          summary: viaMcp ? { title: `${sel.search?.fromCity || sel.search?.from} → ${sel.search?.toCity || sel.search?.to}`, start: sel.search?.depart, end: sel.search?.return || sel.search?.depart } : undefined,
           offerId: sel.offer.offerId, usePaymentSdk: true, voucherCode,
           // LiteAPI wants the national number and the country code separately
           contact: { firstName: passengers[0].firstName, lastName: passengers[0].lastName, email: val("email"), phoneNumber: val("phone").replace(/\D/g, "").replace(/^0+/, ""), phoneCountryCode: val("dial").replace("+", "") },
