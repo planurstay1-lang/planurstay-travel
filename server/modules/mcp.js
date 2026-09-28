@@ -518,4 +518,4 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
   return { register };
 }
 
-module.exports = { createMcp, searchFlights, mergeJourneys, toJourney, signature, searchHotels, mergeHotels, hotelRooms, _state: { flightsOn, bookingOn, hotelsOn, hotelsVisible } };
+module.exports = { mcpCall: mcp, mcpConnected: connected, createMcp, searchFlights, mergeJourneys, toJourney, signature, searchHotels, mergeHotels, hotelRooms, _state: { flightsOn, bookingOn, hotelsOn, hotelsVisible } };

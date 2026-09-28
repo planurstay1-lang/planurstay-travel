@@ -27,6 +27,9 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
   const env = (k) => String(process.env[k] || "").trim();
   const base = () => (env("TRAVELLEZ_API_BASE_URL") || "https://api.travellez.com").replace(/\/$/, "");
   const searchOn = () => !!(env("TRAVELLEZ_EMAIL") && env("TRAVELLEZ_PASSWORD"));
+  // With the Travellez MCP connected, cars go through it like flights and hotels (CARS_VIA=direct keeps the old route)
+  const mcpMod = require("./mcp");
+  const viaMcp = () => mcpMod.mcpConnected() && env("CARS_VIA") !== "direct";
   // How cars are paid. "counter" (default): Sabre pay-at-pick-up rates; we reserve and the customer pays the rental
   // company at the desk, so there's no markup and no card charge on PlanurStay. "prepay": we charge the customer
   // (price + CAR_MARKUP_PCT) through Stripe; only for rates Travellez actually prepays.
@@ -103,6 +106,32 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
   };
   const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
 
+  // One car card from either source (Sabre fields straight from Travellez, or the MCP's simplified list)
+  function makeCar(c, ctx) {
+    const { net, base = null, currency, mileage, rateKey, rateCode } = c;
+    if (!net || net <= 0 || !rateKey) return null;
+    const info = acriss(c.vehType);
+    const quoteId = crypto.randomBytes(12).toString("hex");
+    const days = Math.max(1, Math.ceil((Date.parse(`${ctx.returnDate}T${ctx.returnTime}`) - Date.parse(`${ctx.pickupDate}T${ctx.pickupTime}`)) / 86400000));
+    const price = sell(net);
+    const car = {
+      quoteId, vendor: c.vendorName || c.vendorCode || "Car rental", vendorCode: c.vendorCode || null, logo: /^https:\/\//.test(c.logo || "") ? c.logo : null,
+      model: c.model || "Standard vehicle", code: c.vehType || null, ...info,
+      doors: num(c.doors), seats: num(c.seats), bags: c.bags || null,
+      unlimitedMileage: !mileage || /^unl/i.test(String(mileage)), pickup: c.pickup || ctx.pickupCode, dropoff: c.dropoff || ctx.returnCode,
+      price, perDay: Math.round(price / days * 100) / 100, currency: currency || "USD", days,
+      expiresAt: new Date(Date.now() + QUOTE_TTL).toISOString(),
+      payAtPickup: payMode() === "counter",
+      commission: commissionVendors().has(String(c.vendorCode || "").toUpperCase()),
+      freeCancelUntil: payMode() === "counter" ? null : cancelDeadline(ctx), freeCancelHours: cancelHours(),
+      // Order summary like Travellez: our markup sits in the base fare; taxes and charges are shown as they are
+      breakdown: base != null && base < net ? { base: Math.round((price - (net - base)) * 100) / 100, chargesTax: Math.round((net - base) * 100) / 100 } : null,
+    };
+    quotes.set(quoteId, { at: Date.now(), net, rateKey, rateCode, ctx, car });
+    return car;
+  }
+
+  // Raw Sabre car from Travellez
   function toCar(raw, ctx) {
     const rate = (raw.VehRentalRate || [])[0]; if (!rate) return null;
     const v = rate.Vehicle || {}, vendor = raw.Vendor || {};
@@ -111,30 +140,21 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
       if (ch.ChargeType === "ApproximateTotalPrice") { net = num(ch.Amount); currency = ch.CurrencyCode || currency; }
       else if (ch.ChargeType === "BaseRateTotal") { base = num(ch.Amount); currency = currency || ch.CurrencyCode; mileage = ch.MileageAllowance || mileage; }
     }
-    if (net == null) net = base;
-    if (!net || net <= 0 || !rate.RateKey) return null;
     const sb = v.SeatBeltsAndBagsInfo || {};
-    const bags = (sb.BagsInfo?.Bags || []).reduce((a, b) => a + (parseInt(b.Quantity) || 0), 0) || null;
-    const info = acriss(v.VehType);
-    const quoteId = crypto.randomBytes(12).toString("hex");
-    const days = Math.max(1, Math.ceil((Date.parse(`${ctx.returnDate}T${ctx.returnTime}`) - Date.parse(`${ctx.pickupDate}T${ctx.pickupTime}`)) / 86400000));
-    const price = sell(net);
-    const car = {
-      quoteId, vendor: vendor.Name || vendor.Code || "Car rental", vendorCode: vendor.Code || null, logo: /^https:\/\//.test(vendor.Logo || "") ? vendor.Logo : null,
-      model: v.VehMakeAndModel || "Standard vehicle", code: v.VehType || null, ...info,
-      doors: num(v.VehNumOfDoors), seats: num(sb.SeatBelts?.Quantity), bags,
-      unlimitedMileage: !mileage || /^unl/i.test(String(mileage)), pickup: raw.PickUpLocation?.LocationCode || ctx.pickupCode, dropoff: raw.ReturnLocation?.LocationCode || ctx.returnCode,
-      price, perDay: Math.round(price / days * 100) / 100, currency: currency || "USD", days,
-      expiresAt: new Date(Date.now() + QUOTE_TTL).toISOString(),
-      payAtPickup: payMode() === "counter",
-      commission: commissionVendors().has(String(vendor.Code || "").toUpperCase()),
-      freeCancelUntil: payMode() === "counter" ? null : cancelDeadline(ctx), freeCancelHours: cancelHours(),
-      // Order summary like Travellez: our markup sits in the base fare; taxes and charges are shown as they are
-      breakdown: base != null && base < net ? { base: Math.round((price - (net - base)) * 100) / 100, chargesTax: Math.round((net - base) * 100) / 100 } : null,
-    };
-    quotes.set(quoteId, { at: Date.now(), net, rateKey: rate.RateKey, rateCode: rate.RateCode, ctx, car });
-    return car;
+    return makeCar({ net: net ?? base, base, currency, mileage, rateKey: rate.RateKey, rateCode: rate.RateCode, vendorName: vendor.Name, vendorCode: vendor.Code, logo: vendor.Logo,
+      vehType: v.VehType, model: v.VehMakeAndModel, doors: v.VehNumOfDoors, seats: sb.SeatBelts?.Quantity,
+      bags: (sb.BagsInfo?.Bags || []).reduce((a, bg) => a + (parseInt(bg.Quantity) || 0), 0) || null,
+      pickup: raw.PickUpLocation?.LocationCode, dropoff: raw.ReturnLocation?.LocationCode }, ctx);
   }
+
+  // Car from the MCP's /api/v2/cars/search (the agent's simplified list)
+  function toCarFromMcp(c, ctx) {
+    const bags = Array.isArray(c.bags) ? c.bags.reduce((a, bg) => a + (parseInt(bg?.Quantity ?? bg?.quantity) || 0), 0) || null : num(c.bags);
+    return makeCar({ net: num(c.total_price) ?? num(c.base_rate), base: num(c.base_rate), currency: c.currency, mileage: c.mileage, rateKey: c.rate_key, rateCode: c.rate_code,
+      vendorName: c.vendor_name, vendorCode: c.vendor_code, logo: c.vendor_logo, vehType: c.vehicle_type, model: c.vehicle_model, doors: c.doors, seats: c.seats, bags,
+      pickup: c.pickup_location, dropoff: c.return_location }, ctx);
+  }
+
 
   const code3 = (v) => (/^[A-Za-z]{3}$/.test(String(v || "")) ? String(v).toUpperCase() : null);
   const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null);
@@ -148,6 +168,14 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
     sweep();
     const payload = { pickup_date: ctx.pickupDate, return_date: ctx.returnDate, pickup_time: ctx.pickupTime, return_time: ctx.returnTime, pickup_location_code: ctx.pickupCode, return_location_code: ctx.returnCode };
     const cars = [];
+    if (viaMcp()) {
+      const r = await mcpMod.mcpCall("/api/v2/cars/search", { method: "POST", timeoutMs: 90000, body: {
+        pickup_date: ctx.pickupDate, return_date: ctx.returnDate, pickup_time: ctx.pickupTime, return_time: ctx.returnTime,
+        pickup_location_code: ctx.pickupCode, return_location_code: ctx.returnCode } }).catch(e => ({ ok: false, text: e.message }));
+      if (!r.ok) { console.warn("MCP car search:", r.status, (r.text || "").slice(0, 300)); throw Object.assign(new Error("Car search is unavailable right now. Please try again."), { status: 502 }); }
+      for (const c of r.json?.results || []) { const car = toCarFromMcp(c, ctx); if (car) cars.push(car); }
+      return { cars: cars.sort((a, b) => a.price - b.price), ctx, payment: payMode() };
+    }
     for (let page = 1; page <= 3; page++) {
       const r = await tz("/vehicle/car-search", { method: "POST", body: payload, params: { page, page_size: 100, sort_by: "price_asc" } });
       if (!r.ok) { if (page === 1) { console.warn("Travellez car search:", r.status, (r.text || "").slice(0, 300)); throw Object.assign(new Error("Car search is unavailable right now. Please try again."), { status: 502 }); } break; }
@@ -212,6 +240,7 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
 
   // Book the car on Travellez and wait for the supplier's answer. Returns { status, bookingId, supplierRef, error }.
   async function placeBooking(ref, q, d) {
+    if (viaMcp()) return placeBookingMcp(ref, q, d);
     let res;
     try {
       const cardId = await companyCard();
@@ -236,6 +265,31 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
       const v = await tz(`/booking/cab/${encodeURIComponent(bookingId)}`).catch(() => null);
       status = String(v?.json?.booking_status || status).toLowerCase();
       supplierRef = v?.json?.booking_reference || supplierRef;
+      if (["confirmed", "failed", "cancelled", "canceled", "rejected"].includes(status)) break;
+    }
+    if (["failed", "cancelled", "canceled", "rejected"].includes(status)) return { status: "failed", bookingId, error: `Supplier status: ${status}` };
+    return { status: status === "confirmed" ? "confirmed" : "pending_confirmation", bookingId, supplierRef };
+  }
+
+  // Same booking through the MCP's /api/v2/cars (it picks the account's saved card itself)
+  async function placeBookingMcp(ref, q, d) {
+    const res = await mcpMod.mcpCall("/api/v2/cars/book", { method: "POST", timeoutMs: 120000, body: {
+      rate_key: q.rateKey, rate_code: q.rateCode, note: `PlanurStay ${ref}${d.note ? ` · ${d.note}` : ""}`,
+      driver: { first_name: d.firstName, last_name: d.lastName, email: d.email, phone: d.phone, born_on: d.dob, gender: d.gender },
+      pick_up_date: q.ctx.pickupDate, pick_up_time: q.ctx.pickupTime, return_date: q.ctx.returnDate, return_time: q.ctx.returnTime,
+    } }).catch(e => ({ ok: false, text: e.message }));
+    const bookingId = res.ok ? res.json?.booking_id : null;
+    if (!bookingId) {
+      console.warn("MCP car booking failed:", ref, res.status, (res.text || "").slice(0, 300));
+      return { status: "failed", error: String(res.json?.detail || res.json?.message || res.text || "Booking failed").slice(0, 500) };
+    }
+    setRow(ref, { travellez_booking_id: String(bookingId), travellez_car_id: res.json?.car_id ? String(res.json.car_id) : null });
+    let status = "pending", supplierRef = null;
+    for (let i = 0; i < 6; i++) {
+      await new Promise(r => setTimeout(r, i === 0 ? 4000 : 3000));
+      const v = await mcpMod.mcpCall(`/api/v2/cars/booking/${encodeURIComponent(bookingId)}`).catch(() => null);
+      status = String(v?.json?.booking_status || v?.json?.booking?.booking_status || status).toLowerCase();
+      supplierRef = v?.json?.booking_reference || v?.json?.booking?.booking_reference || supplierRef;
       if (["confirmed", "failed", "cancelled", "canceled", "rejected"].includes(status)) break;
     }
     if (["failed", "cancelled", "canceled", "rejected"].includes(status)) return { status: "failed", bookingId, error: `Supplier status: ${status}` };
