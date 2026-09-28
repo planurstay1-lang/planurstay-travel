@@ -456,7 +456,8 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
       const centreP = hasGeo ? Promise.resolve({ lat: +b.latitude, lng: +b.longitude })
         : b.placeId ? cached("placeloc:" + b.placeId, 30 * 24 * 60 * MIN, () => lite(`/data/places/${encodeURIComponent(b.placeId)}`, { timeoutMs: 10000 })).then(pr => pr?.json?.data?.location ? { lat: pr.json.data.location.latitude, lng: pr.json.data.location.longitude } : null).catch(() => null)
         : Promise.resolve(null);
-      const mcpHotelsP = centreP.then(c => c ? cached("mcphotels:" + JSON.stringify([c, b.checkin, b.checkout, b.adults, b.rooms, searchBody.currency, hasGeo ? b.radius : 15]), 5 * MIN,
+      // Only the main hotel search asks Travellez (30-40s, heavy): homepage deal tiles and map drags pass noMcp
+      const mcpHotelsP = b.noMcp ? Promise.resolve([]) : centreP.then(c => c ? cached("mcphotels:" + JSON.stringify([c, b.checkin, b.checkout, b.adults, b.rooms, searchBody.currency, hasGeo ? b.radius : 15]), 5 * MIN,
         () => mcpMod.searchHotels({ lat: c.lat, lng: c.lng, radiusKm: hasGeo ? (+b.radius || 5000) / 1000 : 15, checkin: b.checkin, checkout: b.checkout, adults: +b.adults || 2, rooms: +b.rooms || 1, currency: searchBody.currency }),
         (v) => Array.isArray(v) && v.length > 0) : []).catch(() => []);
       const r = await cached("stays:" + JSON.stringify(searchBody), 5 * MIN, () => lite("/hotels/rates", { method: "POST", body: searchBody })).catch(e => ({ ok: false, status: 0, json: { error: { message: e.message } } }));
@@ -524,9 +525,12 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         if (pk) h.packagePrice = true;
       });
       if (member && !b.latitude && data.length) recordIntent(req, b, { dest: String(b.dest || "").slice(0, 120), destDetail: String(b.destDetail || "").slice(0, 160), lowNight: Math.min(...data.map(h => h.perNight)) });
-      const mcpHotels = await mcpHotelsP;
-      const all = mcpHotels.length ? mcpMod.mergeHotels(data, mcpHotels) : data;
-      res.json({ success: true, data: all, pricing: { member, package: all.some(h => h.packagePrice), memberFactor: pricing.memberFactor() } });
+      // Travellez hotel search can take 30-40s: don't hold the page for it. Wait briefly, then tell the page to ask
+      // again (mcpWait) — the search keeps running and is cached, so the second call gets the merged list.
+      const waitMs = b.mcpWait || !data.length ? 90000 : (+process.env.MCP_HOTEL_WAIT_MS || 6000);
+      const mcpHotels = await Promise.race([mcpHotelsP, new Promise(r => setTimeout(() => r(null), waitMs))]);
+      const all = mcpHotels?.length ? mcpMod.mergeHotels(data, mcpHotels) : data;
+      res.json({ success: true, data: all, mcpPending: mcpHotels === null || undefined, pricing: { member, package: all.some(h => h.packagePrice), memberFactor: pricing.memberFactor() } });
     } catch (err) {
       console.error("Stays search error:", err.message);
       res.status(500).json({ error: "Server error" });

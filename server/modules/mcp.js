@@ -13,7 +13,8 @@
  * Env: TRAVELLEZ_MCP_URL, TRAVELLEZ_EMAIL, TRAVELLEZ_PASSWORD, MCP_FLIGHTS=on (show fares once booking is on) or
  *      preview (show fares to check them, without booking),
  *      MCP_BOOKING=on (allow booking; needs STRIPE_SECRET_KEY + STRIPE_PUBLISHABLE_KEY),
- *      MCP_FLIGHT_MARKUP_PCT (default 3), MCP_SEARCH_TIMEOUT_MS (default 25000).
+ *      MCP_FLIGHT_MARKUP_PCT (default 3), MCP_SEARCH_TIMEOUT_MS (default 25000),
+ *      MCP_FLIGHT_SUPPLIERS (default duffel), MCP_FX_BUFFER_PCT (default 2), MCP_HOTEL_TIMEOUT_MS (default 75000).
  */
 const crypto = require("crypto");
 
@@ -33,6 +34,28 @@ const SUPPLIER = { 1: "duffel", 4: "ratehawk" };
 const markup = () => { const m = parseFloat(env("MCP_FLIGHT_MARKUP_PCT")); return Number.isFinite(m) && m >= 0 && m <= 30 ? m : 3; };
 const stripe = () => require("stripe")(env("STRIPE_SECRET_KEY"));
 const ZERO_DEC = new Set(["JPY", "KRW", "VND", "CLP", "ISK", "UGX", "XOF", "XAF", "PYG", "RWF"]);
+
+// ─── Currency: Travellez prices in its account currency (USD); customers see and pay in their own ───
+// Converted at the day's rate plus MCP_FX_BUFFER_PCT (default 2) to cover card/bank FX when we pay the supplier.
+const fxBuffer = () => { const m = parseFloat(env("MCP_FX_BUFFER_PCT")); return Number.isFinite(m) && m >= 0 && m <= 10 ? m : 2; };
+let fx = { at: 0, rates: null }, fxLoading = null;
+async function fxRates() {
+  if (fx.rates && Date.now() - fx.at < 6 * 3600 * 1000) return fx.rates;
+  fxLoading = fxLoading || fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(8000) })
+    .then(r => r.json()).then(j => { if (j?.rates?.USD) fx = { at: Date.now(), rates: j.rates }; })
+    .catch(e => console.warn("FX rates:", e.message)).finally(() => { fxLoading = null; });
+  await fxLoading;
+  return fx.rates; // stale rates beat none; null only if we never got any
+}
+/** Multiplier from supplier currency to the customer's (buffer included), or null if unknown. */
+async function fxRate(from, to) {
+  from = String(from || "").toUpperCase(); to = String(to || from).toUpperCase();
+  if (!from) return null;
+  if (from === to) return 1;
+  const rates = await fxRates();
+  if (!rates?.[from] || !rates?.[to]) return null;
+  return (rates[to] / rates[from]) * (1 + fxBuffer() / 100);
+}
 
 // ─── MCP session: one login, reused until the MCP says it expired ───
 let token = null, loggingIn = null;
@@ -61,18 +84,24 @@ async function mcp(path, { method = "GET", body, query, timeoutMs = 60000 } = {}
 }
 
 // ─── Travellez flight offer → PlanurStay journey (the shape the results page and checkout already use) ───
-const minutesOf = (iso) => { const m = /P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?/.exec(String(iso || "")) || []; return (+m[1] || 0) * 1440 + (+m[2] || 0) * 60 + (+m[3] || 0); };
+const minutesOf = (iso) => { if (typeof iso === "number" || /^\d+$/.test(String(iso ?? "").trim())) return +iso || 0; const m = /P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?/.exec(String(iso || "")) || []; return (+m[1] || 0) * 1440 + (+m[2] || 0) * 60 + (+m[3] || 0); };
 const localMs = (t) => Date.parse(String(t || "").slice(0, 19) + "Z"); // wall-clock time at the airport
 const sell = (net) => Math.ceil(net * (1 + markup() / 100) * 100) / 100;
 const logo = (code) => code ? `https://assets.duffel.com/img/airlines/for-light-background/full-color-logo/${encodeURIComponent(code)}.svg` : null;
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const unb64 = (s) => { try { return JSON.parse(Buffer.from(String(s), "base64url").toString()); } catch { return null; } };
 
-function toJourney(f, requestId, flightType, currency) {
+const fareCurrency = (fare) => String(fare.currency || fare.total_currency || fare.fare?.currency || "").toUpperCase();
+// Local wall-clock time at the airport. Sabre's departure_time is UTC; its local time is date + departure_time_sabre.
+const localTime = (s, k) => s[`${k}_date`] && s[`${k}_time_sabre`] ? `${s[`${k}_date`]}T${String(s[`${k}_time_sabre`]).slice(0, 8)}` : String(s[`${k}_time`] || "").slice(0, 19);
+
+/** rates: supplier currency → multiplier into `currency` (from fxRate); fares we can't convert are dropped. */
+function toJourney(f, requestId, flightType, currency, rates = {}) {
   const fare = (f.all_fares || [])[0] || {};
-  const net = parseFloat(fare.total_amount);
-  if (!(net > 0) || !f.id) return null;
-  if (currency && fare.currency && String(fare.currency).toUpperCase() !== String(currency).toUpperCase()) return null;
+  const net = parseFloat(fare.total_amount), cur = fareCurrency(fare), show = String(currency || cur).toUpperCase();
+  if (!(net > 0) || !f.id || !cur) return null;
+  const rate = cur === show ? 1 : rates[cur];
+  if (!(rate > 0)) return null;
   const dirs = ["OUTBOUND", "INBOUND"];
   const segments = [], connections = [], legDurations = [];
   (f.trip || []).forEach((trip, li) => {
@@ -83,34 +112,38 @@ function toJourney(f, requestId, flightType, currency) {
       // Departure and arrival are local times in different time zones, so never subtract them: use the supplier's duration
       const minutes = minutesOf(s.duration) || null;
       segments.push({
-        direction: dir, departureTime: String(s.departure_time || "").slice(0, 19), arrivalTime: String(s.arrival_time || "").slice(0, 19),
+        direction: dir, departureTime: localTime(s, "departure"), arrivalTime: localTime(s, "arrival"),
         originCode: s.origin?.iata_code, destinationCode: s.destination?.iata_code, originName: s.origin?.name || s.origin?.city_name, destinationName: s.destination?.name || s.destination?.city_name,
         duration: minutes ? { minutes } : undefined, flight: { marketingNumber: String(s.flight_number || "") }, segmentKey: `${f.id}-${li}-${si}`,
         carrier: { marketingCode: al.iata_code, marketingName: al.name || al.iata_code, marketingLogo: logo(al.iata_code), operatingCode: op.iata_code, operatingName: op.name },
       });
       const next = segs[si + 1];
       if (next) {
-        const gap = Math.round((localMs(next.departure_time) - localMs(s.arrival_time)) / 60000);
+        const arr = localTime(s, "arrival"), dep = localTime(next, "departure"); // same airport, so local times subtract safely
+        const gap = Math.round((localMs(dep) - localMs(arr)) / 60000);
         connections.push({
-          direction: dir, duration: { minutes: Math.max(0, gap) }, overnight: String(s.arrival_time).slice(0, 10) !== String(next.departure_time).slice(0, 10),
+          direction: dir, duration: { minutes: Math.max(0, gap) }, overnight: arr.slice(0, 10) !== dep.slice(0, 10),
           changeAirport: s.destination?.iata_code !== next.origin?.iata_code,
-          arrivalAirportCode: s.destination?.iata_code, arrivalAirportName: s.destination?.name, arrivalTime: s.arrival_time,
-          departureAirportCode: next.origin?.iata_code, departureAirportName: next.origin?.name, departureTime: next.departure_time,
+          arrivalAirportCode: s.destination?.iata_code, arrivalAirportName: s.destination?.name, arrivalTime: arr,
+          departureAirportCode: next.origin?.iata_code, departureAirportName: next.origin?.name, departureTime: dep,
         });
       }
     });
     // Leg time from the supplier; otherwise flight times + layovers (both time-zone safe)
     const legMin = minutesOf(trip.duration) || (segs.every(x => minutesOf(x.duration))
-      ? segs.reduce((t, x, k) => t + minutesOf(x.duration) + (segs[k + 1] ? Math.max(0, Math.round((localMs(segs[k + 1].departure_time) - localMs(x.arrival_time)) / 60000)) : 0), 0) : 0);
+      ? segs.reduce((t, x, k) => t + minutesOf(x.duration) + (segs[k + 1] ? Math.max(0, Math.round((localMs(localTime(segs[k + 1], "departure")) - localMs(localTime(x, "arrival"))) / 60000)) : 0), 0) : 0);
     legDurations.push({ direction: dir, duration: { minutes: Math.max(0, legMin) } });
   });
   if (!segments.length) return null;
   const c = fare.fare_conditions || {};
-  const price = sell(net);
+  // The offer lookup names suppliers differently from the search (search "myfarebox" = lookup "mystifly")
+  const src0 = String(fare._source || f.cheapest_provider || f.provider || "duffel").toLowerCase();
+  const price = sell(net * rate), source = src0 === "myfarebox" ? "mystifly" : src0;
   const offer = {
-    offerId: "tz:" + b64({ i: f.id, r: requestId, p: f.provider || "duffel", t: flightType }),
-    expiration: null, supplier: f.provider || "duffel",
-    pricing: { display: { total: price, currency: fare.currency, perPassenger: { adult: { total: null } } } },
+    // c = the currency the customer saw; the hold converts the live price into it again
+    offerId: "tz:" + b64({ i: f.id, r: requestId, p: source, t: flightType, c: show }),
+    expiration: null, supplier: source,
+    pricing: { display: { total: price, currency: show, perPassenger: { adult: { total: null } } } },
     baggage: { hasCarryOnBag: !!c.includes_carry_on, hasCheckedBag: !!c.includes_checked_bags, included: [] },
     fare: { family: fare.fare?.fare_family || null },
     terms: { refundable: !!c.is_refundable, changeable: !!c.is_changeable },
@@ -154,8 +187,14 @@ async function searchFlights({ legs, adults = 1, currency }) {
       body: { slices: legs.map(l => ({ origin: l.origin, destination: l.destination, departure_date: l.date })), passengers: Array.from({ length: Math.max(1, Math.min(9, +adults || 1)) }, () => ({ type: "adult" })) },
     });
     if (!r.ok) { console.warn("MCP flight search:", r.status, (r.text || "").slice(0, 200)); return []; }
-    const d = r.json || {};
-    return (d.results || []).map(f => toJourney(f, d.request_id, d.flight_type || (legs.length === 2 ? "roundtrip" : "oneway"), currency)).filter(Boolean);
+    const d = r.json || {}, results = d.results || [];
+    const rates = {};
+    for (const c of new Set(results.map(f => fareCurrency((f.all_fares || [])[0] || {})).filter(Boolean))) rates[c] = await fxRate(c, currency);
+    // Customers only get fares from suppliers PlanurStay can book end to end (MCP_FLIGHT_SUPPLIERS, default duffel:
+    // Mystifly and Sabre offers come back without passenger ids, which the booking step needs). Preview shows all.
+    const sellable = new Set((env("MCP_FLIGHT_SUPPLIERS") || "duffel").toLowerCase().split(",").map(x => x.trim()).filter(Boolean));
+    return results.map(f => toJourney(f, d.request_id, d.flight_type || (legs.length === 2 ? "roundtrip" : "oneway"), currency, rates))
+      .filter(j => j && (env("MCP_FLIGHTS") === "preview" || sellable.has(j.supplier)));
   } catch (e) { console.warn("MCP flight search:", e.message); return []; }
 }
 
@@ -167,33 +206,39 @@ const HOTEL_TTL = 3 * 3600 * 1000, OFFER_TTL = 60 * 60 * 1000;
 const sweepMaps = () => { const now = Date.now(); for (const [k, v] of hotelsSeen) if (now - v.at > HOTEL_TTL) hotelsSeen.delete(k); for (const [k, v] of roomOffers) if (now - v.at > OFFER_TTL) roomOffers.delete(k); };
 const tzHotelId = (h) => "tz-" + b64({ s: h.id, a: h.accommodation_id, t: String(h.type || "1"), la: +(+h.lat).toFixed(5), lo: +(+h.lng).toFixed(5) });
 const parseHotelId = (id) => String(id || "").startsWith("tz-") ? unb64(String(id).slice(3)) : null;
-const photosOf = (h) => [h.photo, ...(h.photos || []).map(p => typeof p === "string" ? p : p?.url)].filter(u => /^https?:\/\//.test(u || "")).filter((u, i, a) => a.indexOf(u) === i);
+// RateHawk sends photos as one comma-joined string of URLs with a {size} placeholder
+const photosOf = (h) => [h.photo, ...(h.photos || []).map(p => typeof p === "string" ? p : p?.url)]
+  .flatMap(u => String(u || "").split(/,(?=https?:\/\/)/)).map(u => u.trim().replace(/\{size\}|%7Bsize%7D/gi, "1024x768"))
+  .filter(u => /^https?:\/\//.test(u)).filter((u, i, a) => a.indexOf(u) === i);
 const BOARD = { room_only: "Room only", breakfast: "Breakfast included", half_board: "Half board", full_board: "Full board", all_inclusive: "All inclusive" };
 
 /** Hotel search through the MCP, in PlanurStay's result-card shape. Never throws. */
 async function searchHotels({ lat, lng, radiusKm = 15, checkin, checkout, adults = 2, rooms = 1, currency }) {
   if (!hotelsVisible() || !Number.isFinite(+lat) || !Number.isFinite(+lng)) return [];
   try {
-    const r = await mcp("/api/v2/hotels/search", { method: "POST", timeoutMs: +env("MCP_SEARCH_TIMEOUT_MS") || 25000, body: {
+    // Travellez searches every hotel supplier before answering (often 30-40s); the stays route doesn't wait for it
+    const r = await mcp("/api/v2/hotels/search", { method: "POST", timeoutMs: +env("MCP_HOTEL_TIMEOUT_MS") || 75000, body: {
       check_in: checkin, check_out: checkout, latitude: +lat, longitude: +lng, radius: Math.max(1, Math.min(50, Math.round(radiusKm))),
       guests: Array.from({ length: Math.max(1, Math.min(9, +adults || 2)) }, () => "adult"), rooms: Math.max(1, +rooms || 1),
     } });
     if (!r.ok) { console.warn("MCP hotel search:", r.status, (r.text || "").slice(0, 200)); return []; }
     sweepMaps();
     const nights = Math.max(1, Math.round((Date.parse(checkout) - Date.parse(checkin)) / 86400000));
-    const types = PREPAID_TYPES(), out = [];
-    for (const h of r.json?.results || []) {
+    const types = PREPAID_TYPES(), out = [], results = r.json?.results || [], show = String(currency || "").toUpperCase();
+    const rates = {};
+    for (const c of new Set(results.map(h => String(h.cheapest_rate_currency || "").toUpperCase()).filter(Boolean))) rates[c] = await fxRate(c, show || c);
+    for (const h of results) {
       const type = String(h.type || "1"), net = parseFloat(h.cheapest_rate_total_amount), cur = String(h.cheapest_rate_currency || "").toUpperCase();
-      if (!types.has(type) || !(net > 0) || (currency && cur && cur !== String(currency).toUpperCase())) continue;
+      if (!types.has(type) || !(net > 0) || !cur || !(rates[cur] > 0)) continue;
       const hlat = +(h.latitude ?? h.geographic_coordinates?.latitude), hlng = +(h.longitude ?? h.geographic_coordinates?.longitude);
       const id = tzHotelId({ ...h, type, lat: hlat, lng: hlng });
-      const photos = photosOf(h), total = hotelSell(net);
+      const photos = photosOf(h), total = hotelSell(net * rates[cur]);
       hotelsSeen.set(id, { at: Date.now(), raw: h, photos, type });
       out.push({
         id, mcp: true, supplier: SUPPLIER[type] || `type${type}`, name: h.name, photo: photos[0] || null, thumb: photos[0] || null,
         address: h.address?.line_one || "", city: h.address?.city_name || "", country: h.address?.country_code || null,
         lat: hlat, lng: hlng, stars: +h.rating || 0, rating: +h.review_score || 0, reviews: 0, nights,
-        total, publicTotal: total, perNight: total / nights, currency: cur || currency, offerId: null,
+        total, publicTotal: total, perNight: total / nights, currency: show || cur, offerId: null,
         refundable: false, refundAny: false, meals: [], cancelUnknown: true,
       });
     }
@@ -238,8 +283,9 @@ async function hotelDetails(id, stay) {
 
 async function fetchRates(id, { checkin, checkout, adults = 2, rooms = 1 }) {
   const k = parseHotelId(id); if (!k) return null;
+  // ids as text: RateHawk sends numbers
   const r = await mcp("/api/v2/hotels/rates", { method: "POST", timeoutMs: 40000, body: {
-    search_id: k.s, accommodation_id: k.a, provider_type: k.t, latitude: k.la, longitude: k.lo, check_in: checkin, check_out: checkout,
+    search_id: String(k.s ?? ""), accommodation_id: String(k.a ?? ""), provider_type: k.t, latitude: k.la, longitude: k.lo, check_in: checkin, check_out: checkout,
     guests: Array.from({ length: Math.max(1, Math.min(9, +adults || 2)) }, () => "adult"), rooms: Math.max(1, +rooms || 1),
   } });
   if (!r.ok) { console.warn("MCP hotel rates:", r.status, (r.text || "").slice(0, 200)); return null; }
@@ -254,19 +300,26 @@ async function hotelRooms(id, stay) {
   if (!d) return [];
   sweepMaps();
   const now = Date.now(), cur = String(stay.currency || "").toUpperCase();
-  const offers = [];
+  const offers = [], rates = {};
   for (const rt of d.rates || []) {
     const net = parseFloat(rt.total_amount), rc = String(rt.total_currency || rt.currency || "").toUpperCase(), rateId = rt.id || rt.rate_id;
-    if (!(net > 0) || !rateId || (cur && rc && rc !== cur)) continue;
-    const free = (rt.cancellation_timeline || []).filter(c => Date.parse(c.before) > now && parseFloat(c.refund_amount) >= net * 0.99).map(c => c.before).sort();
+    if (!(net > 0) || !rateId || !rc) continue;
+    if (!(rc in rates)) rates[rc] = await fxRate(rc, cur || rc);
+    if (!(rates[rc] > 0)) continue;
+    // Free-cancellation deadline: Duffel lists full-refund dates in cancellation_timeline, RateHawk gives free_cancellation_before
+    const free = [...(rt.cancellation_timeline || []).filter(c => parseFloat(c.refund_amount) >= net * 0.99).map(c => c.before),
+      ...(rt.cancellation_time || []).map(c => c?.free_cancellation_before)].filter(t => Date.parse(t) > now).sort();
     const offerId = "tzh:" + crypto.randomBytes(12).toString("hex");
-    const total = hotelSell(net);
-    roomOffers.set(offerId, { at: now, hotelId: id, rate_id: rateId, provider_type: k.t, net, currency: rc, stay: { checkin: stay.checkin, checkout: stay.checkout, adults: +stay.adults || 2, rooms: +stay.rooms || 1 }, room: rt.room_name });
+    const total = hotelSell(net * rates[rc]);
+    // net + currency = what the supplier charges; show = what the customer sees and pays in
+    roomOffers.set(offerId, { at: now, hotelId: id, rate_id: rateId, provider_type: k.t, net, currency: rc, show: cur || rc, stay: { checkin: stay.checkin, checkout: stay.checkout, adults: +stay.adults || 2, rooms: +stay.rooms || 1 }, room: rt.room_name });
     offers.push({
       offerId, mcp: true, supplier: SUPPLIER[k.t] || `type${k.t}`, mappedRoomId: null,
       name: [rt.room_name || "Room", rt.bed_type].filter(Boolean).join(" · "), board: BOARD[rt.board_type] || rt.board_type || "Room only",
-      total, currency: rc || stay.currency, ssp: null, refundable: free.length > 0, cancelBy: free[free.length - 1] || null,
-      taxesExcluded: [], taxesIncluded: [], cancelPolicy: [], hotelRemarks: [], nameFees: [], remarks: "", perks: [], publicTotal: total,
+      total, currency: cur || rc, ssp: null, refundable: free.length > 0, cancelBy: free[free.length - 1] || null,
+      // Anything the hotel collects at check-in (city tax etc.) on top of what we charge, in the currency it's collected in
+      taxesExcluded: parseFloat(rt.due_at_accommodation_amount) > 0 ? [{ description: "Local taxes and fees", amount: parseFloat(rt.due_at_accommodation_amount), currency: String(rt.due_at_accommodation_currency || rc).toUpperCase() }] : [],
+      taxesIncluded: [], cancelPolicy: [], hotelRemarks: [], nameFees: [], remarks: "", perks: [], publicTotal: total,
     });
   }
   return offers.sort((a, b) => a.total - b.total);
@@ -309,10 +362,13 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     const d = await mcp("/api/v2/flights/offer", { query: { offer_id: o.i, request_id: o.r, source: o.p } });
     if (!d.ok) throw fail(d.status === 404 ? "This fare has just expired. Please search again." : "We couldn't confirm this fare. Please search again.", 410);
     const off = d.json?.offer?.data || d.json?.offer || d.json?.data || {};
-    const net = parseFloat(off.total_amount), cur = String(off.total_currency || off.currency || "").toUpperCase();
+    const net = parseFloat(off.total_amount), netCur = String(off.total_currency || off.currency || "").toUpperCase();
     const ids = (off.passengers || []).map(x => x.id).filter(Boolean);
-    if (!(net > 0) || !cur || ids.length < pax.length) throw fail("We couldn't confirm this fare. Please search again.", 410);
-    const price = sell(net), ref = "FL-" + crypto.randomBytes(5).toString("hex").toUpperCase();
+    if (!(net > 0) || !netCur || ids.length < pax.length) throw fail("We couldn't confirm this fare. Please search again.", 410);
+    // Charge in the currency the customer searched in (converted from the supplier's)
+    const cur = String(o.c || netCur).toUpperCase(), rate = await fxRate(netCur, cur);
+    if (!(rate > 0)) throw fail("We couldn't confirm this fare. Please search again.", 410);
+    const price = sell(net * rate), ref = "FL-" + crypto.randomBytes(5).toString("hex").toUpperCase();
     const pi = await stripe().paymentIntents.create({
       amount: ZERO_DEC.has(cur) ? Math.round(price) : Math.round(price * 100), currency: cur.toLowerCase(), capture_method: "manual",
       automatic_payment_methods: { enabled: true, allow_redirects: "never" },
@@ -321,7 +377,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     const passengers = pax.map((p, i) => toPassenger(p, ids[i], contact));
     const sum = b.summary || {};
     db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, passengers_json, contact_json, supplier, user_id, email, title, start_date, end_date) VALUES (?, 'flight', 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(ref, pi.id, price, cur, net, JSON.stringify({ offer_id: o.i, offer_request_id: o.r, provider: o.p, flight_type: o.t || "roundtrip", total_amount: String(off.total_amount), expires_at: off.expires_at }), JSON.stringify(passengers), JSON.stringify(contact), o.p,
+      .run(ref, pi.id, price, cur, net, JSON.stringify({ offer_id: o.i, offer_request_id: o.r, provider: off.provider || o.p, flight_type: o.t || "roundtrip", total_amount: String(off.total_amount), expires_at: off.expires_at, net_currency: netCur }), JSON.stringify(passengers), JSON.stringify(contact), o.p,
         uid(req), contact.email, String(sum.title || "Flight").slice(0, 120), day(sum.start), day(sum.end));
     return { prebookId: ref, transactionId: pi.id, secretKey: pi.client_secret, price, currency: cur, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY"), expiresAt: off.expires_at || null };
   }
@@ -412,17 +468,19 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     const q = await mcp("/api/v2/hotels/quote", { method: "POST", body: { rate_id: o.rate_id } }).catch(() => null);
     const qd = q?.ok && q.json?.success !== false ? (q.json?.quote?.data || q.json?.data || q.json?.quote || {}) : {};
     if (parseFloat(qd.total_amount) > 0 && String(qd.total_currency || o.currency).toUpperCase() === o.currency) net = parseFloat(qd.total_amount);
-    const price = hotelSell(net), ref = "HT-" + crypto.randomBytes(5).toString("hex").toUpperCase();
+    const show = o.show || o.currency, rate = await fxRate(o.currency, show);
+    if (!(rate > 0)) throw fail("This price has expired. Please reload the hotel page to see the latest rooms.", 410);
+    const price = hotelSell(net * rate), ref = "HT-" + crypto.randomBytes(5).toString("hex").toUpperCase();
     const pi = await stripe().paymentIntents.create({
-      amount: ZERO_DEC.has(o.currency) ? Math.round(price) : Math.round(price * 100), currency: o.currency.toLowerCase(), capture_method: "manual",
+      amount: ZERO_DEC.has(show) ? Math.round(price) : Math.round(price * 100), currency: show.toLowerCase(), capture_method: "manual",
       automatic_payment_methods: { enabled: true, allow_redirects: "never" },
       description: `PlanurStay hotel ${ref}`, metadata: { type: "hotel", ref, supplier: SUPPLIER[o.provider_type] || o.provider_type },
     }, { idempotencyKey: `ht-${ref}` });
     const hotelName = hotelsSeen.get(o.hotelId)?.raw?.name || String(b.summary?.title || "Hotel stay");
     db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, supplier, user_id, title, start_date, end_date) VALUES (?, 'hotel', 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(ref, pi.id, price, o.currency, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName }), SUPPLIER[o.provider_type] || o.provider_type,
+      .run(ref, pi.id, price, show, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName, net_currency: o.currency }), SUPPLIER[o.provider_type] || o.provider_type,
         uid(req), hotelName.slice(0, 120), day(o.stay.checkin), day(o.stay.checkout));
-    return { prebookId: ref, transactionId: pi.id, secretKey: pi.client_secret, price, currency: o.currency, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY") };
+    return { prebookId: ref, transactionId: pi.id, secretKey: pi.client_secret, price, currency: show, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY") };
   }
 
   async function bookHotel(refIn, trav = {}) {
@@ -445,7 +503,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
       const o = JSON.parse(r0.offer_json);
       setRow(ref, { status: "booking", contact_json: JSON.stringify(t), email: t.email });
       const res = await mcp("/api/v2/hotels/book", { method: "POST", timeoutMs: 120000, body: {
-        rate_id: o.rate_id, provider_type: o.provider_type, amount: r0.net.toFixed(2), currency: r0.currency,
+        rate_id: o.rate_id, provider_type: o.provider_type, amount: r0.net.toFixed(2), currency: o.net_currency || r0.currency,
         check_in: o.stay.checkin, check_out: o.stay.checkout, rooms: o.stay.rooms, guests: o.stay.adults, traveller: t, comment: `PlanurStay ${ref}`,
       } }).catch(e => ({ ok: false, text: e.message }));
       const bk = res.ok ? (res.json?.booking || res.json || {}) : {};
@@ -518,4 +576,4 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
   return { register };
 }
 
-module.exports = { mcpCall: mcp, mcpConnected: connected, createMcp, searchFlights, mergeJourneys, toJourney, signature, searchHotels, mergeHotels, hotelRooms, _state: { flightsOn, bookingOn, hotelsOn, hotelsVisible } };
+module.exports = { fxRates, mcpCall: mcp, mcpConnected: connected, createMcp, searchFlights, mergeJourneys, toJourney, signature, searchHotels, mergeHotels, hotelRooms, _state: { flightsOn, bookingOn, hotelsOn, hotelsVisible } };

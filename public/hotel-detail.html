@@ -308,7 +308,8 @@
       if (from && typeof paintFaq === "function") { faqPrice = PS.money(from.total / n, from.currency, 0); paintFaq(); }
       PS.auth().then(a => {
         const el = document.getElementById("memberNudge");
-        if (el) el.innerHTML = !a.loggedIn && !roomPricing.package ? `<div class="alert info" style="margin-bottom:12px">${PS.icon("tag", 18)}<div><b>Members see lower prices.</b> <a class="link" href="${PS.loginUrl()}">Sign in or join free</a> to unlock member prices (about <span data-save-pct>${PS.savePct()}</span>% off) on this hotel.</div></div>` : "";
+        // MCP-only hotels (Travellez suppliers) have no member prices, so no nudge
+        if (el) el.innerHTML = !a.loggedIn && !roomPricing.package && !hotel.mcp ? `<div class="alert info" style="margin-bottom:12px">${PS.icon("tag", 18)}<div><b>Members see lower prices.</b> <a class="link" href="${PS.loginUrl()}">Sign in or join free</a> to unlock member prices (about <span data-save-pct>${PS.savePct()}</span>% off) on this hotel.</div></div>` : "";
       });
     }
     paintBookBox(null);
@@ -318,7 +319,7 @@
       const q = [];
       const name = hotel.name;
       if (times.checkin_start || times.checkout) q.push([`What are the check-in and check-out times at ${name}?`, `${times.checkin_start ? `Check-in is from ${times.checkin_start}${times.checkin_end ? ` until ${times.checkin_end}` : ""}.` : ""} ${times.checkout ? `Check-out is until ${times.checkout}.` : ""}`.trim()]);
-      if (faqPrice) q.push([`How much does it cost to stay at ${name}?`, `For your dates, prices start from ${faqPrice} per night, including taxes and fees we know about. Members see lower prices.`]);
+      if (faqPrice) q.push([`How much does it cost to stay at ${name}?`, `For your dates, prices start from ${faqPrice} per night, including taxes and fees we know about.${hotel.mcp ? "" : " Members see lower prices."}`]);
       if (bfast) q.push([`Is breakfast available at ${name}?`, `Yes: ${bfast}. Rooms that include breakfast are marked in the room list.`]);
       const rest = hasFac(/restaurant/i); q.push([`Does ${name} have a restaurant on site?`, rest ? `Yes, the hotel lists: ${rest}.` : "The hotel doesn't list a restaurant. Check the facilities or ask the hotel before you travel."]);
       if (park) q.push([`Is there parking at ${name}?`, `Yes: ${park}. Charges may apply at the hotel.`]);

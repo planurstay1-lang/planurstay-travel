@@ -109,7 +109,7 @@
     $("filters").classList.add("is-loading");
     let all = [];
     try {
-      const r = await PS.api("/api/cars/search", { method: "POST", body: { pickupCode: q.pickup, returnCode: q.dropoff || q.pickup, pickupDate: q.pickupDate, pickupTime: q.pickupTime || "10:00", returnDate: q.returnDate, returnTime: q.returnTime || "10:00" } });
+      const r = await PS.api("/api/cars/search", { method: "POST", body: { currency: PS.cur(), pickupCode: q.pickup, returnCode: q.dropoff || q.pickup, pickupDate: q.pickupDate, pickupTime: q.pickupTime || "10:00", returnDate: q.returnDate, returnTime: q.returnTime || "10:00" } });
       all = r.data.cars || [];
     } catch (e) {
       $("carResults").innerHTML = empty("alert", "We couldn't load cars", PS.esc(e.message || "Please try again."), `<button class="btn btn-primary" onclick="location.reload()">Try again</button>`);
@@ -175,7 +175,7 @@
         </div>
         <div class="car-price"><span class="price-big">${PS.money(c.perDay, c.currency, 0)}</span><span class="price-sub">per day</span>
           <span class="price-total"><b>${PS.money(c.price, c.currency, 2)}</b> ${c.payAtPickup ? "approx. total" : "total"} · ${PS.plural(c.days, "day")}</span>
-          ${c.payAtPickup ? `<span class="price-sub" style="color:var(--green,#0a7d46);font-weight:700">Pay at pick-up</span>` : ""}
+          ${c.payAtPickup ? `<span class="price-sub" style="color:var(--green,#0a7d46);font-weight:700">Pay at pick-up${c.counterCurrency ? ` in ${c.counterCurrency}` : ""}</span>` : ""}
           <button class="btn btn-primary btn-sm" data-pick="${c.quoteId}">${cfg.bookingEnabled ? "Select" : "View"}</button></div>
       </article>`;
     }
@@ -258,7 +258,7 @@
                 <div class="co-line muted"><span>Extras (fuel, child seats, GPS)</span><span>At the desk</span></div>
               </div>
               ${c.payAtPickup
-                ? `<div class="co-total"><div><b>Due now</b><b>${PS.money(0, c.currency, 2)}</b></div><small>Pay at pick-up: approx. ${PS.money(c.price, c.currency, 2)}, including all mandatory taxes and fees</small></div>`
+                ? `<div class="co-total"><div><b>Due now</b><b>${PS.money(0, c.currency, 2)}</b></div><small>Pay at pick-up: ${c.counterCurrency ? `${PS.money(c.counterPrice, c.counterCurrency, 2)} ${c.counterCurrency} (about ${PS.money(c.price, c.currency, 2)})` : `approx. ${PS.money(c.price, c.currency, 2)}`}, including all mandatory taxes and fees</small></div>`
                 : `<div class="co-total"><div><b>Total</b><b>${PS.money(c.price, c.currency, 2)}</b></div><small>Includes all mandatory taxes and fees · ${PS.money(c.perDay, c.currency, 2)} per day</small></div>`}
             </div>
           </aside>

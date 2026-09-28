@@ -138,13 +138,14 @@
     filtersBox.insertAdjacentHTML("beforeend", `<div class="sk-wrap"><div class="skel" style="height:130px;border-radius:12px;margin-bottom:18px"></div>${PS.skeleton.filters(4)}</div>`);
     results.prepend(loader.el);
 
-    let all = [], pricingInfo = {};
+    let all = [], pricingInfo = {}, searchResp = {};
+    const searchBody = { currency: PS.cur(),
+      placeId: q.placeId, checkin: q.checkin, checkout: q.checkout, dest: q.dest, destDetail: q.destDetail,
+      adults: +q.adults || 2, rooms: +q.rooms || 1,
+      childAges: q.children ? q.children.split(",").filter(s => s !== "").map(Number) : [],
+    };
     try {
-      const r = await PS.api("/api/stays/search", { method: "POST", body: { currency: PS.cur(),
-        placeId: q.placeId, checkin: q.checkin, checkout: q.checkout, dest: q.dest, destDetail: q.destDetail,
-        adults: +q.adults || 2, rooms: +q.rooms || 1,
-        childAges: q.children ? q.children.split(",").filter(s => s !== "").map(Number) : [],
-      }});
+      const r = searchResp = await PS.api("/api/stays/search", { method: "POST", body: searchBody });
       all = r.data || [];
       pricingInfo = r.pricing || {};
       loader.done();
@@ -492,6 +493,21 @@
       if (pts.length && !fitted) { fitted = true; moving = true; map.fitBounds(pts, { padding: [30, 30], maxZoom: 15 }); setTimeout(() => (moving = false), 400); }
     }
 
+    // ─── More suppliers answer later (Travellez takes ~30s): add their hotels and cheaper prices when they arrive ───
+    if (searchResp.mcpPending) PS.api("/api/stays/search", { method: "POST", body: { ...searchBody, mcpWait: true } }).then(r => {
+      const byId = new Map(all.map(h => [h.id, h]));
+      const fresh = [];
+      for (const h of r.data || []) {
+        const cur = byId.get(h.id);
+        if (!cur) { enrich(h); fresh.push(h); continue; }
+        if (h.tz && h.tz !== cur.tz) { Object.assign(cur, h); enrich(cur); } // a cheaper price for a hotel already shown
+      }
+      const ref = st.landmark || centre;
+      if (ref) fresh.forEach(h => { h.dist = h.lat && h.lng ? km(ref.lat, ref.lng, h.lat, h.lng) : null; });
+      all.push(...fresh);
+      refreshFacets(); apply();
+    }).catch(() => {});
+
     // ─── "Search as I move the map": load hotels in whatever area is visible ───
     const searchedAreas = [];
     let areaT = null, areaSeq = 0;
@@ -511,7 +527,7 @@
       try {
         const r = await PS.api("/api/stays/search", { method: "POST", body: { currency: PS.cur(),
           latitude: c.lat, longitude: c.lng, radius, checkin: q.checkin, checkout: q.checkout,
-          adults: +q.adults || 2, rooms: +q.rooms || 1, childAges: q.children ? q.children.split(",").filter(x => x !== "").map(Number) : [], limit: 150,
+          adults: +q.adults || 2, rooms: +q.rooms || 1, childAges: q.children ? q.children.split(",").filter(x => x !== "").map(Number) : [], limit: 150, noMcp: true,
         }});
         if (my !== areaSeq) return;
         searchedAreas.push({ c, r: radius });

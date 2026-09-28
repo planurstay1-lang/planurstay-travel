@@ -117,7 +117,7 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
     const car = {
       quoteId, vendor: c.vendorName || c.vendorCode || "Car rental", vendorCode: c.vendorCode || null, logo: /^https:\/\//.test(c.logo || "") ? c.logo : null,
       model: c.model || "Standard vehicle", code: c.vehType || null, ...info,
-      doors: num(c.doors), seats: num(c.seats), bags: c.bags || null,
+      doors: num(c.doors), seats: num(c.seats) >= 2 ? num(c.seats) : null, bags: c.bags || null, // Sabre sometimes sends 1 seat: unknown
       unlimitedMileage: !mileage || /^unl/i.test(String(mileage)), pickup: c.pickup || ctx.pickupCode, dropoff: c.dropoff || ctx.returnCode,
       price, perDay: Math.round(price / days * 100) / 100, currency: currency || "USD", days,
       expiresAt: new Date(Date.now() + QUOTE_TTL).toISOString(),
@@ -174,7 +174,7 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
         pickup_location_code: ctx.pickupCode, return_location_code: ctx.returnCode } }).catch(e => ({ ok: false, text: e.message }));
       if (!r.ok) { console.warn("MCP car search:", r.status, (r.text || "").slice(0, 300)); throw Object.assign(new Error("Car search is unavailable right now. Please try again."), { status: 502 }); }
       for (const c of r.json?.results || []) { const car = toCarFromMcp(c, ctx); if (car) cars.push(car); }
-      return { cars: cars.sort((a, b) => a.price - b.price), ctx, payment: payMode() };
+      return { cars: (await forDisplay(cars, b.currency)).sort((a, b) => a.price - b.price), ctx, payment: payMode() };
     }
     for (let page = 1; page <= 3; page++) {
       const r = await tz("/vehicle/car-search", { method: "POST", body: payload, params: { page, page_size: 100, sort_by: "price_asc" } });
@@ -183,7 +183,22 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
       for (const raw of av.data || []) { const c = toCar(raw, ctx); if (c) cars.push(c); }
       if (page >= (av.pagination?.total_pages || 1)) break;
     }
-    return { cars: cars.sort((a, b) => a.price - b.price), ctx, payment: payMode() };
+    return { cars: (await forDisplay(cars, b.currency)).sort((a, b) => a.price - b.price), ctx, payment: payMode() };
+  }
+
+  // Pay at pick-up: vendors quote in different currencies (USD, CAD…), so the list shows an approximate price in the
+  // visitor's currency (today's rate, no buffer) plus what the counter will charge. The stored quote keeps the real amount.
+  async function forDisplay(cars, currency) {
+    const to = String(currency || "").toUpperCase();
+    if (payMode() !== "counter" || !/^[A-Z]{3}$/.test(to)) return cars;
+    const rates = await mcpMod.fxRates().catch(() => null);
+    const conv = (n, r) => n == null ? n : Math.round(n * r * 100) / 100;
+    return cars.map(c => {
+      const from = String(c.currency || "").toUpperCase(), r = from === to ? 1 : rates?.[from] && rates?.[to] ? rates[to] / rates[from] : null;
+      if (!r || from === to) return c;
+      return { ...c, price: conv(c.price, r), perDay: conv(c.perDay, r), currency: to, counterPrice: c.price, counterCurrency: from,
+        breakdown: c.breakdown ? { base: conv(c.breakdown.base, r), chargesTax: conv(c.breakdown.chargesTax, r) } : null };
+    });
   }
 
   // ─── Booking ───
