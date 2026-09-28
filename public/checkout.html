@@ -277,7 +277,7 @@
         <p>Book this flight and package prices unlock on hotels near ${PS.esc(sel.search.to)} for your dates: about <span data-save-pct>${PS.savePct()}</span>% off, no sign-in needed. You'll see them right after booking.</p></div></section>` : ""}`;
     }
     html += `<section class="co-panel hidden" id="insPanel"></section>`;
-    html += `<section class="co-panel">
+    html += `<section class="co-panel" id="promoPanel">
         <div class="co-head"><h2>Redeem a promo code <small>(optional)</small></h2></div>
         <div id="rewardsPick"></div>
         <div class="co-promo"><input id="voucher" placeholder="Enter promo code" aria-label="Promo code" autocomplete="off"><button type="button" class="btn btn-ghost" id="applyBtn">Apply</button></div>
@@ -295,6 +295,9 @@
       <button class="btn btn-primary btn-lg btn-block co-go" id="continueBtn">Continue to payment ${PS.icon("right", 18)}</button>
       <p class="agree-note">By continuing you agree to our <a href="/terms" target="_blank">Terms</a>, <a href="/cancellation-policy" target="_blank">Cancellation policy</a> and <a href="/privacy" target="_blank">Privacy policy</a>, and the ${type === "hotel" ? "hotel's" : "airline's"} own rules.</p>`;
     formCol.innerHTML = html;
+    // Fares and rooms from the Travellez MCP: add-ons and promo codes are LiteAPI features, so they're not offered
+    const viaMcpOffer = /^tzh?:/.test(String(sel.offer?.offerId || ""));
+    if (viaMcpOffer) { document.getElementById("extrasPanel")?.remove(); document.getElementById("promoPanel")?.classList.add("hidden"); }
     loadProtection();
     async function loadProtection() {
       const panel = document.getElementById("insPanel"); if (!panel) return;
@@ -453,7 +456,7 @@
     }).catch(() => {});
 
     // ─── Add-ons (hotels): rows that open to show the options ───
-    if (type === "hotel") {
+    if (type === "hotel" && !viaMcpOffer) {
       const addonRow = (host, icon, title, sub, optionsHTML, bind) => {
         const chosen = host.dataset.chosen || "";
         host.innerHTML = `<div class="co-addon"><button type="button" class="co-addon-head"><span class="extra-ico">${PS.icon(icon, 22)}</span><div><b>${title}</b><small>${chosen || sub}</small></div><span class="co-sel">${chosen ? "Change" : "Select"} ${PS.icon("right", 14)}</span></button>
@@ -548,7 +551,9 @@
         if (extras.uber) addons.push({ addon: "uber", value: extras.uber.value, currency: "USD", adults });
         if (extras.esim) addons.push({ addon: "esimply", value: extras.esim.price, currency: extras.esim.currency, adults,
           addonDetails: { package_id: extras.esim.packageId, destination_code: extras.esim.destinationCode, start_date: sel.stay.checkin, end_date: sel.stay.checkout } });
-        pb = (await PS.api("/api/hotels/prebook", { method: "POST", body: { offerId: sel.offer.offerId, voucherCode, usePaymentSdk: true, ...(addons.length ? { addons } : {}) } })).data;
+        pb = String(sel.offer.offerId || "").startsWith("tzh:")
+          ? (await PS.api("/api/mcp/hotels/hold", { method: "POST", body: { offerId: sel.offer.offerId } })).data // RateHawk / Duffel Stays via the MCP
+          : (await PS.api("/api/hotels/prebook", { method: "POST", body: { offerId: sel.offer.offerId, voucherCode, usePaymentSdk: true, ...(addons.length ? { addons } : {}) } })).data;
       } else {
         const phone = phoneFull();
         const passengers = Array.from({ length: +sel.search.adults || 1 }, (_, i) => ({

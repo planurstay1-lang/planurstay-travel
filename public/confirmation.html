@@ -58,6 +58,12 @@
 
     async function book() {
       const h = pending.holder || {};
+      if (type === "hotel" && pending.via === "mcp") { // RateHawk / Duffel Stays room: card was only held until the hotel confirms
+        const g = pending.guest || h;
+        const m = (await PS.api("/api/mcp/hotels/book", { method: "POST", body: { ref: prebookId, traveller: { firstName: g.firstName, lastName: g.lastName, email: h.email, phone: h.phone || "" } } })).data;
+        if (m?.status === "FAILED") throw Object.assign(new Error(m.error || "The hotel couldn't confirm this room."), { status: 409 });
+        return m;
+      }
       if (type === "hotel") {
         const g = pending.guest || h; // the guest checking in (may differ from the booker)
         const r = await PS.api("/api/hotels/book", { method: "POST", body: {
@@ -93,8 +99,8 @@
         render(booking, pending);
       } catch (e) {
         if (pending.via === "mcp" && e.status === 409) { // airline refused: the card hold was released, nothing charged
-          root.innerHTML = hero(PS.icon("x", 40, 2.6), "bad", "This fare couldn't be booked", `${PS.esc(e.message)} You haven't been charged.`) +
-            `<div style="text-align:center;margin-top:20px"><a class="btn btn-primary" href="${PS.url("/flights", pending.sel?.search || {})}">Choose another flight</a></div>`;
+          root.innerHTML = hero(PS.icon("x", 40, 2.6), "bad", type === "hotel" ? "This room couldn't be booked" : "This fare couldn't be booked", `${PS.esc(e.message)} You haven't been charged.`) +
+            `<div style="text-align:center;margin-top:20px"><a class="btn btn-primary" href="${type === "hotel" ? (pending.sel?.back || "/hotels") : PS.url("/flights", pending.sel?.search || {})}">${type === "hotel" ? "Choose another room" : "Choose another flight"}</a></div>`;
           return;
         }
         // Timeouts and upstream errors can still mean success on the supplier side; retry a couple of times.

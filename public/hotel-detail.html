@@ -51,7 +51,7 @@
 
     let hotel;
     try {
-      const r = await PS.api(`/api/hotels/${encodeURIComponent(hotelId)}`);
+      const r = await PS.api(`/api/hotels/${encodeURIComponent(hotelId)}${hotelId.startsWith("tz-") ? `?checkin=${encodeURIComponent(q.checkin || "")}&checkout=${encodeURIComponent(q.checkout || "")}` : ""}`);
       hotel = r.data || r;
       if (!hotel || !hotel.name) throw new Error("Hotel not found");
     } catch (e) {
@@ -78,7 +78,7 @@
           <div class="addr" style="font-size:13.5px;margin-top:6px">${PS.icon("pin", 16)}${PS.esc(addrLine)}${hotel.location?.latitude ? ` · <a class="link" href="#locPanel">View on map</a>` : ""}</div>
         </div>
         <div class="hd-head-right">
-          ${rating ? `<a class="rating-row" href="#reviewsSec" style="margin:0"><span class="score ${rating >= 8.5 ? "great" : ""}" style="min-width:48px;height:38px;font-size:17px">${rating.toFixed(1)}</span><div><b style="display:block">${PS.ratingWord(rating)}</b><small>${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></a>` : ""}
+          ${rating ? `<a class="rating-row" href="#reviewsSec" style="margin:0"><span class="score ${rating >= 8.5 ? "great" : ""}" style="min-width:48px;height:38px;font-size:17px">${rating.toFixed(1)}</span><div><b style="display:block">${PS.ratingWord(rating)}</b><small>${hotel.reviewCount ? `${hotel.reviewCount.toLocaleString()} reviews` : "Guest rating"}</small></div></a>` : ""}
           <button type="button" class="save-btn lg" data-label="1" data-save="${PS.esc(JSON.stringify({ hotelId, name: hotel.name, photo: images[0] || "", city: hotel.city || "", stars: hotel.starRating || 0, rating }))}"></button>
         </div>
       </div>
@@ -162,7 +162,7 @@
         <button type="button" class="save-btn prop-save" data-label="1" data-save="${PS.esc(JSON.stringify({ hotelId, name: hotel.name, photo: images[0] || "", city: hotel.city || "", stars: hotel.starRating || 0, rating }))}"></button></aside>` : ""}
       </div>
       ${rating ? `<section class="hd-sec"><div class="sec-head"><h2>Review highlights</h2><a class="link-btn u" href="#reviewsSec">Read all reviews</a></div>
-        <div class="rv-sum"><span class="score ${rating >= 8.5 ? "great" : ""}">${rating.toFixed(1)}</span><div><b>${PS.ratingWord(rating)}</b><small>Based on ${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></div>
+        <div class="rv-sum"><span class="score ${rating >= 8.5 ? "great" : ""}">${rating.toFixed(1)}</span><div><b>${PS.ratingWord(rating)}</b><small>${hotel.reviewCount ? `Based on ${hotel.reviewCount.toLocaleString()} reviews` : "Guest rating"}</small></div></div>
         ${(sa.pros || []).length ? `<div class="rv-quotes">${sa.pros.slice(0, 3).map(p => `<span>👍 ${PS.esc(p)}</span>`).join("")}</div>` : ""}</section>` : ""}`;
 
     // ─── After rooms: reviews, description, location, good to know ───
@@ -170,7 +170,7 @@
       ${rating ? `<section class="panel" id="reviewsSec"><div class="sec-head"><h2>Guest reviews</h2><select class="select" id="rvSort" aria-label="Sort reviews"><option value="newest">Newest first</option><option value="highest">Highest score</option><option value="lowest">Lowest score</option></select></div>
         <div class="rv-layout">
           <div class="rv-side">
-            <div class="rv-sum"><span class="score ${rating >= 8.5 ? "great" : ""}">${rating.toFixed(1)}</span><div><b>${PS.ratingWord(rating)}</b><small>Based on ${(hotel.reviewCount || 0).toLocaleString()} reviews</small></div></div>
+            <div class="rv-sum"><span class="score ${rating >= 8.5 ? "great" : ""}">${rating.toFixed(1)}</span><div><b>${PS.ratingWord(rating)}</b><small>${hotel.reviewCount ? `Based on ${hotel.reviewCount.toLocaleString()} reviews` : "Guest rating"}</small></div></div>
             ${cats.length ? `<h3>Top comments from travellers</h3><div class="rv-cats">${cats.slice(0, 8).map(c => `<span>${PS.esc(c.name)} (${(+c.rating).toFixed(1)})</span>`).join("")}</div>` : ""}
             <div id="rvWho"></div>
           </div>
@@ -212,6 +212,7 @@
     more && (more.onclick = () => { desc.classList.toggle("clamped"); more.textContent = desc.classList.contains("clamped") ? "Read more" : "Show less"; });
 
     // ─── Save (♥) ───
+    if (hotel.mcp) document.querySelectorAll(".save-btn").forEach(b => b.remove()); // saving works for LiteAPI hotels only
     PS.saved.bind(document.getElementById("top"));
     const ov = document.getElementById("overview"); if (ov.querySelector(".prop-save")) PS.saved.bind(ov);
 
@@ -324,7 +325,7 @@
       const pool = hasFac(/pool/i); if (pool) q.push([`Does ${name} have a pool?`, `Yes: ${pool}.`]);
       const pets = hasFac(/pet/i); if (pets) q.push([`Are pets allowed at ${name}?`, `The hotel lists: ${pets}. Contact the hotel to confirm before you travel.`]);
       if (shuttle) q.push([`Does ${name} offer an airport shuttle?`, `Yes: ${shuttle}. Charges and times may apply; arrange it with the hotel.`]);
-      if (rating) q.push([`How do guests rate ${name}?`, `${rating.toFixed(1)} out of 10 (${PS.ratingWord(rating)}) from ${(hotel.reviewCount || 0).toLocaleString()} reviews${locScore ? `, and ${locScore.toFixed(1)} for location` : ""}.`]);
+      if (rating) q.push([`How do guests rate ${name}?`, `${rating.toFixed(1)} out of 10 (${PS.ratingWord(rating)}) ${hotel.reviewCount ? `from ${hotel.reviewCount.toLocaleString()} reviews` : "from guest reviews"}${locScore ? `, and ${locScore.toFixed(1)} for location` : ""}.`]);
       if (chain) q.push([`Which hotel chain is ${name} part of?`, `${chain}.`]);
       return q;
     };
@@ -367,7 +368,7 @@
       roomsEl.innerHTML = `<div class="loading-note" style="margin:0 0 14px"><span class="spinner"></span>Checking live availability…</div>` + Array.from({ length: 2 }, () => `<div class="skel" style="height:160px;border-radius:18px;margin-bottom:14px"></div>`).join("");
       let offers = [];
       try {
-        const r = await PS.api("/api/stays/rooms", { method: "POST", body: { currency: PS.cur(), hotelId, checkin: PS.iso(checkin), checkout: PS.iso(checkout), adults: occ.adults, rooms: occ.rooms, childAges: occ.childAges, placeId: q.placeId, dest: q.dest } });
+        const r = await PS.api("/api/stays/rooms", { method: "POST", body: { currency: PS.cur(), hotelId, tz: q.tz || undefined, checkin: PS.iso(checkin), checkout: PS.iso(checkout), adults: occ.adults, rooms: occ.rooms, childAges: occ.childAges, placeId: q.placeId, dest: q.dest } });
         offers = r.data || [];
         roomPricing = r.pricing || {};
       } catch (e) {
@@ -488,7 +489,7 @@
         return `<div class="rc-price">${o.memberPrice ? `<span class="tag green" style="justify-self:start;margin-bottom:2px">${PS.icon(o.packagePrice ? "gift" : "tag", 12)}${o.packagePrice ? "Package price" : "Member price"}</span>` : ""}
             ${o.strikeTotal ? `<s>${PS.money(o.strikeTotal, o.currency, 0)}</s>` : ""}<b>${PS.money(o.total, o.currency, 0)}</b>
             <small>${PS.money(o.total / n / R, o.currency, 0)} per room/night · total for ${R > 1 ? PS.plural(R, "room") + ", " : ""}${PS.plural(n, "night")}</small>
-            ${!roomPricing.member && !roomPricing.package && roomPricing.memberFactor ? `<small class="member-nudge"><a href="${PS.loginUrl()}">Lower member price · sign in</a></small>` : ""}
+            ${!o.mcp && !roomPricing.member && !roomPricing.package && roomPricing.memberFactor ? `<small class="member-nudge"><a href="${PS.loginUrl()}">Lower member price · sign in</a></small>` : ""}
           </div>
           <button class="btn btn-coral" data-reserve>Reserve</button>`;
       };

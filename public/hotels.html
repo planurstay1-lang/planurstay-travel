@@ -328,12 +328,12 @@
     }
 
     function hotelLink(h) {
-      return PS.url(`/hotel/${h.id}`, { checkin: q.checkin, checkout: q.checkout, adults: q.adults, rooms: q.rooms, children: q.children, dest: q.dest, placeId: q.placeId, destDetail: q.destDetail });
+      return PS.url(`/hotel/${h.id}`, { checkin: q.checkin, checkout: q.checkout, adults: q.adults, rooms: q.rooms, children: q.children, dest: q.dest, placeId: q.placeId, destDetail: q.destDetail, tz: h.tz });
     }
 
     function card(h) {
       const great = h.rating >= 8.5;
-      return `<div class="hcard-wrap"><button type="button" class="save-btn card" data-save="${PS.esc(JSON.stringify({ hotelId: h.id, name: h.name, photo: h.thumb || h.photo || "", city: h.city || "", stars: h.stars || 0, rating: h.rating || 0 }))}"></button><a class="hcard" href="${hotelLink(h)}" data-id="${h.id}" target="_blank" rel="noopener">
+      return `<div class="hcard-wrap">${h.mcp ? "" : `<button type="button" class="save-btn card" data-save="${PS.esc(JSON.stringify({ hotelId: h.id, name: h.name, photo: h.thumb || h.photo || "", city: h.city || "", stars: h.stars || 0, rating: h.rating || 0 }))}"></button>`}<a class="hcard" href="${hotelLink(h)}" data-id="${h.id}" target="_blank" rel="noopener">
         <div class="hcard-img">${h.photo ? `<img src="${PS.esc(h.photo)}" alt="" loading="lazy" onerror="this.remove()">` : ""}${h.deal >= 5 ? `<span class="hcard-badge">${h.deal}% off</span>` : ""}</div>
         <div class="hcard-body">
           <div style="min-width:0">
@@ -344,7 +344,7 @@
             ${h.brand ? `<div class="brand-line">${PS.esc(h.brand)}</div>` : ""}
             ${h.rating ? `<div class="rating-row"><span class="score ${great ? "great" : ""}">${Number(h.rating).toFixed(1)}</span><b>${PS.ratingWord(h.rating)}</b><small>${h.reviews ? h.reviews.toLocaleString() + " reviews" : ""}</small></div>` : ""}
             <div class="tags">
-              ${h.refundable ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation</span>` : h.refundAny ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation available</span>` : `<span class="tag">Non-refundable</span>`}
+              ${h.cancelUnknown ? "" : h.refundable ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation</span>` : h.refundAny ? `<span class="tag green">${PS.icon("check", 13, 3)}Free cancellation available</span>` : `<span class="tag">Non-refundable</span>`}
               ${h.breakfast ? `<span class="tag amber">${PS.icon("coffee", 13)}${PS.esc(h.board)}</span>` : hasMeal(h, "breakfast") ? `<span class="tag amber">${PS.icon("coffee", 13)}Breakfast available</span>` : ""}
             </div>
           </div>
@@ -357,7 +357,7 @@
             <span class="price-big">${PS.money(h.perNight, h.currency, 0)}</span>
             <span class="price-sub">per night</span>
             <span class="price-total"><b>${PS.money(h.total, h.currency, 0)}</b> total · ${h.nights} night${h.nights > 1 ? "s" : ""}</span>
-            ${!pricingInfo.member && !h.packagePrice && pricingInfo.memberFactor < 1 ? `<span class="member-nudge">${PS.icon("tag", 12)}<b>${PS.money(h.perNight * pricingInfo.memberFactor, h.currency, 0)}</b>/night for members · join free</span>` : ""}
+            ${!pricingInfo.member && !h.packagePrice && !h.mcp && h.via !== "mcp" && pricingInfo.memberFactor < 1 ? `<span class="member-nudge">${PS.icon("tag", 12)}<b>${PS.money(h.perNight * pricingInfo.memberFactor, h.currency, 0)}</b>/night for members · join free</span>` : ""}
             <span class="btn btn-primary btn-sm">View rooms</span>`}
           </div>
         </div>

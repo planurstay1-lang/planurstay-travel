@@ -451,8 +451,18 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
           limit: Math.min(parseInt(b.limit) || 100, 200),
           timeout: 12,
       };
-      const r = await cached("stays:" + JSON.stringify(searchBody), 5 * MIN, () => lite("/hotels/rates", { method: "POST", body: searchBody }));
+      // Travellez MCP hotels (RateHawk, Duffel Stays) are searched at the same time around the same centre
+      const mcpMod = require("./mcp");
+      const centreP = hasGeo ? Promise.resolve({ lat: +b.latitude, lng: +b.longitude })
+        : b.placeId ? cached("placeloc:" + b.placeId, 30 * 24 * 60 * MIN, () => lite(`/data/places/${encodeURIComponent(b.placeId)}`, { timeoutMs: 10000 })).then(pr => pr?.json?.data?.location ? { lat: pr.json.data.location.latitude, lng: pr.json.data.location.longitude } : null).catch(() => null)
+        : Promise.resolve(null);
+      const mcpHotelsP = centreP.then(c => c ? cached("mcphotels:" + JSON.stringify([c, b.checkin, b.checkout, b.adults, b.rooms, searchBody.currency, hasGeo ? b.radius : 15]), 5 * MIN,
+        () => mcpMod.searchHotels({ lat: c.lat, lng: c.lng, radiusKm: hasGeo ? (+b.radius || 5000) / 1000 : 15, checkin: b.checkin, checkout: b.checkout, adults: +b.adults || 2, rooms: +b.rooms || 1, currency: searchBody.currency }),
+        (v) => Array.isArray(v) && v.length > 0) : []).catch(() => []);
+      const r = await cached("stays:" + JSON.stringify(searchBody), 5 * MIN, () => lite("/hotels/rates", { method: "POST", body: searchBody })).catch(e => ({ ok: false, status: 0, json: { error: { message: e.message } } }));
       if (!r.ok) {
+        const onlyMcp = await mcpHotelsP;
+        if (onlyMcp.length) return res.json({ success: true, data: onlyMcp, pricing: { member: isMember(req), package: false, memberFactor: pricing.memberFactor() } });
         if (r.status === 404 || r.json?.error?.code === 2001) return res.json({ success: true, data: [] });
         return res.status(502).json({ error: errMessage(r, "Hotel search failed") });
       }
@@ -514,7 +524,9 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         if (pk) h.packagePrice = true;
       });
       if (member && !b.latitude && data.length) recordIntent(req, b, { dest: String(b.dest || "").slice(0, 120), destDetail: String(b.destDetail || "").slice(0, 160), lowNight: Math.min(...data.map(h => h.perNight)) });
-      res.json({ success: true, data, pricing: { member, package: data.some(h => h.packagePrice), memberFactor: pricing.memberFactor() } });
+      const mcpHotels = await mcpHotelsP;
+      const all = mcpHotels.length ? mcpMod.mergeHotels(data, mcpHotels) : data;
+      res.json({ success: true, data: all, pricing: { member, package: all.some(h => h.packagePrice), memberFactor: pricing.memberFactor() } });
     } catch (err) {
       console.error("Stays search error:", err.message);
       res.status(500).json({ error: "Server error" });
@@ -774,6 +786,14 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
   app.post("/api/stays/rooms", async (req, res) => {
     const b = req.body || {};
     if (!b.hotelId || !b.checkin || !b.checkout) return res.status(400).json({ error: "hotelId, checkin and checkout are required" });
+    // Hotels sold only through the Travellez MCP (ids start with "tz-")
+    const mcpStay = { checkin: b.checkin, checkout: b.checkout, adults: b.adults, rooms: b.rooms, currency: b.currency || "USD" };
+    if (String(b.hotelId).startsWith("tz-")) {
+      const offers = await require("./mcp").hotelRooms(b.hotelId, mcpStay).catch(() => []);
+      return res.json({ success: true, data: offers, pricing: { member: isMember(req), package: false, memberFactor: pricing.memberFactor() } });
+    }
+    // Same hotel also sold through the MCP: its rooms join the list below
+    const mcpRoomsP = /^tz-/.test(String(b.tz || "")) ? require("./mcp").hotelRooms(b.tz, mcpStay).catch(() => []) : Promise.resolve([]);
     try {
       const roomsBody = {
           hotelIds: [b.hotelId],
@@ -804,6 +824,8 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
       }
       if (!hasRooms(r)) console.error("Stays rooms: no rates", b.hotelId, b.checkin, b.checkout, r.status, String(errMessage(r, "")).slice(0, 120));
       if (!r.ok) {
+        const onlyMcp = await mcpRoomsP;
+        if (onlyMcp.length) return res.json({ success: true, data: onlyMcp, pricing: { member: isMember(req), package: false, memberFactor: pricing.memberFactor() } });
         if (r.status === 404 || r.json?.error?.code === 2001) return res.json({ success: true, data: [] });
         return res.status(502).json({ error: errMessage(r, "Could not load rooms") });
       }
@@ -901,6 +923,8 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         };
       }).filter(o => o.total != null).sort((a, b2) => a.total - b2.total);
       offers.forEach(o => { applyParity(o, member); if (pk) o.packagePrice = true; });
+      const mcpRooms = await mcpRoomsP;
+      if (mcpRooms.length) { offers.push(...mcpRooms); offers.sort((a, b2) => a.total - b2.total); }
       if (isMem && b.placeId) recordIntent(req, b, { hotelId: b.hotelId, dest: b.dest ? String(b.dest).slice(0, 120) : null });
       res.json({ success: true, data: offers, pricing: { member: isMem, package: pk, memberFactor: pricing.memberFactor() } });
     } catch (err) {
