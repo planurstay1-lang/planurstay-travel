@@ -220,6 +220,9 @@ async function searchHotels({ lat, lng, radiusKm = 15, checkin, checkout, adults
     const r = await mcp("/api/v2/hotels/search", { method: "POST", timeoutMs: +env("MCP_HOTEL_TIMEOUT_MS") || 75000, body: {
       check_in: checkin, check_out: checkout, latitude: +lat, longitude: +lng, radius: Math.max(1, Math.min(50, Math.round(radiusKm))),
       guests: Array.from({ length: Math.max(1, Math.min(9, +adults || 2)) }, () => "adult"), rooms: Math.max(1, +rooms || 1),
+      // Travellez answers 100 hotels a page, cheapest first; big cities have 1,000+ (pricier chains, incl. most Sabre hotels,
+      // come after the first 300). All pages together take about as long as three.
+      max_pages: Math.max(1, Math.min(20, +env("MCP_HOTEL_PAGES") || 15)),
     } });
     if (!r.ok) { console.warn("MCP hotel search:", r.status, (r.text || "").slice(0, 200)); return []; }
     sweepMaps();
