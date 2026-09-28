@@ -82,6 +82,15 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
   }
   const MIN = 60 * 1000;
 
+  // Photos for supplier hotels that have none/few (Travellez MCP): the same hotel's LiteAPI content, by name + location
+  require("./mcp").usePhotoSource({
+    find: (name, lat, lng) => cached(`litefind:${String(name).toLowerCase()}|${lat.toFixed(3)},${lng.toFixed(3)}`, 7 * 24 * 60 * MIN,
+      () => lite(`/data/hotels?hotelName=${encodeURIComponent(name)}&latitude=${lat}&longitude=${lng}&radius=1000&limit=10`, { timeoutMs: 10000 }))
+      .then(r => r?.json?.data || []),
+    gallery: (id) => cached("hotel:" + id, 60 * MIN, () => lite(`/data/hotel?hotelId=${encodeURIComponent(id)}&timeout=4`, { timeoutMs: 15000 }))
+      .then(r => (r?.json?.data?.hotelImages || []).map(i => i.urlHd || i.url).filter(Boolean).slice(0, 30)),
+  });
+
   function errMessage(r, fallback) {
     return r.json?.error?.message || r.json?.error?.description || r.json?.message || fallback;
   }
@@ -458,7 +467,8 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         : Promise.resolve(null);
       // Only the main hotel search asks Travellez (30-40s, heavy): homepage deal tiles and map drags pass noMcp
       const mcpHotelsP = b.noMcp ? Promise.resolve([]) : centreP.then(c => c ? cached("mcphotels:" + JSON.stringify([c, b.checkin, b.checkout, b.adults, b.rooms, searchBody.currency, hasGeo ? b.radius : 15]), 5 * MIN,
-        () => mcpMod.searchHotels({ lat: c.lat, lng: c.lng, radiusKm: hasGeo ? (+b.radius || 5000) / 1000 : 15, checkin: b.checkin, checkout: b.checkout, adults: +b.adults || 2, rooms: +b.rooms || 1, currency: searchBody.currency }),
+        () => mcpMod.searchHotels({ lat: c.lat, lng: c.lng, radiusKm: hasGeo ? (+b.radius || 5000) / 1000 : 15, checkin: b.checkin, checkout: b.checkout, adults: +b.adults || 2, rooms: +b.rooms || 1, currency: searchBody.currency })
+          .then(list => mcpMod.fillPhotos(list)),
         (v) => Array.isArray(v) && v.length > 0) : []).catch(() => []);
       const r = await cached("stays:" + JSON.stringify(searchBody), 5 * MIN, () => lite("/hotels/rates", { method: "POST", body: searchBody })).catch(e => ({ ok: false, status: 0, json: { error: { message: e.message } } }));
       if (!r.ok) {

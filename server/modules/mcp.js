@@ -190,8 +190,8 @@ async function searchFlights({ legs, adults = 1, currency }) {
     const d = r.json || {}, results = d.results || [];
     const rates = {};
     for (const c of new Set(results.map(f => fareCurrency((f.all_fares || [])[0] || {})).filter(Boolean))) rates[c] = await fxRate(c, currency);
-    // Customers only get fares from suppliers PlanurStay can book end to end (MCP_FLIGHT_SUPPLIERS, default duffel:
-    // Mystifly and Sabre offers come back without passenger ids, which the booking step needs). Preview shows all.
+    // Customers only get fares from the suppliers in MCP_FLIGHT_SUPPLIERS (default duffel; add mystifly,sabre after one
+    // real test booking each — they book without passenger ids). Preview shows all.
     const sellable = new Set((env("MCP_FLIGHT_SUPPLIERS") || "duffel").toLowerCase().split(",").map(x => x.trim()).filter(Boolean));
     return results.map(f => toJourney(f, d.request_id, d.flight_type || (legs.length === 2 ? "roundtrip" : "oneway"), currency, rates))
       .filter(j => j && (env("MCP_FLIGHTS") === "preview" || sellable.has(j.supplier)));
@@ -248,6 +248,40 @@ async function searchHotels({ lat, lng, radiusKm = 15, checkin, checkout, adults
 
 const normName = (n) => String(n || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\b(the|hotel|hotels|resort|by|and|&)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
 const kmBetween = (a1, o1, a2, o2) => { const R = 6371, r = Math.PI / 180, x = Math.sin((a2 - a1) * r / 2) ** 2 + Math.cos(a1 * r) * Math.cos(a2 * r) * Math.sin((o2 - o1) * r / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+// ─── Photos: some supplier hotels (e.g. Sabre) come with few or no pictures. Top them up with the same hotel's
+// photos from LiteAPI's hotel content (licensed for display), matched by name within 300 m. storefront-routes plugs in:
+//   find(name, lat, lng) → [{ id, name, latitude, longitude, main_photo }]   gallery(liteId) → [url]
+let photoSource = null;
+const usePhotoSource = (src) => { photoSource = src; };
+const sameName = (a, b) => { const x = normName(a), y = normName(b); return !!x && !!y && (x === y || (Math.min(x.length, y.length) >= 6 && (x.includes(y) || y.includes(x)))); };
+function liteTwin(cands, name, lat, lng) {
+  let best = null, bestKm = 0.3;
+  for (const c of cands || []) {
+    if (!c?.main_photo || !sameName(c.name, name)) continue;
+    const km = kmBetween(lat, lng, +c.latitude, +c.longitude);
+    if (km < bestKm) { best = c; bestKm = km; }
+  }
+  return best;
+}
+async function findLite(name, lat, lng) {
+  if (!photoSource || !name || !Number.isFinite(+lat) || !Number.isFinite(+lng)) return null;
+  const look = (q) => photoSource.find(q, +lat, +lng).then(c => liteTwin(c, name, +lat, +lng), () => null);
+  // Names differ between suppliers ("The Strand Palace" / "Strand Palace Hotel"): retry with the core words
+  return (await look(name)) || (normName(name) !== String(name).toLowerCase() && normName(name).length >= 4 ? await look(normName(name)) : null);
+}
+/** Give photo-less MCP hotels the matching LiteAPI hotel's main photo (and remember it for the hotel page). Never throws. */
+async function fillPhotos(list) {
+  const bare = (list || []).filter(h => h.mcp && !h.photo).slice(0, 40);
+  for (let i = 0; i < bare.length; i += 4) await Promise.all(bare.slice(i, i + 4).map(async h => {
+    const t = await findLite(h.name, h.lat, h.lng);
+    if (!t) return;
+    h.photo = h.thumb = t.main_photo;
+    const seen = hotelsSeen.get(h.id);
+    if (seen) { seen.photos = [t.main_photo]; seen.liteId = t.id; }
+  }));
+  return list;
+}
+
 /** One card per hotel: the same hotel from LiteAPI and the MCP shows once, at the lower price (its MCP rooms join the room list). */
 function mergeHotels(lite, mcpList) {
   const out = [...lite];
@@ -270,7 +304,15 @@ async function hotelDetails(id, stay) {
   const seen = hotelsSeen.get(id), h = seen?.raw || {};
   let rates = null;
   if (!seen && stay?.checkin) rates = await fetchRates(id, stay).catch(() => null);
-  const photos = seen?.photos || [];
+  let photos = seen?.photos || [];
+  // Fewer than 5 pictures: add the same hotel's LiteAPI gallery (found now if the search didn't need to)
+  if (photos.length < 5 && photoSource && (h.name || rates?.hotel_name)) {
+    try {
+      let liteId = seen?.liteId;
+      if (!liteId) liteId = (await findLite(h.name || rates?.hotel_name, key.la, key.lo))?.id;
+      if (liteId) { photos = [...photos, ...(await photoSource.gallery(liteId))].filter((u, i, a) => u && a.indexOf(u) === i); if (seen) { seen.liteId = liteId; seen.photos = photos; } }
+    } catch { /* keep what the supplier gave */ }
+  }
   return {
     id, mcp: true, name: h.name || rates?.hotel_name || "Hotel", hotelDescription: "", main_photo: photos[0] || null,
     hotelImages: photos.map(u => ({ url: u, urlHd: u })), address: h.address?.line_one || "", city: h.address?.city_name || "", zip: h.address?.postal_code || "",
@@ -363,8 +405,10 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     if (!d.ok) throw fail(d.status === 404 ? "This fare has just expired. Please search again." : "We couldn't confirm this fare. Please search again.", 410);
     const off = d.json?.offer?.data || d.json?.offer || d.json?.data || {};
     const net = parseFloat(off.total_amount), netCur = String(off.total_currency || off.currency || "").toUpperCase();
+    // Only Duffel hands out passenger ids; Mystifly and Sabre orders take the traveller details without one
     const ids = (off.passengers || []).map(x => x.id).filter(Boolean);
-    if (!(net > 0) || !netCur || ids.length < pax.length) throw fail("We couldn't confirm this fare. Please search again.", 410);
+    const needIds = String(off.provider || o.p).toLowerCase() === "duffel";
+    if (!(net > 0) || !netCur || (needIds && ids.length < pax.length)) throw fail("We couldn't confirm this fare. Please search again.", 410);
     // Charge in the currency the customer searched in (converted from the supplier's)
     const cur = String(o.c || netCur).toUpperCase(), rate = await fxRate(netCur, cur);
     if (!(rate > 0)) throw fail("We couldn't confirm this fare. Please search again.", 410);
@@ -576,4 +620,4 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
   return { register };
 }
 
-module.exports = { fxRates, mcpCall: mcp, mcpConnected: connected, createMcp, searchFlights, mergeJourneys, toJourney, signature, searchHotels, mergeHotels, hotelRooms, _state: { flightsOn, bookingOn, hotelsOn, hotelsVisible } };
+module.exports = { fxRates, usePhotoSource, fillPhotos, mcpCall: mcp, mcpConnected: connected, createMcp, searchFlights, mergeJourneys, toJourney, signature, searchHotels, mergeHotels, hotelRooms, _state: { flightsOn, bookingOn, hotelsOn, hotelsVisible } };
