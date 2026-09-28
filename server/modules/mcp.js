@@ -30,7 +30,7 @@ const hotelMarkup = () => { const m = parseFloat(env("MCP_HOTEL_MARKUP_PCT")); r
 // Hotel suppliers whose rates are paid in full when booked (safe to charge the customer upfront).
 // Other types (e.g. Sabre, whose rates are often "pay at hotel") stay out until Travellez marks prepaid rates.
 const PREPAID_TYPES = () => new Set((env("MCP_HOTEL_TYPES") || "1,4").split(",").map(x => x.trim()).filter(Boolean));
-const SUPPLIER = { 1: "duffel", 4: "ratehawk" };
+const SUPPLIER = { 1: "duffel", 3: "sabre", 4: "ratehawk" };
 const markup = () => { const m = parseFloat(env("MCP_FLIGHT_MARKUP_PCT")); return Number.isFinite(m) && m >= 0 && m <= 30 ? m : 3; };
 const stripe = () => require("stripe")(env("STRIPE_SECRET_KEY"));
 const ZERO_DEC = new Set(["JPY", "KRW", "VND", "CLP", "ISK", "UGX", "XOF", "XAF", "PYG", "RWF"]);
@@ -346,6 +346,9 @@ async function hotelRooms(id, stay) {
   for (const rt of d.rates || []) {
     const net = parseFloat(rt.total_amount), rc = String(rt.total_currency || rt.currency || "").toUpperCase(), rateId = rt.id || rt.rate_id;
     if (!(net > 0) || !rateId || !rc) continue;
+    // Sabre mixes prepaid and pay-at-hotel rates: we charge upfront, so only prepaid ones; and none that need proof
+    // of eligibility (military, government…) or aren't overnight (day use)
+    if (k.t === "3" && (rt.ratePlan?.PrepaidIndicator !== true || /military|government|day use|senior|employee|aaa|member/i.test(`${rt.ratePlanType || ""} ${rt.ratePlan?.RatePlanName || ""}`))) continue;
     if (!(rc in rates)) rates[rc] = await fxRate(rc, cur || rc);
     if (!(rates[rc] > 0)) continue;
     // Free-cancellation deadline: Duffel lists full-refund dates in cancellation_timeline, RateHawk gives free_cancellation_before
@@ -357,11 +360,12 @@ async function hotelRooms(id, stay) {
     roomOffers.set(offerId, { at: now, hotelId: id, rate_id: rateId, provider_type: k.t, net, currency: rc, show: cur || rc, stay: { checkin: stay.checkin, checkout: stay.checkout, adults: +stay.adults || 2, rooms: +stay.rooms || 1 }, room: rt.room_name });
     offers.push({
       offerId, mcp: true, supplier: SUPPLIER[k.t] || `type${k.t}`, mappedRoomId: null,
-      name: [rt.room_name || "Room", rt.bed_type].filter(Boolean).join(" · "), board: BOARD[rt.board_type] || rt.board_type || "Room only",
+      name: [rt.room_name || "Room", rt.bed_type].filter(Boolean).join(" · "), board: BOARD[rt.board_type] || rt.board_type || rt.mealsIncluded?.MealPlanDescription || "Room only",
       total, currency: cur || rc, ssp: null, refundable: free.length > 0, cancelBy: free[free.length - 1] || null,
       // Anything the hotel collects at check-in (city tax etc.) on top of what we charge, in the currency it's collected in
       taxesExcluded: parseFloat(rt.due_at_accommodation_amount) > 0 ? [{ description: "Local taxes and fees", amount: parseFloat(rt.due_at_accommodation_amount), currency: String(rt.due_at_accommodation_currency || rc).toUpperCase() }] : [],
-      taxesIncluded: [], cancelPolicy: [], hotelRemarks: [], nameFees: [], remarks: "", perks: [], publicTotal: total,
+      taxesIncluded: [], cancelPolicy: [], hotelRemarks: [], nameFees: [], perks: [], publicTotal: total,
+      remarks: rt.additional_fees_inclusive === false ? "Resort or other hotel fees may be charged by the hotel at check-in." : "",
     });
   }
   return offers.sort((a, b) => a.total - b.total);
