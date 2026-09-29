@@ -54,7 +54,7 @@
       return;
     }
 
-    root.innerHTML = hero(`<span class="spinner" style="width:40px;height:40px;border-width:4px"></span>`, "pending", "Confirming your booking…", `Payment received. We're securing your ${type === "hotel" ? "room with the hotel" : "seats with the airline"}. This usually takes a few seconds, so please keep this page open.`);
+    root.innerHTML = hero(`<span class="spinner" style="width:40px;height:40px;border-width:4px"></span>`, "pending", "Confirming your booking…", `${pending.payAtHotel ? "Card saved" : "Payment received"}. We're securing your ${type === "hotel" ? "room with the hotel" : "seats with the airline"}. This usually takes a few seconds, so please keep this page open.`);
 
     async function book() {
       const h = pending.holder || {};
@@ -163,7 +163,10 @@
           <div class="panel">
             ${details}
             <div class="divider"></div>
-            <div class="sum-total"><span>Total paid</span><b>${PS.money(Number(price), cur, 2)}</b></div>
+            ${p.payAtHotel
+              ? `<div class="sum-total"><span>Paid now</span><b>${PS.money(0, cur, 2)}</b></div>
+                 <p class="price-sub" style="margin-top:8px"><b>Pay at the hotel:</b> ${p.payAtHotel.amount != null ? `${PS.money(p.payAtHotel.amount, p.payAtHotel.currency, 2)} (about ${PS.money(p.payAtHotel.approx, cur, 2)})` : "at check-in"}. Your card is kept only for a no-show or late-cancellation fee.</p>`
+              : `<div class="sum-total"><span>Total paid</span><b>${PS.money(Number(price), cur, 2)}</b></div>`}
           </div>
           ${type === "flight" && b._package?.placeId ? `<div class="pkg-cta"><div><span class="pkg-badge">${PS.icon("gift", 14)}Package price unlocked</span>
             <b>Save about <span data-save-pct>${PS.savePct()}</span>% on hotels in ${PS.esc(b._package.city)}</b>

@@ -320,7 +320,9 @@ async function hotelDetails(id, stay) {
     id, mcp: true, name: h.name || rates?.hotel_name || "Hotel", hotelDescription: "", main_photo: photos[0] || null,
     hotelImages: photos.map(u => ({ url: u, urlHd: u })), address: h.address?.line_one || "", city: h.address?.city_name || "", zip: h.address?.postal_code || "",
     country: h.address?.country_code || "", starRating: +h.rating || 0, rating: +h.review_score || 0, reviewCount: 0,
-    location: { latitude: key.la, longitude: key.lo }, hotelFacilities: (h.amenities || []).map(a => (typeof a === "string" ? a : a?.description || a?.type || "")).filter(Boolean),
+    location: { latitude: key.la, longitude: key.lo }, // Sabre sends codes ("wheelchair_access", "wireless_internet_connection_in_public_areas"): make them readable
+    hotelFacilities: [...new Set((h.amenities || []).map(a => (typeof a === "string" ? a : a?.description || a?.type || "")).filter(a => a && !/pornographic/i.test(a))
+      .map(a => /_/.test(a) ? a.replace(/_?\(generic\)$/i, "").replace(/_/g, " ").replace(/\s+/g, " ").trim().replace(/^./, c => c.toUpperCase()) : a))],
     facilities: [], checkinCheckoutTimes: rates?.check_in_info ? { checkin: rates.check_in_info.check_in_after_time, checkout: rates.check_in_info.check_out_before_time } : null,
     hotelImportantInformation: "", chain: null, rooms: [],
   };
@@ -349,20 +351,25 @@ async function hotelRooms(id, stay) {
   for (const rt of d.rates || []) {
     const net = parseFloat(rt.total_amount), rc = String(rt.total_currency || rt.currency || "").toUpperCase(), rateId = rt.id || rt.rate_id;
     if (!(net > 0) || !rateId || !rc) continue;
-    // Sabre mixes prepaid and pay-at-hotel rates: we charge upfront, so only prepaid ones; and none that need proof
-    // of eligibility (military, government…) or aren't overnight (day use)
-    if (k.t === "3" && (rt.ratePlan?.PrepaidIndicator !== true || /military|government|day use|senior|employee|aaa|member/i.test(`${rt.ratePlanType || ""} ${rt.ratePlan?.RatePlanName || ""}`))) continue;
+    // Sabre mixes prepaid and guaranteed (pay at the hotel) rates. Prepaid: we charge upfront as usual. Guaranteed: the
+    // guest pays the hotel; we only save their card (no-show / late-cancellation fees). None that need proof of
+    // eligibility (military, government…) or aren't overnight (day use).
+    if (k.t === "3" && /military|government|day use|senior|employee|aaa|member/i.test(`${rt.ratePlanType || ""} ${rt.ratePlan?.RatePlanName || ""}`)) continue;
+    const payAtHotel = k.t === "3" && rt.ratePlan?.PrepaidIndicator !== true;
+    if (payAtHotel && env("MCP_PAY_AT_HOTEL") === "off") continue;
     if (!(rc in rates)) rates[rc] = await fxRate(rc, cur || rc);
     if (!(rates[rc] > 0)) continue;
     // Free-cancellation deadline: Duffel lists full-refund dates in cancellation_timeline, RateHawk gives free_cancellation_before
     const free = [...(rt.cancellation_timeline || []).filter(c => parseFloat(c.refund_amount) >= net * 0.99).map(c => c.before),
       ...(rt.cancellation_time || []).map(c => c?.free_cancellation_before)].filter(t => Date.parse(t) > now).sort();
     const offerId = "tzh:" + crypto.randomBytes(12).toString("hex");
-    const total = hotelSell(net * rates[rc]);
+    // Pay at the hotel: the hotel's own price (no markup, nothing charged by us), converted without the FX buffer
+    const total = payAtHotel ? Math.round(net * rates[rc] / (1 + (rc === (cur || rc) ? 0 : fxBuffer() / 100)) * 100) / 100 : hotelSell(net * rates[rc]);
     // net + currency = what the supplier charges; show = what the customer sees and pays in
-    roomOffers.set(offerId, { at: now, hotelId: id, rate_id: rateId, provider_type: k.t, net, currency: rc, show: cur || rc, stay: { checkin: stay.checkin, checkout: stay.checkout, adults: +stay.adults || 2, rooms: +stay.rooms || 1 }, room: rt.room_name });
+    roomOffers.set(offerId, { at: now, hotelId: id, rate_id: rateId, provider_type: k.t, net, currency: rc, show: cur || rc, payAtHotel, approx: total, stay: { checkin: stay.checkin, checkout: stay.checkout, adults: +stay.adults || 2, rooms: +stay.rooms || 1 }, room: rt.room_name });
     offers.push({
-      offerId, mcp: true, supplier: SUPPLIER[k.t] || `type${k.t}`, mappedRoomId: null,
+      offerId, mcp: true, supplier: SUPPLIER[k.t] || `type${k.t}`, mappedRoomId: null, payAtHotel,
+      payAtHotelAmount: payAtHotel ? { amount: net, currency: rc } : null, // what the hotel will charge, in its currency
       name: [rt.room_name || "Room", rt.bed_type].filter(Boolean).join(" · "), board: BOARD[rt.board_type] || rt.board_type || rt.mealsIncluded?.MealPlanDescription || "Room only",
       total, currency: cur || rc, ssp: null, refundable: free.length > 0, cancelBy: free[free.length - 1] || null,
       // Anything the hotel collects at check-in (city tax etc.) on top of what we charge, in the currency it's collected in
@@ -521,6 +528,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     if (parseFloat(qd.total_amount) > 0 && String(qd.total_currency || o.currency).toUpperCase() === o.currency) net = parseFloat(qd.total_amount);
     const show = o.show || o.currency, rate = await fxRate(o.currency, show);
     if (!(rate > 0)) throw fail("This price has expired. Please reload the hotel page to see the latest rooms.", 410);
+    if (o.payAtHotel) return holdPayAtHotel(o, net, show, b, req);
     const price = hotelSell(net * rate), ref = "HT-" + crypto.randomBytes(5).toString("hex").toUpperCase();
     const pi = await stripe().paymentIntents.create({
       amount: ZERO_DEC.has(show) ? Math.round(price) : Math.round(price * 100), currency: show.toLowerCase(), capture_method: "manual",
@@ -532,6 +540,26 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
       .run(ref, pi.id, price, show, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName, net_currency: o.currency }), SUPPLIER[o.provider_type] || o.provider_type,
         uid(req), hotelName.slice(0, 120), day(o.stay.checkin), day(o.stay.checkout));
     return { prebookId: ref, transactionId: pi.id, secretKey: pi.client_secret, price, currency: show, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY") };
+  }
+
+  // Pay at the hotel (Sabre guaranteed rates): nothing is charged. The guest's card is saved with Stripe (SetupIntent,
+  // off-session) so PlanurStay can recover a no-show or late-cancellation fee the hotel charges to the company card
+  // that guarantees the booking. Such fees are charged by staff from the Stripe dashboard (customer is tagged with the ref).
+  async function holdPayAtHotel(o, net, show, b, req) {
+    const ref = "HT-" + crypto.randomBytes(5).toString("hex").toUpperCase();
+    const approx = o.approx ?? net;
+    const s = stripe();
+    const customer = await s.customers.create({ description: `PlanurStay pay-at-hotel ${ref}`, metadata: { ref, type: "hotel_guarantee" } }, { idempotencyKey: `htc-${ref}` });
+    const si = await s.setupIntents.create({
+      customer: customer.id, usage: "off_session", automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      description: `PlanurStay ${ref}: card guarantee for a pay-at-hotel booking (no-show / late cancellation only)`, metadata: { type: "hotel_guarantee", ref },
+    }, { idempotencyKey: `hts-${ref}` });
+    const hotelName = hotelsSeen.get(o.hotelId)?.raw?.name || String(b.summary?.title || "Hotel stay");
+    db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, supplier, user_id, title, start_date, end_date) VALUES (?, 'hotel', 'awaiting_payment', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(ref, si.id, show, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName, net_currency: o.currency,
+        payAtHotel: true, approx, customer: customer.id }), SUPPLIER[o.provider_type] || o.provider_type, uid(req), hotelName.slice(0, 120), day(o.stay.checkin), day(o.stay.checkout));
+    return { prebookId: ref, transactionId: si.id, secretKey: si.client_secret, price: 0, payAtHotel: true, payAtHotelAmount: { amount: net, currency: o.currency }, approx,
+      currency: show, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY") };
   }
 
   async function bookHotel(refIn, trav = {}) {
@@ -548,10 +576,11 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     locks.add(ref);
     const s = stripe();
     try {
-      const pi = await s.paymentIntents.retrieve(r0.payment_intent);
-      if (pi.metadata?.ref !== ref) throw fail("Payment doesn't match this booking", 400);
-      if (pi.status !== "requires_capture") throw fail("Your card hasn't been authorized yet", 402);
       const o = JSON.parse(r0.offer_json);
+      const guarantee = o.payAtHotel && String(r0.payment_intent).startsWith("seti_");
+      const pi = guarantee ? await s.setupIntents.retrieve(r0.payment_intent) : await s.paymentIntents.retrieve(r0.payment_intent);
+      if (pi.metadata?.ref !== ref) throw fail("Payment doesn't match this booking", 400);
+      if (pi.status !== (guarantee ? "succeeded" : "requires_capture")) throw fail(guarantee ? "Your card hasn't been saved yet" : "Your card hasn't been authorized yet", 402);
       setRow(ref, { status: "booking", contact_json: JSON.stringify(t), email: t.email });
       const res = await mcp("/api/v2/hotels/book", { method: "POST", timeoutMs: 120000, body: {
         rate_id: o.rate_id, provider_type: o.provider_type, amount: r0.net.toFixed(2), currency: o.net_currency || r0.currency,
@@ -561,12 +590,17 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
       const bookingId = res.ok ? (res.json?.booking_id || bk.booking_id || bk.id) : null;
       const st = String(bk.status || bk.booking_status || (bookingId ? "confirmed" : "failed")).toLowerCase();
       if (!bookingId || ["failed", "cancelled", "canceled", "rejected"].includes(st)) {
-        await s.paymentIntents.cancel(pi.id).catch(e => console.warn("MCP hotel PI cancel:", e.message));
+        if (guarantee) { if (pi.payment_method) await s.paymentMethods.detach(String(pi.payment_method)).catch(e => console.warn("MCP hotel card detach:", e.message)); }
+        else await s.paymentIntents.cancel(pi.id).catch(e => console.warn("MCP hotel PI cancel:", e.message));
         setRow(ref, { status: "failed", error: String(res.json?.detail || res.json?.message || res.text || st).slice(0, 500) });
         console.warn("MCP hotel booking failed:", ref, res.status, (res.text || "").slice(0, 300));
         return hotelSummary(row(ref));
       }
-      await s.paymentIntents.capture(pi.id);
+      if (guarantee) {
+        // Card stays saved for no-show / late-cancellation fees; tag the Stripe customer so staff can find it by ref
+        await s.customers.update(o.customer, { email: t.email, name: `${t.first_name} ${t.last_name}`, invoice_settings: pi.payment_method ? { default_payment_method: String(pi.payment_method) } : undefined,
+          metadata: { ref, type: "hotel_guarantee", hotel: String(o.hotelName || "").slice(0, 200), checkin: o.stay.checkin, checkout: o.stay.checkout, supplier_booking_id: String(bookingId) } }).catch(e => console.warn("Stripe customer update:", e.message));
+      } else await s.paymentIntents.capture(pi.id);
       setRow(ref, { status: st === "confirmed" ? "confirmed" : "pending_confirmation", supplier_booking_id: String(bookingId), supplier_ref: String(bk.reference || bk.confirmation_number || bk.booking_reference || "") || null });
       notifyHotel(ref).catch(() => {});
       return hotelSummary(row(ref));
@@ -578,8 +612,11 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
 
   function hotelSummary(r) {
     const failed = r.status === "failed";
+    const o = (() => { try { return JSON.parse(r.offer_json || "{}"); } catch { return {}; } })();
     return { bookingId: r.ref, status: r.status === "confirmed" ? "CONFIRMED" : failed ? "FAILED" : "PENDING", hotelConfirmationCode: r.supplier_ref || null,
-      price: r.amount, currency: r.currency, supplier: r.supplier, error: failed ? "The hotel couldn't confirm this room. The hold on your card has been released." : null };
+      price: r.amount, currency: r.currency, supplier: r.supplier,
+      ...(o.payAtHotel ? { payAtHotel: true, payAtHotelAmount: { amount: r.net, currency: o.net_currency }, approx: o.approx } : {}),
+      error: failed ? (o.payAtHotel ? "The hotel couldn't confirm this room. Nothing was charged and your card wasn't kept." : "The hotel couldn't confirm this room. The hold on your card has been released.") : null };
   }
 
   async function notifyHotel(ref) {
@@ -593,7 +630,10 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
         <h1 style="font-size:22px">${r.status === "confirmed" ? "Your room is booked" : "We're confirming your room"}</h1>
         <p><b>${esc(name)}</b>${o.room ? ` · ${esc(o.room)}` : ""}<br>${esc(o.stay?.checkin)} – ${esc(o.stay?.checkout)}</p>
         <p>Guest: ${esc(c.first_name)} ${esc(c.last_name)}<br>PlanurStay reference: <b>${esc(r.ref)}</b>${r.supplier_ref ? `<br>Hotel confirmation: <b>${esc(r.supplier_ref)}</b>` : ""}</p>
-        <p>Total paid: <b>${money(r.amount, r.currency)}</b></p></div>` });
+        ${o.payAtHotel
+          ? `<p><b>Pay at the hotel:</b> ${money(r.net, o.net_currency)} (about ${money(o.approx, r.currency)}), charged by the hotel in its own currency. Nothing was charged by PlanurStay.</p>
+             <p style="color:#555;font-size:13px">Your card is kept on file only to cover a no-show or late-cancellation fee under the hotel's cancellation policy.</p>`
+          : `<p>Total paid: <b>${money(r.amount, r.currency)}</b></p>`}</div>` });
   }
 
   function register(app) {

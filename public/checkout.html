@@ -95,7 +95,9 @@
               ${voucher ? sumBox("Promo code", `−${PS.money(voucher, cur, 2)}`, "good") : ""}
             </div>
           </div>
-          <div class="co-total"><div><b>Total</b><b>${PS.money(Math.max(0, total - voucher), cur, 2)}</b></div><small>Includes taxes and fees</small></div>
+          ${offer.payAtHotel
+            ? `<div class="co-total"><div><b>Due now</b><b>${PS.money(0, cur, 2)}</b></div><small>Pay at the hotel: ${offer.payAtHotelAmount ? `${PS.money(offer.payAtHotelAmount.amount, offer.payAtHotelAmount.currency, 2)} (about ${PS.money(total, cur, 2)})` : `about ${PS.money(total, cur, 2)}`}, charged by the hotel in its own currency</small></div>`
+            : `<div class="co-total"><div><b>Total</b><b>${PS.money(Math.max(0, total - voucher), cur, 2)}</b></div><small>Includes taxes and fees</small></div>`}
           ${payAtHotel.length ? `<div class="co-lines pay-hotel"><small>Paid at the hotel</small>${payAtHotel.map(f => sumBox(PS.esc(f.description), PS.money(f.amount, f.currency || cur, 2))).join("")}</div>` : ""}
           <div id="earnNote"></div>
         </div>
@@ -651,6 +653,7 @@
         remarks: type === "hotel" ? val("remarks") || undefined : undefined,
         work: document.querySelector('input[name="work"]:checked')?.value === "yes",
         price: pb.price, currency: pb.currency, createdAt: Date.now(),
+        payAtHotel: pb.payAtHotel ? { amount: pb.payAtHotelAmount?.amount, currency: pb.payAtHotelAmount?.currency, approx: pb.approx } : undefined,
         insurance: insChoice ? { name: insChoice.name, total: insChoice.total, currency: insChoice.currency, productIds: insChoice.productIds } : null,
         // For the travel insurance offer after booking (pre-fills names and birthdays)
         travellers: type === "flight" ? (pb._passengers || []).map(x => ({ name: [x.firstName, x.middleName, x.lastName].filter(Boolean).join(" "), birthday: x.birthday, nationality: x.nationality })) : undefined,
@@ -694,14 +697,19 @@
         if (!window.Stripe) await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://js.stripe.com/v3/"; sc.onload = res; sc.onerror = () => rej(new Error("The payment form couldn't load. Check your connection and try again.")); document.head.appendChild(sc); });
         const stripe = window.Stripe(pb.publishableKey);
         const elements = stripe.elements({ clientSecret: pb.secretKey, appearance: { theme: "stripe", variables: { colorPrimary: "#1f5bff", borderRadius: "10px" } } });
-        portal.innerHTML = `<div id="payEl"></div><p class="price-sub" style="margin:10px 0 0">We only hold the amount now. You're charged once the airline confirms your booking; if it can't, the hold is released.</p>
-          <button class="btn btn-primary btn-lg btn-block" id="payNow" style="margin-top:12px">${PS.icon("lock", 16)}Pay ${PS.money(pb.price, pb.currency, 2)}</button><div id="payErr"></div>`;
+        const later = !!pb.payAtHotel; // pay at the hotel: the card is only saved, nothing is charged
+        const label = later ? `${PS.icon("lock", 16)}Reserve · pay at the hotel` : `${PS.icon("lock", 16)}Pay ${PS.money(pb.price, pb.currency, 2)}`;
+        portal.innerHTML = `<div id="payEl"></div>${later
+          ? `<p class="price-sub" style="margin:10px 0 0"><b>Nothing is charged now.</b> You pay the hotel during your stay. We keep your card only in case of a no-show or late cancellation: by reserving, you authorize PlanurStay to charge this card for any such fee under the hotel's cancellation policy shown above.</p>`
+          : `<p class="price-sub" style="margin:10px 0 0">We only hold the amount now. You're charged once ${type === "hotel" ? "the hotel" : "the airline"} confirms your booking; if it can't, the hold is released.</p>`}
+          <button class="btn btn-primary btn-lg btn-block" id="payNow" style="margin-top:12px">${label}</button><div id="payErr"></div>`;
         elements.create("payment", { layout: "tabs" }).mount("#payEl");
         const back = `${location.origin}${PS.url("/confirmation", { type, prebookId: pb.prebookId, transactionId: pb.transactionId })}`;
         document.getElementById("payNow").onclick = async (e) => {
           const b = e.currentTarget; b.disabled = true; b.innerHTML = `<span class="spinner" style="width:18px;height:18px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff"></span>Checking your card…`;
-          const { error } = await stripe.confirmPayment({ elements, redirect: "if_required", confirmParams: { return_url: back } });
-          if (error) { b.disabled = false; b.innerHTML = `${PS.icon("lock", 16)}Pay ${PS.money(pb.price, pb.currency, 2)}`; document.getElementById("payErr").innerHTML = `<div class="alert error" style="margin-top:10px">${PS.icon("alert", 18)}<div>${PS.esc(error.message)}</div></div>`; return; }
+          const args = { elements, redirect: "if_required", confirmParams: { return_url: back } };
+          const { error } = await (later ? stripe.confirmSetup(args) : stripe.confirmPayment(args));
+          if (error) { b.disabled = false; b.innerHTML = label; document.getElementById("payErr").innerHTML = `<div class="alert error" style="margin-top:10px">${PS.icon("alert", 18)}<div>${PS.esc(error.message)}</div></div>`; return; }
           location.href = back;
         };
       } catch (err) { portal.innerHTML = `<div class="alert error">${PS.icon("alert", 18)}<div>${PS.esc(err.message)}</div></div>`; }
@@ -710,7 +718,7 @@
       const panel = document.getElementById("payPanel");
       panel.classList.remove("hidden");
       const expected = type === "hotel" ? sel.offer.total + extrasTotal() : (sel.offer.pricing?.display?.total || 0) + (pb.servicesAmount || 0);
-      const changed = pb.price != null && expected != null && !(extrasUsd() && !extrasTotal()) && Math.abs(pb.price - expected) > 0.5;
+      const changed = !pb.payAtHotel && pb.price != null && expected != null && !(extrasUsd() && !extrasTotal()) && Math.abs(pb.price - expected) > 0.5;
       // Hotels: use the fees and cancellation terms confirmed by the hold (prebook), not the earlier search
       if (type === "hotel" && Array.isArray(pb.roomTypes)) {
         const rates = pb.roomTypes.flatMap(rt => rt.rates || []);

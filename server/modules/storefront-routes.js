@@ -645,10 +645,13 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
   function otherTrips(where, args) {
     const out = [];
     try {
-      out.push(...db.prepare(`SELECT ref AS bookingId, kind, status, title AS name, start_date AS checkin, end_date AS checkout, amount AS price, currency, supplier_ref, created_at AS createdAt
+      out.push(...db.prepare(`SELECT ref AS bookingId, kind, status, title AS name, start_date AS checkin, end_date AS checkout, amount AS price, currency, supplier_ref, offer_json, created_at AS createdAt
         FROM mcp_bookings WHERE ${where} AND status IN ('confirmed','pending_confirmation') ORDER BY created_at DESC`).all(...args)
-        .map(r => ({ type: r.kind, source: "mcp", bookingId: r.bookingId, status: r.status === "confirmed" ? "CONFIRMED" : "PENDING", name: r.name, checkin: r.checkin, checkout: r.kind === "hotel" ? r.checkout : null,
-          price: r.price, currency: r.currency, pnr: r.kind === "flight" ? r.supplier_ref : null, confirmation: r.kind === "hotel" ? r.supplier_ref : null, createdAt: r.createdAt })));
+        .map(r => { let o = {}; try { o = JSON.parse(r.offer_json || "{}"); } catch {}
+          return { type: r.kind, source: "mcp", bookingId: r.bookingId, status: r.status === "confirmed" ? "CONFIRMED" : "PENDING", name: r.name, checkin: r.checkin, checkout: r.kind === "hotel" ? r.checkout : null,
+            // Pay-at-hotel stays: nothing was charged; show the approximate amount due at the hotel
+            price: o.payAtHotel ? o.approx : r.price, currency: r.currency, payAtHotel: !!o.payAtHotel || undefined,
+            pnr: r.kind === "flight" ? r.supplier_ref : null, confirmation: r.kind === "hotel" ? r.supplier_ref : null, createdAt: r.createdAt }; }));
     } catch { /* table not created yet */ }
     try {
       out.push(...db.prepare(`SELECT ref, status, amount, currency, quote_json, supplier_ref, payment_intent, created_at FROM car_bookings WHERE ${where.replace("email", "lower(json_extract(driver_json, '$.email'))")} AND status IN ('confirmed','pending_confirmation') ORDER BY created_at DESC`).all(...args)

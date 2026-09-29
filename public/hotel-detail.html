@@ -465,13 +465,15 @@
       // Options that look the same to a guest (same cancellation deadline, meal plan and perks) → keep only the cheapest
       const sameKey = (o) => {
         const first = (o.cancelPolicy || []).find(c => c.amount > 0) || (o.cancelPolicy || [])[0];
-        return [o.refundable, o.refundable && first ? String(first.from).slice(0, 10) : "", hasBreakfast(o) ? (o.board || "").toLowerCase() : "", (o.perks || []).join("|")].join("~");
+        return [o.refundable, o.refundable && first ? String(first.from).slice(0, 10) : "", hasBreakfast(o) ? (o.board || "").toLowerCase() : "", (o.perks || []).join("|"), o.payAtHotel ? "hotel" : ""].join("~");
       };
       const dedupe = (opts) => { const seen = new Set(); return opts.filter(o => { const k = sameKey(o); if (seen.has(k)) return false; seen.add(k); return true; }); };
       // Show at most 3 clear choices per room: cheapest, cheapest with free cancellation, cheapest with breakfast.
       // Everything else waits behind "More options".
       const feature = (opts) => {
-        const pickF = [opts[0], opts.find(o => o.refundable && !hasBreakfast(o)) || opts.find(o => o.refundable), opts.find(hasBreakfast)].filter(Boolean);
+        // …plus, where both exist, the cheapest pay-now and the cheapest pay-at-the-hotel option
+        const pickF = [opts[0], opts.find(o => o.refundable && !hasBreakfast(o)) || opts.find(o => o.refundable), opts.find(hasBreakfast),
+          opts.find(o => o.payAtHotel), opts.find(o => !o.payAtHotel)].filter(Boolean);
         const top = [...new Set(pickF)].sort((a, b) => a.total - b.total);
         return { opts: [...top, ...opts.filter(o => !top.includes(o))], shown: top.length };
       };
@@ -481,7 +483,7 @@
       const optLabel = (o) => {
         const first = (o.cancelPolicy || []).find(c => c.amount > 0) || (o.cancelPolicy || [])[0];
         const canc = o.refundable ? `Free cancellation${first ? ` until ${PS.deadline(first.from, first.tz).replace(/(,| at)? \d{1,2}:\d{2}.*$/, "")}` : ""}` : "Non-refundable";
-        return { canc, meal: hasBreakfast(o) ? PS.esc(o.board) : "" };
+        return { canc, meal: [hasBreakfast(o) ? PS.esc(o.board) : "", o.payAtHotel ? "Pay at the hotel" : ""].filter(Boolean).join(" · ") };
       };
       const footHTML = (g) => {
         const o = g.opts[g.pick];
@@ -489,7 +491,8 @@
           <a class="btn btn-primary" href="${PS.loginUrl()}">Sign in</a>`;
         return `<div class="rc-price">${o.memberPrice ? `<span class="tag green" style="justify-self:start;margin-bottom:2px">${PS.icon(o.packagePrice ? "gift" : "tag", 12)}${o.packagePrice ? "Package price" : "Member price"}</span>` : ""}
             ${o.strikeTotal ? `<s>${PS.money(o.strikeTotal, o.currency, 0)}</s>` : ""}<b>${PS.money(o.total, o.currency, 0)}</b>
-            <small>${PS.money(o.total / n / R, o.currency, 0)} per room/night · total for ${R > 1 ? PS.plural(R, "room") + ", " : ""}${PS.plural(n, "night")}</small>
+            <small>${PS.money(o.total / n / R, o.currency, 0)} per room/night · ${o.payAtHotel ? "approx. " : ""}total for ${R > 1 ? PS.plural(R, "room") + ", " : ""}${PS.plural(n, "night")}</small>
+            ${o.payAtHotel ? `<small style="color:var(--green,#0a7d46);font-weight:700">Pay at the hotel · nothing charged now</small>` : ""}
             ${!o.mcp && !roomPricing.member && !roomPricing.package && roomPricing.memberFactor ? `<small class="member-nudge"><a href="${PS.loginUrl()}">Lower member price · sign in</a></small>` : ""}
           </div>
           <button class="btn btn-coral" data-reserve>Reserve</button>`;
