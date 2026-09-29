@@ -28,6 +28,10 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
   };
   loadSettings();
 
+  // Supplier switches (close out RateHawk, Sabre, LiteAPI… from /admin): saved as a JSON list of switched-off keys
+  const sup = require("./suppliers");
+  try { sup.setOff(JSON.parse(db.prepare("SELECT value FROM site_settings WHERE key = 'suppliersOff'").get()?.value || "[]")); } catch { sup.setOff([]); }
+
   async function da(path, body) {
     const r = await fetch("https://da.liteapi.travel" + path, {
       method: "POST", headers: { "X-Api-Key": apiKey(), "Content-Type": "application/json", Accept: "application/json" },
@@ -56,6 +60,19 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
 
     // Public: current member saving for marketing copy (no margins exposed)
     app.get("/api/pricing/summary", (req, res) => res.json({ memberSavePct: pricing.memberSavePct() }));
+
+    app.get("/api/admin/suppliers", guard, (req, res) => res.json({ success: true, suppliers: sup.SUPPLIERS.map(x => ({ ...x, off: sup.isOff(x.key) })) }));
+    // { key, off: true|false } — takes effect on the next search; bookings already made are untouched
+    app.post("/api/admin/suppliers", guard, (req, res) => {
+      const b = req.body || {}, key = String(b.key || "");
+      if (!sup.SUPPLIERS.some(x => x.key === key)) return res.status(400).json({ error: "Unknown supplier" });
+      const next = new Set(sup.offList());
+      if (b.off) next.add(key); else next.delete(key);
+      const list = sup.setOff([...next]);
+      db.prepare("INSERT INTO site_settings (key, value, updated_at) VALUES ('suppliersOff', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP").run(JSON.stringify(list));
+      console.log(`Supplier ${key} switched ${b.off ? "OFF" : "ON"} by ${adminUser(req)?.email}`);
+      res.json({ success: true, suppliers: sup.SUPPLIERS.map(x => ({ ...x, off: sup.isOff(x.key) })) });
+    });
 
     app.post("/api/admin/pricing", guard, (req, res) => {
       const b = req.body || {};

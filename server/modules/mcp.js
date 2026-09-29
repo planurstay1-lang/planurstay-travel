@@ -17,6 +17,7 @@
  *      MCP_FLIGHT_SUPPLIERS (default duffel), MCP_FX_BUFFER_PCT (default 2), MCP_HOTEL_TIMEOUT_MS (default 75000).
  */
 const crypto = require("crypto");
+const sup = require("./suppliers");
 
 const env = (k) => String(process.env[k] || "").trim();
 const base = () => env("TRAVELLEZ_MCP_URL").replace(/\/$/, "");
@@ -200,7 +201,7 @@ async function searchFlights({ legs, adults = 1, currency }) {
     // real test booking each — they book without passenger ids). Preview shows all.
     const sellable = new Set((env("MCP_FLIGHT_SUPPLIERS") || "duffel").toLowerCase().split(",").map(x => x.trim()).filter(Boolean));
     return results.map(f => toJourney(f, d.request_id, d.flight_type || (legs.length === 2 ? "roundtrip" : "oneway"), currency, rates))
-      .filter(j => j && (env("MCP_FLIGHTS") === "preview" || sellable.has(j.supplier)));
+      .filter(j => j && !sup.flightSourceOff(j.supplier) && (env("MCP_FLIGHTS") === "preview" || sellable.has(j.supplier)));
   } catch (e) { console.warn("MCP flight search:", e.message); return []; }
 }
 
@@ -233,7 +234,7 @@ async function searchHotels({ lat, lng, radiusKm = 15, checkin, checkout, adults
       max_pages: Math.max(1, Math.min(20, +env("MCP_HOTEL_PAGES") || 15)),
     };
     const timeoutMs = +env("MCP_HOTEL_TIMEOUT_MS") || 75000;
-    const withSabre = sabreAccount() && PREPAID_TYPES().has("3");
+    const withSabre = sabreAccount() && PREPAID_TYPES().has("3") && !sup.isOff("sabre_hotels");
     const [r, rs] = await Promise.all([
       mcp("/api/v2/hotels/search", { method: "POST", timeoutMs, body }).catch(e => ({ ok: false, text: e.message })),
       // Travellez caches searches by location + dates, not by account: search a point ~1 m north so the Sabre-only
@@ -251,7 +252,7 @@ async function searchHotels({ lat, lng, radiusKm = 15, checkin, checkout, adults
     for (const c of new Set(results.map(h => String(h.cheapest_rate_currency || "").toUpperCase()).filter(Boolean))) rates[c] = await fxRate(c, show || c);
     for (const h of results) {
       const type = String(h.type || "1"), net = parseFloat(h.cheapest_rate_total_amount), cur = String(h.cheapest_rate_currency || "").toUpperCase();
-      if (!types.has(type) || !(net > 0) || !cur || !(rates[cur] > 0)) continue;
+      if (!types.has(type) || sup.hotelTypeOff(type) || !(net > 0) || !cur || !(rates[cur] > 0)) continue;
       const hlat = +(h.latitude ?? h.geographic_coordinates?.latitude), hlng = +(h.longitude ?? h.geographic_coordinates?.longitude);
       const id = tzHotelId({ ...h, type, lat: hlat, lng: hlng, account: h._account });
       const photos = photosOf(h), total = hotelSell(net * rates[cur]);
@@ -384,7 +385,7 @@ async function hotelRooms(id, stay) {
 }
 async function roomsFor(id, stay) {
   const k = parseHotelId(id);
-  if (!k || !hotelsVisible() || !PREPAID_TYPES().has(k.t)) return [];
+  if (!k || !hotelsVisible() || !PREPAID_TYPES().has(k.t) || sup.hotelTypeOff(k.t)) return [];
   const d = await fetchRates(id, stay).catch(() => null);
   if (!d) return [];
   sweepMaps();
@@ -398,7 +399,7 @@ async function roomsFor(id, stay) {
     // eligibility (military, government…) or aren't overnight (day use).
     if (k.t === "3" && /military|government|day use|senior|employee|aaa|member/i.test(`${rt.ratePlanType || ""} ${rt.ratePlan?.RatePlanName || ""}`)) continue;
     const payAtHotel = k.t === "3" && rt.ratePlan?.PrepaidIndicator !== true;
-    if (payAtHotel && env("MCP_PAY_AT_HOTEL") === "off") continue;
+    if (payAtHotel && (env("MCP_PAY_AT_HOTEL") === "off" || sup.isOff("sabre_pay_at_hotel"))) continue;
     if (!(rc in rates)) rates[rc] = await fxRate(rc, cur || rc);
     if (!(rates[rc] > 0)) continue;
     // Free-cancellation deadline: Duffel lists full-refund dates in cancellation_timeline, RateHawk gives free_cancellation_before
@@ -452,6 +453,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     if (!bookingOn()) throw fail("This fare can't be booked online yet.", 403);
     const o = unb64(String(b.offerId || "").replace(/^tz:/, ""));
     if (!o?.i || !o?.r) throw fail("Invalid offer", 400);
+    if (sup.flightSourceOff(o.p)) throw fail("This fare is no longer available. Please search again.", 410);
     const pax = Array.isArray(b.passengers) ? b.passengers : [];
     const c = b.contact || {};
     const contact = { email: String(c.email || "").trim().toLowerCase(), phone: `+${String(c.phoneCountryCode || "1").replace(/\D/g, "")}${String(c.phoneNumber || "").replace(/\D/g, "")}` };
@@ -563,6 +565,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     if (!hotelsOn() || !payOn()) throw fail("This room can't be booked online yet.", 403);
     const o = roomOffers.get(String(b.offerId || ""));
     if (!o || Date.now() - o.at > OFFER_TTL) throw fail("This price has expired. Please reload the hotel page to see the latest rooms.", 410);
+    if (sup.hotelTypeOff(o.provider_type) || (o.payAtHotel && sup.isOff("sabre_pay_at_hotel"))) throw fail("This room is no longer available. Please choose another one.", 410);
     // Lock the latest price where the supplier supports it (some return an error for quotes: then the rate's price stands)
     let net = o.net;
     const q = await mcp("/api/v2/hotels/quote", { method: "POST", account: o.account, body: { rate_id: o.rate_id } }).catch(() => null);

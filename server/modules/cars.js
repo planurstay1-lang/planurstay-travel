@@ -26,7 +26,8 @@ const crypto = require("crypto");
 function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
   const env = (k) => String(process.env[k] || "").trim();
   const base = () => (env("TRAVELLEZ_API_BASE_URL") || "https://api.travellez.com").replace(/\/$/, "");
-  const searchOn = () => !!(env("TRAVELLEZ_EMAIL") && env("TRAVELLEZ_PASSWORD"));
+  // Off when switched off in /admin (supplier close-out): the Cars page and menu link disappear
+  const searchOn = () => !!(env("TRAVELLEZ_EMAIL") && env("TRAVELLEZ_PASSWORD")) && !require("./suppliers").isOff("sabre_cars");
   // With the Travellez MCP connected, cars go through it like flights and hotels (CARS_VIA=direct keeps the old route)
   const mcpMod = require("./mcp");
   const viaMcp = () => mcpMod.mcpConnected() && env("CARS_VIA") !== "direct";

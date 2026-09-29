@@ -54,6 +54,7 @@
     }
     const iso = (d) => d.toISOString().slice(0, 10);
     root.innerHTML = `
+      <div id="suppliers"></div>
       <div class="ad-bar">
         <div class="field"><label>From</label><input type="date" id="from" value="${iso(new Date(Date.now() - 30 * 864e5))}"></div>
         <div class="field"><label>To</label><input type="date" id="to" value="${iso(new Date())}"></div>
@@ -170,6 +171,30 @@
         <table class="ad-t"><tr><th>Hotel</th><th class="n">Net</th><th class="n">SSP</th><th class="n">SSP/net</th><th class="n">Public</th><th class="n">SSP @ public</th><th class="n">Public vs SSP</th><th class="n">Guest price now</th><th class="n">Margin</th></tr>
         ${d.rows.map(r => `<tr><td>${esc(r.hotelId)}</td><td class="n">${money(r.net)}</td><td class="n">${money(r.sspAtMargin0)}</td><td class="n">${pct(r.sspOverNet)}</td><td class="n">${money(r.publicTotal)}</td><td class="n">${money(r.sspAtPublicMargin)}</td><td class="n ${r.publicOverSsp < 0.995 ? "bad" : "good"}">${pct(r.publicOverSsp)}</td><td class="n"><b>${money(r.guestPrice)}</b></td><td class="n">${r.guestMargin}%</td></tr>`).join("")}</table>`;
     }
+    // ─── Supplier switches: close out any supplier instantly (search, rooms and checkout); bookings already made stay ───
+    async function loadSuppliers(data) {
+      const box = document.getElementById("suppliers");
+      const d = data || await fetch("/api/admin/suppliers").then(r => r.json()).catch(() => null);
+      if (!d?.suppliers) { box.innerHTML = ""; return; }
+      const groups = [...new Set(d.suppliers.map(x => x.group))];
+      box.innerHTML = `<div class="ad-card" style="margin-bottom:18px"><h3>Suppliers</h3>
+        <p style="color:var(--text-2);font-size:13px;margin-bottom:12px">Switch a supplier off to stop selling it right away: its hotels, rooms, fares or cars disappear from search and checkout on the next search. Bookings already made aren't affected.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">${groups.map(g => `<div><b style="font-size:13px;color:var(--text-2)">${esc(g)}</b>
+          ${d.suppliers.filter(x => x.group === g).map(x => `<label style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line,#eee);cursor:pointer">
+            <span>${esc(x.label)}${x.via ? ` <small style="color:var(--text-2)">via ${esc(x.via)}</small>` : ""}<br><small class="${x.off ? "bad" : "good"}" style="font-weight:700">${x.off ? "Off: not sold" : "On"}</small></span>
+            <input type="checkbox" data-sup="${esc(x.key)}" ${x.off ? "" : "checked"} style="width:20px;height:20px"></label>`).join("")}</div>`).join("")}</div>
+        <div id="supMsg" style="font-size:13px;margin-top:10px"></div></div>`;
+    }
+    document.addEventListener("change", async (e) => {
+      const key = e.target.dataset?.sup; if (!key) return;
+      const on = e.target.checked, label = e.target.closest("label").querySelector("span").firstChild.textContent.trim();
+      if (!confirm(on ? `Switch ${label} back on? It will be sold again from the next search.` : `Switch ${label} off? It stops being sold immediately.`)) { e.target.checked = !on; return; }
+      const r = await fetch("/api/admin/suppliers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, off: !on }) }).then(r => r.json()).catch(() => ({ error: "Network error" }));
+      if (!r.success) { e.target.checked = !on; document.getElementById("supMsg").innerHTML = `<span class="bad">${esc(r.error)}</span>`; return; }
+      await loadSuppliers(r);
+      document.getElementById("supMsg").innerHTML = `<span class="good">${esc(label)} is now ${on ? "on" : "off"}.</span>`;
+    });
+    loadSuppliers();
     document.getElementById("go").onclick = load;
     document.addEventListener("submit", async (e) => {
       if (e.target.id !== "mkForm") return;

@@ -97,6 +97,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
 
   // Same pricing rule as the legacy search: members see net rates, guests get a 10% margin.
   const pricing = require("./pricing");
+const sup = require("./suppliers");
   const isMember = (req) => { try { return !!jwt.verify(req.cookies?.token || "", JWT_SECRET); } catch { return false; } };
   function marginFor(req) { return pricing.marginFor(isMember(req)); }
   // Extra hotel discount for paid members (Essential / Plus), in margin points
@@ -466,14 +467,16 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
         : b.placeId ? cached("placeloc:" + b.placeId, 30 * 24 * 60 * MIN, () => lite(`/data/places/${encodeURIComponent(b.placeId)}`, { timeoutMs: 10000 })).then(pr => pr?.json?.data?.location ? { lat: pr.json.data.location.latitude, lng: pr.json.data.location.longitude } : null).catch(() => null)
         : Promise.resolve(null);
       // Only the main hotel search asks Travellez (30-40s, heavy): homepage deal tiles and map drags pass noMcp
-      const mcpHotelsP = b.noMcp ? Promise.resolve([]) : centreP.then(c => c ? cached("mcphotels:" + JSON.stringify([c, b.checkin, b.checkout, b.adults, b.rooms, searchBody.currency, hasGeo ? b.radius : 15]), 5 * MIN,
+      const mcpHotelsP = b.noMcp ? Promise.resolve([]) : centreP.then(c => c ? cached("mcphotels:" + JSON.stringify([sup.gen(), c, b.checkin, b.checkout, b.adults, b.rooms, searchBody.currency, hasGeo ? b.radius : 15]), 5 * MIN,
         () => mcpMod.searchHotels({ lat: c.lat, lng: c.lng, radiusKm: hasGeo ? (+b.radius || 5000) / 1000 : 15, checkin: b.checkin, checkout: b.checkout, adults: +b.adults || 2, rooms: +b.rooms || 1, currency: searchBody.currency })
           .then(list => mcpMod.fillPhotos(list)),
         (v) => Array.isArray(v) && v.length > 0) : []).catch(() => []);
-      const r = await cached("stays:" + JSON.stringify(searchBody), 5 * MIN, () => lite("/hotels/rates", { method: "POST", body: searchBody })).catch(e => ({ ok: false, status: 0, json: { error: { message: e.message } } }));
+      // LiteAPI switched off in /admin (supplier close-out): Travellez hotels only
+      const r = sup.isOff("liteapi_hotels") ? { ok: false, off: true, status: 0, json: {} }
+        : await cached("stays:" + JSON.stringify(searchBody), 5 * MIN, () => lite("/hotels/rates", { method: "POST", body: searchBody })).catch(e => ({ ok: false, status: 0, json: { error: { message: e.message } } }));
       if (!r.ok) {
         const onlyMcp = await mcpHotelsP;
-        if (onlyMcp.length) return res.json({ success: true, data: onlyMcp, pricing: { member: isMember(req), package: false, memberFactor: pricing.memberFactor() } });
+        if (onlyMcp.length || r.off) return res.json({ success: true, data: onlyMcp, pricing: { member: isMember(req), package: false, memberFactor: pricing.memberFactor() } });
         if (r.status === 404 || r.json?.error?.code === 2001) return res.json({ success: true, data: [] });
         return res.status(502).json({ error: errMessage(r, "Hotel search failed") });
       }
@@ -718,9 +721,10 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
       const fq = { legs: b.legs.map(l => ({ origin: l.origin, destination: l.destination, date: l.date })), adults: b.adults || 1, currency: b.currency || "USD", country: b.country || "US" };
       // Travellez MCP (Duffel, Mystifly, Sabre…) runs alongside LiteAPI; either one alone is enough to show results.
       const mcp = require("./mcp");
-      const mcpP = cached("mcpflights:" + JSON.stringify(fq), 5 * MIN, () => mcp.searchFlights(fq), (v) => Array.isArray(v) && v.length > 0).catch(() => []);
+      const mcpP = cached("mcpflights:" + JSON.stringify([sup.gen(), fq]), 5 * MIN, () => mcp.searchFlights(fq), (v) => Array.isArray(v) && v.length > 0).catch(() => []);
       // Offers stay bookable well beyond 10 minutes; prebook re-checks the price anyway.
-      const result = await cached("flights:" + JSON.stringify(fq), 10 * MIN, () => flightEngine.searchFlights(fq)).catch(e => ({ success: false, error: { message: e.message } }));
+      const result = sup.isOff("liteapi_flights") ? { success: false, error: { message: "No flights found" } } // closed out in /admin
+        : await cached("flights:" + JSON.stringify(fq), 10 * MIN, () => flightEngine.searchFlights(fq)).catch(e => ({ success: false, error: { message: e.message } }));
       const mcpJourneys = await mcpP;
       if (!result.success && !mcpJourneys.length) {
         const e = result.error || {};
@@ -798,6 +802,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     const b = req.body || {};
     const ids = (Array.isArray(b.hotelIds) ? b.hotelIds : []).filter(id => /^lp[0-9a-z]+$/i.test(id)).slice(0, 40);
     if (!ids.length || !/^\d{4}-\d{2}-\d{2}$/.test(b.checkin || "") || !/^\d{4}-\d{2}-\d{2}$/.test(b.checkout || "")) return res.status(400).json({ error: "hotelIds, checkin and checkout are required" });
+    if (sup.isOff("liteapi_hotels")) return res.json({ success: true, data: [] });
     const day = 86400000, ci = Date.parse(b.checkin + "T00:00:00Z"), co = Date.parse(b.checkout + "T00:00:00Z");
     const nights = Math.round((co - ci) / day);
     if (!(nights >= 1 && nights <= 30)) return res.status(400).json({ error: "Invalid dates" });
@@ -840,6 +845,7 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
     }
     // Same hotel also sold through the MCP: its rooms join the list below
     const mcpRoomsP = /^tz-/.test(String(b.tz || "")) ? require("./mcp").hotelRooms(b.tz, mcpStay).catch(() => []) : Promise.resolve([]);
+    if (sup.isOff("liteapi_hotels")) return res.json({ success: true, data: await mcpRoomsP, pricing: { member: isMember(req), package: false, memberFactor: pricing.memberFactor() } });
     try {
       const roomsBody = {
           hotelIds: [b.hotelId],

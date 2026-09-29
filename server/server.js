@@ -359,6 +359,7 @@ app.get("/api/hotels/:id", async (req, res) => {
 
 // ─── Prebook Hotel ───
 app.post("/api/hotels/prebook", async (req, res) => {
+  if (require("./modules/suppliers").isOff("liteapi_hotels")) return res.status(410).json({ error: "This room is no longer available. Please choose another one." });
   try {
     const { offerId, voucherCode, addons, usePaymentSdk } = req.body;
     // Guests can book without an account; signed-in members get member pricing upstream.
@@ -484,6 +485,7 @@ const paymentSdk = require("./modules/payment-sdk");
 
 // ─── Flight Prebook ───
 app.post("/api/flights/prebook", async (req, res) => {
+  if (require("./modules/suppliers").isOff("liteapi_flights")) return res.status(410).json({ error: "This fare is no longer available. Please search again." });
   try {
     // Guest checkout allowed — signing in is optional.
 
