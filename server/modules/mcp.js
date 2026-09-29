@@ -57,24 +57,30 @@ async function fxRate(from, to) {
   return (rates[to] / rates[from]) * (1 + fxBuffer() / 100);
 }
 
-// ─── MCP session: one login, reused until the MCP says it expired ───
-let token = null, loggingIn = null;
-async function login() {
-  const r = await fetch(`${base()}/api/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: env("TRAVELLEZ_EMAIL"), password: env("TRAVELLEZ_PASSWORD") }), signal: AbortSignal.timeout(30000) });
+// ─── MCP sessions: one login per Travellez account, reused until the MCP says it expired ───
+// "main" searches every supplier (Travellez shows each hotel once, under one supplier). The optional "sabre" account
+// (TRAVELLEZ_SABRE_EMAIL / _PASSWORD) searches Sabre only, so Sabre's rates show for hotels Travellez files under RateHawk.
+const ACCOUNTS = { main: ["TRAVELLEZ_EMAIL", "TRAVELLEZ_PASSWORD"], sabre: ["TRAVELLEZ_SABRE_EMAIL", "TRAVELLEZ_SABRE_PASSWORD"] };
+const sabreAccount = () => connected() && !!(env("TRAVELLEZ_SABRE_EMAIL") && env("TRAVELLEZ_SABRE_PASSWORD"));
+const sessions = {};
+async function login(account) {
+  const [ek, pk] = ACCOUNTS[account] || ACCOUNTS.main;
+  const r = await fetch(`${base()}/api/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: env(ek), password: env(pk) }), signal: AbortSignal.timeout(30000) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.access_token) throw new Error(`MCP login failed (${r.status})`);
-  token = j.access_token;
-  return token;
+  if (!r.ok || !j.access_token) throw new Error(`MCP login failed (${account}, ${r.status})`);
+  sessions[account].token = j.access_token;
+  return j.access_token;
 }
-async function getToken(force) {
-  if (token && !force) return token;
-  loggingIn = loggingIn || login().finally(() => { loggingIn = null; });
-  return loggingIn;
+async function getToken(force, account = "main") {
+  const s = sessions[account] = sessions[account] || { token: null, loggingIn: null };
+  if (s.token && !force) return s.token;
+  s.loggingIn = s.loggingIn || login(account).finally(() => { s.loggingIn = null; });
+  return s.loggingIn;
 }
-async function mcp(path, { method = "GET", body, query, timeoutMs = 60000 } = {}) {
+async function mcp(path, { method = "GET", body, query, timeoutMs = 60000, account = "main" } = {}) {
   const url = `${base()}${path}${query ? "?" + new URLSearchParams(query) : ""}`;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const t = await getToken(attempt > 0);
+    const t = await getToken(attempt > 0, account === "sabre" ? "sabre" : "main");
     const r = await fetch(url, { method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) });
     if (r.status === 401 && attempt === 0) continue;
     const text = await r.text();
@@ -204,7 +210,9 @@ const hotelsSeen = new Map(); // tz hotel id → what the search told us (name, 
 const roomOffers = new Map(); // tzh offer id → rate details (the price is only trusted from here, never from the browser)
 const HOTEL_TTL = 3 * 3600 * 1000, OFFER_TTL = 60 * 60 * 1000;
 const sweepMaps = () => { const now = Date.now(); for (const [k, v] of hotelsSeen) if (now - v.at > HOTEL_TTL) hotelsSeen.delete(k); for (const [k, v] of roomOffers) if (now - v.at > OFFER_TTL) roomOffers.delete(k); };
-const tzHotelId = (h) => "tz-" + b64({ s: h.id, a: h.accommodation_id, t: String(h.type || "1"), la: +(+h.lat).toFixed(5), lo: +(+h.lng).toFixed(5) });
+// x: "s" = found through the Sabre-only account (its rates and bookings must use that account too)
+const tzHotelId = (h) => "tz-" + b64({ s: h.id, a: h.accommodation_id, t: String(h.type || "1"), la: +(+h.lat).toFixed(5), lo: +(+h.lng).toFixed(5), ...(h.account === "sabre" ? { x: "s" } : {}) });
+const accountOf = (k) => (k?.x === "s" ? "sabre" : "main");
 const parseHotelId = (id) => String(id || "").startsWith("tz-") ? unb64(String(id).slice(3)) : null;
 // RateHawk sends photos as one comma-joined string of URLs with a {size} placeholder
 const photosOf = (h) => [h.photo, ...(h.photos || []).map(p => typeof p === "string" ? p : p?.url)]
@@ -217,26 +225,37 @@ async function searchHotels({ lat, lng, radiusKm = 15, checkin, checkout, adults
   if (!hotelsVisible() || !Number.isFinite(+lat) || !Number.isFinite(+lng)) return [];
   try {
     // Travellez searches every hotel supplier before answering (often 30-40s); the stays route doesn't wait for it
-    const r = await mcp("/api/v2/hotels/search", { method: "POST", timeoutMs: +env("MCP_HOTEL_TIMEOUT_MS") || 75000, body: {
+    const body = {
       check_in: checkin, check_out: checkout, latitude: +lat, longitude: +lng, radius: Math.max(1, Math.min(50, Math.round(radiusKm))),
       guests: Array.from({ length: Math.max(1, Math.min(9, +adults || 2)) }, () => "adult"), rooms: Math.max(1, +rooms || 1),
       // Travellez answers 100 hotels a page, cheapest first; big cities have 1,000+ (pricier chains, incl. most Sabre hotels,
       // come after the first 300). All pages together take about as long as three.
       max_pages: Math.max(1, Math.min(20, +env("MCP_HOTEL_PAGES") || 15)),
-    } });
-    if (!r.ok) { console.warn("MCP hotel search:", r.status, (r.text || "").slice(0, 200)); return []; }
+    };
+    const timeoutMs = +env("MCP_HOTEL_TIMEOUT_MS") || 75000;
+    const withSabre = sabreAccount() && PREPAID_TYPES().has("3");
+    const [r, rs] = await Promise.all([
+      mcp("/api/v2/hotels/search", { method: "POST", timeoutMs, body }).catch(e => ({ ok: false, text: e.message })),
+      // Travellez caches searches by location + dates, not by account: search a point ~1 m north so the Sabre-only
+      // account never gets (or gives) the main account's cached results
+      withSabre ? mcp("/api/v2/hotels/search", { method: "POST", timeoutMs, body: { ...body, latitude: +(body.latitude + 0.00001).toFixed(6) }, account: "sabre" }).catch(e => ({ ok: false, text: e.message })) : null,
+    ]);
+    if (!r.ok) console.warn("MCP hotel search:", r.status, (r.text || "").slice(0, 200));
+    if (rs && !rs.ok) console.warn("MCP hotel search (Sabre account):", rs.status, (rs.text || "").slice(0, 200));
+    if (!r.ok && !rs?.ok) return [];
     sweepMaps();
     const nights = Math.max(1, Math.round((Date.parse(checkout) - Date.parse(checkin)) / 86400000));
-    const types = PREPAID_TYPES(), out = [], results = r.json?.results || [], show = String(currency || "").toUpperCase();
+    const results = [...(r.ok ? r.json?.results || [] : []), ...(rs?.ok ? (rs.json?.results || []).map(h => ({ ...h, _account: "sabre" })) : [])];
+    const types = PREPAID_TYPES(), out = [], show = String(currency || "").toUpperCase();
     const rates = {};
     for (const c of new Set(results.map(h => String(h.cheapest_rate_currency || "").toUpperCase()).filter(Boolean))) rates[c] = await fxRate(c, show || c);
     for (const h of results) {
       const type = String(h.type || "1"), net = parseFloat(h.cheapest_rate_total_amount), cur = String(h.cheapest_rate_currency || "").toUpperCase();
       if (!types.has(type) || !(net > 0) || !cur || !(rates[cur] > 0)) continue;
       const hlat = +(h.latitude ?? h.geographic_coordinates?.latitude), hlng = +(h.longitude ?? h.geographic_coordinates?.longitude);
-      const id = tzHotelId({ ...h, type, lat: hlat, lng: hlng });
+      const id = tzHotelId({ ...h, type, lat: hlat, lng: hlng, account: h._account });
       const photos = photosOf(h), total = hotelSell(net * rates[cur]);
-      hotelsSeen.set(id, { at: Date.now(), raw: h, photos, type });
+      hotelsSeen.set(id, { at: Date.now(), raw: h, photos, type, alt: [] });
       out.push({
         id, mcp: true, supplier: SUPPLIER[type] || `type${type}`, name: h.name, photo: photos[0] || null, thumb: photos[0] || null,
         address: h.address?.line_one || "", city: h.address?.city_name || "", country: h.address?.country_code || null,
@@ -245,7 +264,7 @@ async function searchHotels({ lat, lng, radiusKm = 15, checkin, checkout, adults
         refundable: false, refundAny: false, meals: [], cancelUnknown: true,
       });
     }
-    return out;
+    return mergeMcp(out);
   } catch (e) { console.warn("MCP hotel search:", e.message); return []; }
 }
 
@@ -283,6 +302,24 @@ async function fillPhotos(list) {
     if (seen) { seen.photos = [t.main_photo]; seen.liteId = t.id; }
   }));
   return list;
+}
+
+/** The same hotel found by both Travellez accounts (e.g. RateHawk on the main account, Sabre on the Sabre-only one) shows
+ *  once, at the cheaper price; the hotel page lists the rooms of both (seen.alt). Same Sabre hotel twice → kept once. */
+function mergeMcp(list) {
+  const out = [];
+  for (const m of list) {
+    const twin = out.find(h => h.lat && h.lng && kmBetween(h.lat, h.lng, m.lat, m.lng) < 0.25 && normName(h.name) === normName(m.name));
+    if (!twin) { out.push(m); continue; }
+    if (twin.supplier === m.supplier) continue; // same supplier from both accounts: identical rates
+    const [keep, other] = m.total < twin.total ? [m, twin] : [twin, m];
+    const ks = hotelsSeen.get(keep.id), os = hotelsSeen.get(other.id);
+    if (ks) ks.alt = [...new Set([...(ks.alt || []), other.id, ...(os?.alt || [])])];
+    keep.suppliers = [...new Set([...(twin.suppliers || [twin.supplier]), m.supplier])];
+    if (!keep.photo && other.photo) { keep.photo = keep.thumb = other.photo; if (ks && !ks.photos?.length) ks.photos = os?.photos || [other.photo]; }
+    if (keep !== twin) out[out.indexOf(twin)] = keep;
+  }
+  return out;
 }
 
 /** One card per hotel: the same hotel from LiteAPI and the MCP shows once, at the lower price (its MCP rooms join the room list). */
@@ -331,7 +368,7 @@ async function hotelDetails(id, stay) {
 async function fetchRates(id, { checkin, checkout, adults = 2, rooms = 1 }) {
   const k = parseHotelId(id); if (!k) return null;
   // ids as text: RateHawk sends numbers
-  const r = await mcp("/api/v2/hotels/rates", { method: "POST", timeoutMs: 40000, body: {
+  const r = await mcp("/api/v2/hotels/rates", { method: "POST", timeoutMs: 40000, account: accountOf(k), body: {
     search_id: String(k.s ?? ""), accommodation_id: String(k.a ?? ""), provider_type: k.t, latitude: k.la, longitude: k.lo, check_in: checkin, check_out: checkout,
     guests: Array.from({ length: Math.max(1, Math.min(9, +adults || 2)) }, () => "adult"), rooms: Math.max(1, +rooms || 1),
   } });
@@ -339,8 +376,13 @@ async function fetchRates(id, { checkin, checkout, adults = 2, rooms = 1 }) {
   return r.json;
 }
 
-/** Rooms for an MCP hotel, in the shape the hotel page renders. */
+/** Rooms for an MCP hotel, in the shape the hotel page renders, plus the rooms of the same hotel from the other account. */
 async function hotelRooms(id, stay) {
+  const ids = [id, ...(hotelsSeen.get(id)?.alt || [])];
+  const lists = await Promise.all(ids.map(x => roomsFor(x, stay).catch(() => [])));
+  return lists.flat().sort((a, b) => a.total - b.total);
+}
+async function roomsFor(id, stay) {
   const k = parseHotelId(id);
   if (!k || !hotelsVisible() || !PREPAID_TYPES().has(k.t)) return [];
   const d = await fetchRates(id, stay).catch(() => null);
@@ -366,7 +408,7 @@ async function hotelRooms(id, stay) {
     // Pay at the hotel: the hotel's own price (no markup, nothing charged by us), converted without the FX buffer
     const total = payAtHotel ? Math.round(net * rates[rc] / (1 + (rc === (cur || rc) ? 0 : fxBuffer() / 100)) * 100) / 100 : hotelSell(net * rates[rc]);
     // net + currency = what the supplier charges; show = what the customer sees and pays in
-    roomOffers.set(offerId, { at: now, hotelId: id, rate_id: rateId, provider_type: k.t, net, currency: rc, show: cur || rc, payAtHotel, approx: total, stay: { checkin: stay.checkin, checkout: stay.checkout, adults: +stay.adults || 2, rooms: +stay.rooms || 1 }, room: rt.room_name });
+    roomOffers.set(offerId, { at: now, hotelId: id, account: accountOf(k), rate_id: rateId, provider_type: k.t, net, currency: rc, show: cur || rc, payAtHotel, approx: total, stay: { checkin: stay.checkin, checkout: stay.checkout, adults: +stay.adults || 2, rooms: +stay.rooms || 1 }, room: rt.room_name });
     offers.push({
       offerId, mcp: true, supplier: SUPPLIER[k.t] || `type${k.t}`, mappedRoomId: null, payAtHotel,
       payAtHotelAmount: payAtHotel ? { amount: net, currency: rc } : null, // what the hotel will charge, in its currency
@@ -523,7 +565,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     if (!o || Date.now() - o.at > OFFER_TTL) throw fail("This price has expired. Please reload the hotel page to see the latest rooms.", 410);
     // Lock the latest price where the supplier supports it (some return an error for quotes: then the rate's price stands)
     let net = o.net;
-    const q = await mcp("/api/v2/hotels/quote", { method: "POST", body: { rate_id: o.rate_id } }).catch(() => null);
+    const q = await mcp("/api/v2/hotels/quote", { method: "POST", account: o.account, body: { rate_id: o.rate_id } }).catch(() => null);
     const qd = q?.ok && q.json?.success !== false ? (q.json?.quote?.data || q.json?.data || q.json?.quote || {}) : {};
     if (parseFloat(qd.total_amount) > 0 && String(qd.total_currency || o.currency).toUpperCase() === o.currency) net = parseFloat(qd.total_amount);
     const show = o.show || o.currency, rate = await fxRate(o.currency, show);
@@ -537,7 +579,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     }, { idempotencyKey: `ht-${ref}` });
     const hotelName = hotelsSeen.get(o.hotelId)?.raw?.name || String(b.summary?.title || "Hotel stay");
     db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, supplier, user_id, title, start_date, end_date) VALUES (?, 'hotel', 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(ref, pi.id, price, show, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName, net_currency: o.currency }), SUPPLIER[o.provider_type] || o.provider_type,
+      .run(ref, pi.id, price, show, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, account: o.account, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName, net_currency: o.currency }), SUPPLIER[o.provider_type] || o.provider_type,
         uid(req), hotelName.slice(0, 120), day(o.stay.checkin), day(o.stay.checkout));
     return { prebookId: ref, transactionId: pi.id, secretKey: pi.client_secret, price, currency: show, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY") };
   }
@@ -556,7 +598,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     }, { idempotencyKey: `hts-${ref}` });
     const hotelName = hotelsSeen.get(o.hotelId)?.raw?.name || String(b.summary?.title || "Hotel stay");
     db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, supplier, user_id, title, start_date, end_date) VALUES (?, 'hotel', 'awaiting_payment', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(ref, si.id, show, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName, net_currency: o.currency,
+      .run(ref, si.id, show, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, account: o.account, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName, net_currency: o.currency,
         payAtHotel: true, approx, customer: customer.id }), SUPPLIER[o.provider_type] || o.provider_type, uid(req), hotelName.slice(0, 120), day(o.stay.checkin), day(o.stay.checkout));
     return { prebookId: ref, transactionId: si.id, secretKey: si.client_secret, price: 0, payAtHotel: true, payAtHotelAmount: { amount: net, currency: o.currency }, approx,
       currency: show, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY") };
@@ -582,7 +624,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
       if (pi.metadata?.ref !== ref) throw fail("Payment doesn't match this booking", 400);
       if (pi.status !== (guarantee ? "succeeded" : "requires_capture")) throw fail(guarantee ? "Your card hasn't been saved yet" : "Your card hasn't been authorized yet", 402);
       setRow(ref, { status: "booking", contact_json: JSON.stringify(t), email: t.email });
-      const res = await mcp("/api/v2/hotels/book", { method: "POST", timeoutMs: 120000, body: {
+      const res = await mcp("/api/v2/hotels/book", { method: "POST", timeoutMs: 120000, account: o.account, body: {
         rate_id: o.rate_id, provider_type: o.provider_type, amount: r0.net.toFixed(2), currency: o.net_currency || r0.currency,
         check_in: o.stay.checkin, check_out: o.stay.checkout, rooms: o.stay.rooms, guests: o.stay.adults, traveller: t, comment: `PlanurStay ${ref}`,
       } }).catch(e => ({ ok: false, text: e.message }));
