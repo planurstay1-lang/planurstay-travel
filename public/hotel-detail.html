@@ -390,7 +390,10 @@
 
     // ─── Room filters ───
     let allOffers = [], roomPricing = {};
-    const rf = { refund: false, breakfast: false, sleeps3: false, sort: "low" };
+    const rf = { refund: false, breakfast: false, sleeps3: false, sort: "rec" };
+    // Recommended: a pay-at-the-hotel rate we earn nothing on ranks as if 3% dearer, so a near-equal prepaid rate comes first.
+    // "Price: low to high" is strictly by price.
+    const rk = (o) => rf.sort === "rec" && o.payAtHotel && o.commissionable !== true ? o.total * 1.03 : o.total;
     const hasBreakfast = (o) => /breakfast|half board|full board|all inclusive/i.test(o.board || "");
     function paintRoomFilters() {
       const bar = document.getElementById("roomFilters");
@@ -401,7 +404,7 @@
         ${chip("refund", "Free cancellation", c(o => o.refundable))}
         ${chip("breakfast", "Breakfast included", c(hasBreakfast))}
         ${chip("sleeps3", "Sleeps 3+", c(o => (o.maxOccupancy || 0) >= 3))}
-        <select class="select" id="roomSort" style="margin-left:auto" aria-label="Sort rooms"><option value="low">Price: low to high</option><option value="high">Price: high to low</option></select>`;
+        <select class="select" id="roomSort" style="margin-left:auto" aria-label="Sort rooms"><option value="rec">Recommended</option><option value="low">Price: low to high</option><option value="high">Price: high to low</option></select>`;
       bar.querySelector("#roomSort").value = rf.sort;
       bar.querySelectorAll("[data-rf]").forEach(b => b.onclick = () => { rf[b.dataset.rf] = !rf[b.dataset.rf]; paintRoomFilters(); renderRooms(); });
       bar.querySelector("#roomSort").onchange = (e) => { rf.sort = e.target.value; renderRooms(); };
@@ -474,11 +477,11 @@
         // …plus, where both exist, the cheapest pay-now and the cheapest pay-at-the-hotel option
         const pickF = [opts[0], opts.find(o => o.refundable && !hasBreakfast(o)) || opts.find(o => o.refundable), opts.find(hasBreakfast),
           opts.find(o => o.payAtHotel), opts.find(o => !o.payAtHotel)].filter(Boolean);
-        const top = [...new Set(pickF)].sort((a, b) => a.total - b.total);
+        const top = [...new Set(pickF)].sort((a, b) => rk(a) - rk(b));
         return { opts: [...top, ...opts.filter(o => !top.includes(o))], shown: top.length };
       };
-      const list = [...groups.values()].map(g => { const f = feature(dedupe(g.opts.sort((a, b) => a.total - b.total))); return { ...g, opts: f.opts, shown: f.shown, min: f.opts[0].total, pick: 0 }; })
-        .sort((a, b) => rf.sort === "high" ? b.min - a.min : a.min - b.min);
+      const list = [...groups.values()].map(g => { const f = feature(dedupe(g.opts.sort((a, b) => a.total - b.total))); return { ...g, opts: f.opts, shown: f.shown, min: f.opts[0].total, rank: rk(f.opts[0]), pick: 0 }; })
+        .sort((a, b) => rf.sort === "high" ? b.min - a.min : rf.sort === "rec" ? a.rank - b.rank : a.min - b.min);
 
       const optLabel = (o) => {
         const first = (o.cancelPolicy || []).find(c => c.amount > 0) || (o.cancelPolicy || [])[0];

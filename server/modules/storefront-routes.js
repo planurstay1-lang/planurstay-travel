@@ -82,6 +82,15 @@ function registerStorefrontRoutes(app, { apiKey, jwt, JWT_SECRET, db }) {
   }
   const MIN = 60 * 1000;
 
+  // ─── Travellez hotel searches: one cache key shape for the stays route and the background warmer (prewarm.js) ───
+  // demand = true: the key search_demand counts by (no supplier-switch generation, so switching doesn't split counts)
+  const mcpKey = (p, demand) => (demand ? "" : "mcphotels:") + JSON.stringify([...(demand ? [] : [sup.gen()]), { lat: +p.c.lat, lng: +p.c.lng },
+    p.checkin, p.checkout, +p.adults || 2, +p.rooms || 1, String(p.currency || "USD").toUpperCase(), p.radius ?? 15]);
+  const mcpSearch = (p) => require("./mcp").searchHotels({ lat: p.c.lat, lng: p.c.lng, radiusKm: (p.radius ?? 15) === 15 ? 15 : (+p.radius || 5000) / 1000,
+    checkin: p.checkin, checkout: p.checkout, adults: +p.adults || 2, rooms: +p.rooms || 1, currency: p.currency }).then(list => require("./mcp").fillPhotos(list));
+  const warm = require("./prewarm").createPrewarm({ db, keyFor: mcpKey, search: mcpSearch,
+    put: (k, ttl, v) => cache.set(k, { exp: Date.now() + ttl, p: Promise.resolve(v) }), enabled: () => require("./mcp")._state.hotelsVisible() });
+
   // Photos for supplier hotels that have none/few (Travellez MCP): the same hotel's LiteAPI content, by name + location
   require("./mcp").usePhotoSource({
     find: (name, lat, lng) => cached(`litefind:${String(name).toLowerCase()}|${lat.toFixed(3)},${lng.toFixed(3)}`, 7 * 24 * 60 * MIN,
@@ -108,6 +117,8 @@ const sup = require("./suppliers");
       return row ? pricing.paidExtraPct(row.plan_id) : 0;
     } catch { return 0; }
   };
+  // Recommended-sort boost (0-5) from our margin %, shared with MCP cards (mcp.earnScore)
+  const earnScore = require("./mcp").earnScore;
   // Public prices must not be below the hotel's SSP (rate parity). Members are a closed user group.
   function applyParity(o, member) {
     // Prices come from pricing.priceFor, so guests are never below the hotel's price.
@@ -467,10 +478,12 @@ const sup = require("./suppliers");
         : b.placeId ? cached("placeloc:" + b.placeId, 30 * 24 * 60 * MIN, () => lite(`/data/places/${encodeURIComponent(b.placeId)}`, { timeoutMs: 10000 })).then(pr => pr?.json?.data?.location ? { lat: pr.json.data.location.latitude, lng: pr.json.data.location.longitude } : null).catch(() => null)
         : Promise.resolve(null);
       // Only the main hotel search asks Travellez (30-40s, heavy): homepage deal tiles and map drags pass noMcp
-      const mcpHotelsP = b.noMcp ? Promise.resolve([]) : centreP.then(c => c ? cached("mcphotels:" + JSON.stringify([sup.gen(), c, b.checkin, b.checkout, b.adults, b.rooms, searchBody.currency, hasGeo ? b.radius : 15]), 5 * MIN,
-        () => mcpMod.searchHotels({ lat: c.lat, lng: c.lng, radiusKm: hasGeo ? (+b.radius || 5000) / 1000 : 15, checkin: b.checkin, checkout: b.checkout, adults: +b.adults || 2, rooms: +b.rooms || 1, currency: searchBody.currency })
-          .then(list => mcpMod.fillPhotos(list)),
-        (v) => Array.isArray(v) && v.length > 0) : []).catch(() => []);
+      const mcpHotelsP = b.noMcp ? Promise.resolve([]) : centreP.then(c => {
+        if (!c) return [];
+        const p = { placeId: b.placeId, dest: b.dest, c, checkin: b.checkin, checkout: b.checkout, adults: b.adults, rooms: b.rooms, currency: searchBody.currency, radius: hasGeo ? b.radius : 15 };
+        if (!hasGeo) { warm.record(p); warm.isWarm(p); } // demand for the warmer; counts searches it had ready
+        return cached(mcpKey(p), 5 * MIN, () => mcpSearch(p), (v) => Array.isArray(v) && v.length > 0);
+      }).catch(() => []);
       // LiteAPI switched off in /admin (supplier close-out): Travellez hotels only
       const r = sup.isOff("liteapi_hotels") ? { ok: false, off: true, status: 0, json: {} }
         : await cached("stays:" + JSON.stringify(searchBody), 5 * MIN, () => lite("/hotels/rates", { method: "POST", body: searchBody })).catch(e => ({ ok: false, status: 0, json: { error: { message: e.message } } }));
@@ -533,6 +546,7 @@ const sup = require("./suppliers");
       data.forEach(h => {
         const pk = !!pkg && pkgApplies(pkg, h.lat, h.lng, b.checkin, b.checkout);
         const p = pricing.priceFor(h.total, h.ssp, member || pk, extra, h.refundable);
+        h.earn = earnScore((p.publicTotal / h.total - 1) * 100); // from the guest margin, the same for every visitor
         h.total = p.total; h.publicTotal = p.publicTotal; h.perNight = p.total / h.nights;
         applyParity(h, member || pk);
         if (pk) h.packagePrice = true;

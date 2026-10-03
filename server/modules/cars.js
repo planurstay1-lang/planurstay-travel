@@ -60,6 +60,7 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
 
   try { db.exec("ALTER TABLE car_bookings ADD COLUMN user_id INTEGER"); } catch { /* exists */ }
   const uid = (req) => { try { return jwt && req ? jwt.verify(req.cookies?.token || "", JWT_SECRET).id || null : null; } catch { return null; } };
+  const fraud = require("./fraud").init({ db, sendEmail });
 
   // ─── Travellez session (one PlanurStay account; token re-used until it expires) ───
   let token = null, tokenExp = 0, loggingIn = null;
@@ -234,14 +235,16 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
     const ref = "CAR-" + crypto.randomBytes(5).toString("hex").toUpperCase();
     const cur = q.car.currency.toUpperCase();
     const amount = ZERO_DEC.has(cur) ? Math.round(q.car.price) : Math.round(q.car.price * 100);
+    const chk = await fraud.preCheck({ req, amount: q.car.price, currency: cur, email: d.email, userId: uid(req) });
     const pi = await stripe().paymentIntents.create({
       amount, currency: cur.toLowerCase(), capture_method: "manual",
-      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      automatic_payment_methods: { enabled: true, allow_redirects: "never" }, ...fraud.holdOptions(chk.threeDs),
       description: `PlanurStay car rental ${ref}: ${q.car.vendor} ${q.car.model}, ${q.ctx.pickupCode} ${q.ctx.pickupDate}–${q.ctx.returnDate}`,
       receipt_email: d.email, metadata: { type: "car", ref },
     }, { idempotencyKey: `car-${ref}` });
     db.prepare("INSERT INTO car_bookings (ref, status, payment_intent, amount, currency, net, quote_json, driver_json, user_id) VALUES (?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?)")
       .run(ref, pi.id, q.car.price, cur, q.net, JSON.stringify({ rateKey: q.rateKey, rateCode: q.rateCode, ctx: q.ctx, car: q.car }), JSON.stringify(d), uid(req));
+    fraud.tag("car_bookings", ref, req, d.email);
     return { ref, clientSecret: pi.client_secret, amount: q.car.price, currency: cur };
   }
 
@@ -343,6 +346,13 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
       const pi = await s.paymentIntents.retrieve(r0.payment_intent);
       if (pi.metadata?.ref !== ref) throw Object.assign(new Error("Payment doesn't match this booking"), { status: 400 });
       if (pi.status !== "requires_capture") throw Object.assign(new Error("Your card hasn't been authorized yet"), { status: 402 });
+      // Card risk check (fraud.js): a risky card is released and nothing is booked
+      const rv = await fraud.review(s, pi, { ref, kind: "Car", table: "car_bookings" });
+      if (!rv.ok) {
+        await s.paymentIntents.cancel(pi.id).catch(e => console.warn("Car PI cancel:", e.message));
+        setRow(ref, { status: "failed", error: "Payment review: " + rv.reason });
+        return summary(row(ref));
+      }
       const q = JSON.parse(r0.quote_json), d = JSON.parse(r0.driver_json);
       setRow(ref, { status: "booking" });
       const out = await placeBooking(ref, q, d);
@@ -370,7 +380,7 @@ function createCars({ db, sendEmail, jwt, JWT_SECRET }) {
     const q = JSON.parse(r.quote_json || "{}"), d = JSON.parse(r.driver_json || "{}");
     const counter = !r.payment_intent;
     return { ref: r.ref, status: r.status, amount: r.amount, currency: r.currency, supplierRef: r.supplier_ref, car: q.car, ctx: q.ctx, freeCancelUntil: q.car?.freeCancelUntil || null, payAtPickup: counter,
-      driver: { firstName: d.firstName, lastName: d.lastName, email: d.email }, error: r.status === "failed" ? `The rental company couldn't confirm this car.${counter ? "" : " You have not been charged."}` : null };
+      driver: { firstName: d.firstName, lastName: d.lastName, email: d.email }, error: r.status === "failed" ? String(r.error || "").startsWith("Payment review:") ? fraud.REVIEW_MSG : `The rental company couldn't confirm this car.${counter ? "" : " You have not been charged."}` : null };
   }
 
   async function notify(ref) {

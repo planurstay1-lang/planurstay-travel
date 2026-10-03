@@ -32,6 +32,12 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
   const sup = require("./suppliers");
   try { sup.setOff(JSON.parse(db.prepare("SELECT value FROM site_settings WHERE key = 'suppliersOff'").get()?.value || "[]")); } catch { sup.setOff([]); }
 
+  // Smart pricing & safety: market pricing (market-pricing.js), card safety (fraud.js), ready searches (prewarm.js)
+  const market = require("./market-pricing"), fraud = require("./fraud").init({ db });
+  try { market.setSettings(JSON.parse(db.prepare("SELECT value FROM site_settings WHERE key = 'marketPricing'").get()?.value || "{}")); } catch (e) { console.warn("Market pricing settings:", e.message); }
+  const saveSetting = (key, v) => db.prepare("INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP").run(key, JSON.stringify(v));
+  const smart = () => ({ market: { settings: market.settings(), stats: market.stats() }, fraud: fraud.overview(), prewarm: require("./prewarm").current()?.status() || null });
+
   async function da(path, body) {
     const r = await fetch("https://da.liteapi.travel" + path, {
       method: "POST", headers: { "X-Api-Key": apiKey(), "Content-Type": "application/json", Accept: "application/json" },
@@ -72,6 +78,23 @@ function createAdmin({ db, apiKey, jwt, JWT_SECRET, dbInfo = {} }) {
       db.prepare("INSERT INTO site_settings (key, value, updated_at) VALUES ('suppliersOff', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP").run(JSON.stringify(list));
       console.log(`Supplier ${key} switched ${b.off ? "OFF" : "ON"} by ${adminUser(req)?.email}`);
       res.json({ success: true, suppliers: sup.SUPPLIERS.map(x => ({ ...x, off: sup.isOff(x.key) })) });
+    });
+
+    app.get("/api/admin/smart", guard, (req, res) => res.json({ success: true, ...smart() }));
+    app.post("/api/admin/market", guard, (req, res) => {
+      try { const s = market.setSettings(req.body || {}); saveSetting("marketPricing", s); console.log("Market pricing updated by", adminUser(req)?.email, JSON.stringify(s)); res.json({ success: true, ...smart() }); }
+      catch (e) { res.status(400).json({ error: e.message }); }
+    });
+    app.post("/api/admin/fraud", guard, (req, res) => {
+      try { fraud.setSettings(req.body || {}); console.log("Card safety updated by", adminUser(req)?.email, JSON.stringify(fraud.settings())); res.json({ success: true, ...smart() }); }
+      catch (e) { res.status(400).json({ error: e.message }); }
+    });
+    app.post("/api/admin/prewarm", guard, (req, res) => {
+      const w = require("./prewarm").current();
+      if (!w) return res.status(503).json({ error: "Not ready yet" });
+      if ("on" in (req.body || {})) w.setOn(!!req.body.on);
+      if (req.body?.runNow) w.cycle(true).catch(() => {});
+      res.json({ success: true, ...smart() });
     });
 
     app.post("/api/admin/pricing", guard, (req, res) => {

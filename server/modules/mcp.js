@@ -18,6 +18,7 @@
  */
 const crypto = require("crypto");
 const sup = require("./suppliers");
+const market = require("./market-pricing");
 
 const env = (k) => String(process.env[k] || "").trim();
 const base = () => env("TRAVELLEZ_MCP_URL").replace(/\/$/, "");
@@ -156,11 +157,21 @@ function toJourney(f, requestId, flightType, currency, rates = {}) {
     terms: { refundable: !!c.is_refundable, changeable: !!c.is_changeable },
     segmentFares: [],
   };
-  return {
+  const j = {
     journeyKey: "tz-" + f.id, supplier: offer.supplier,
     legDurations, totalDuration: { minutes: legDurations.reduce((a, l) => a + l.duration.minutes, 0) },
     connections, segments, cheapestOffer: { ...offer, segmentAmenities: [] }, offers: [offer],
   };
+  // Our cost in the customer's currency + the offer id fields, for market pricing (not enumerable: never sent out)
+  Object.defineProperty(j, "_tz", { value: { net: net * rate, o: { i: f.id, r: requestId, p: source, t: flightType, c: show } } });
+  return j;
+}
+/** Re-price an MCP journey at a margin (signed into its offer id so the hold charges the same). */
+function repriceJourney(j, margin) {
+  const t = j._tz; if (!t) return;
+  const total = market.sellAt(t.net, margin);
+  const offerId = "tz:" + b64(market.withSig(margin === markup() ? t.o : { ...t.o, m: margin }));
+  for (const o of [j.cheapestOffer, ...(j.offers || [])]) if (o) { o.offerId = offerId; o.pricing.display.total = total; }
 }
 
 // Same flight = same flight numbers and first departure time on every leg, whoever sells it
@@ -173,11 +184,18 @@ const priceOf = (j) => +(j.cheapestOffer?.pricing?.display?.total ?? Infinity);
 
 /** Merge LiteAPI + MCP journeys: one card per physical flight, at the cheaper price. */
 function mergeJourneys(liteJourneys, mcpJourneys) {
+  // Market price: the same flight sold by LiteAPI, in the same currency
+  const lite = new Map();
+  for (const j of liteJourneys) { const k = signature(j), p = priceOf(j); if (Number.isFinite(p) && !(lite.get(k)?.p <= p)) lite.set(k, { p, c: j.cheapestOffer?.pricing?.display?.currency }); }
+  for (const j of mcpJourneys) {
+    const t = lite.get(signature(j)), cur = j.cheapestOffer?.pricing?.display?.currency;
+    repriceJourney(j, market.marginFor("flight", j._tz?.net, t && t.c === cur ? t.p : null, markup()));
+  }
   const bySig = new Map(), out = [];
   for (const j of [...liteJourneys, ...mcpJourneys]) {
     const sig = signature(j), cur = j.cheapestOffer?.pricing?.display?.currency;
     const seen = bySig.get(sig);
-    if (!seen) { bySig.set(sig, out.length); out.push(j); continue; }
+    if (seen === undefined) { bySig.set(sig, out.length); out.push(j); continue; } // index 0 is a real match
     const other = out[seen];
     if (other.cheapestOffer?.pricing?.display?.currency === cur && priceOf(j) < priceOf(other)) out[seen] = j;
   }
@@ -206,7 +224,27 @@ async function searchFlights({ legs, adults = 1, currency }) {
 }
 
 // ─── Hotels (RateHawk/WorldOta, Duffel Stays) ───
-const hotelSell = (net) => Math.ceil(net * (1 + hotelMarkup() / 100) * 100) / 100;
+const hotelSell = (net, pct = hotelMarkup()) => market.sellAt(net, pct);
+/** Recommended-sort boost (0-5 points) from our margin %: one point per 5%. A bucket only, never the margin itself. */
+const earnScore = (pct) => Math.max(0, Math.min(5, Math.floor((+pct || 0) / 5)));
+/** Sabre rate plans: true = the hotel pays us commission, false = it says it doesn't, null = not stated. */
+function sabreCommission(rp) {
+  let found = null;
+  const walk = (o, d) => {
+    if (!o || typeof o !== "object" || d > 5) return;
+    for (const [k, v] of Object.entries(o)) {
+      if (/non.?commission/i.test(k)) { if (v === true || /^(true|y|yes)$/i.test(String(v))) found = false; }
+      else if (/commission/i.test(k) && found !== false) {
+        const vals = v && typeof v === "object" ? Object.values(v) : [v];
+        if (v === false || /^(false|n|no)$/i.test(String(v))) found = false;
+        else if (v === true || vals.some(x => parseFloat(x) > 0)) found = true;
+      }
+      if (v && typeof v === "object") walk(v, d + 1);
+    }
+  };
+  walk(rp, 0);
+  return found;
+}
 const hotelsSeen = new Map(); // tz hotel id → what the search told us (name, photos, address…), for the hotel page
 const roomOffers = new Map(); // tzh offer id → rate details (the price is only trusted from here, never from the browser)
 const HOTEL_TTL = 3 * 3600 * 1000, OFFER_TTL = 60 * 60 * 1000;
@@ -256,12 +294,13 @@ async function searchHotels({ lat, lng, radiusKm = 15, checkin, checkout, adults
       const hlat = +(h.latitude ?? h.geographic_coordinates?.latitude), hlng = +(h.longitude ?? h.geographic_coordinates?.longitude);
       const id = tzHotelId({ ...h, type, lat: hlat, lng: hlng, account: h._account });
       const photos = photosOf(h), total = hotelSell(net * rates[cur]);
-      hotelsSeen.set(id, { at: Date.now(), raw: h, photos, type, alt: [] });
+      // netShow: our cost in the customer's currency, so mergeHotels can price it against the market (never sent out)
+      hotelsSeen.set(id, { at: Date.now(), raw: h, photos, type, alt: [], netShow: net * rates[cur] });
       out.push({
         id, mcp: true, supplier: SUPPLIER[type] || `type${type}`, name: h.name, photo: photos[0] || null, thumb: photos[0] || null,
         address: h.address?.line_one || "", city: h.address?.city_name || "", country: h.address?.country_code || null,
         lat: hlat, lng: hlng, stars: +h.rating || 0, rating: +h.review_score || 0, reviews: 0, nights,
-        total, publicTotal: total, perNight: total / nights, currency: show || cur, offerId: null,
+        total, publicTotal: total, perNight: total / nights, currency: show || cur, offerId: null, earn: earnScore(hotelMarkup()),
         refundable: false, refundAny: false, meals: [], cancelUnknown: true,
       });
     }
@@ -325,18 +364,32 @@ function mergeMcp(list) {
 
 /** One card per hotel: the same hotel from LiteAPI and the MCP shows once, at the lower price (its MCP rooms join the room list). */
 function mergeHotels(lite, mcpList) {
-  const out = [...lite];
+  const out = [...lite], marketOf = new Map(); // LiteAPI guest price per twin, before any MCP price replaces it
   for (const m of mcpList) {
     const nm = normName(m.name);
     const twin = out.find(h => !h.mcp && h.lat && h.lng && kmBetween(h.lat, h.lng, m.lat, m.lng) < 0.25 && normName(h.name) === nm);
+    if (twin && !marketOf.has(twin)) marketOf.set(twin, twin.currency === m.currency ? twin.strikeTotal || twin.total : null);
+    priceToMarket(m, twin ? marketOf.get(twin) : null);
     if (!twin) { out.push(m); continue; }
     // The hotel page adds the rooms of the cheapest MCP twin (e.g. RateHawk over Duffel Stays for the same hotel)
     if (!twin.tz || m.total < twin._tzTotal) { twin.tz = m.id; twin._tzTotal = m.total; }
     if (twin.currency === m.currency && !twin.memberOnly && m.total < twin.total) {
-      Object.assign(twin, { total: m.total, publicTotal: m.total, perNight: m.perNight, strikeTotal: null, memberPrice: false, packagePrice: false, via: "mcp" });
+      Object.assign(twin, { total: m.total, publicTotal: m.total, perNight: m.perNight, strikeTotal: null, memberPrice: false, packagePrice: false, via: "mcp", earn: m.earn });
     }
   }
   return out;
+}
+
+/** Price an MCP hotel card (and its rooms, through seen.margin) against the market price; flat markup without one.
+ *  Recomputed from our cost every time, so cached cards never carry another search's price. */
+function priceToMarket(m, marketTotal) {
+  const seen = hotelsSeen.get(m.id);
+  if (!(seen?.netShow > 0)) return;
+  const margin = market.marginFor("hotel", seen.netShow, marketTotal, hotelMarkup());
+  for (const x of [m.id, ...(seen.alt || [])]) { const sx = hotelsSeen.get(x); if (sx) sx.margin = margin; }
+  m.total = m.publicTotal = hotelSell(seen.netShow, margin);
+  m.earn = earnScore(margin);
+  m.perNight = m.total / (m.nights || 1);
 }
 
 /** Hotel page data for a hotel that only the MCP sells (built from the search and the room list). */
@@ -407,11 +460,14 @@ async function roomsFor(id, stay) {
       ...(rt.cancellation_time || []).map(c => c?.free_cancellation_before)].filter(t => Date.parse(t) > now).sort();
     const offerId = "tzh:" + crypto.randomBytes(12).toString("hex");
     // Pay at the hotel: the hotel's own price (no markup, nothing charged by us), converted without the FX buffer
-    const total = payAtHotel ? Math.round(net * rates[rc] / (1 + (rc === (cur || rc) ? 0 : fxBuffer() / 100)) * 100) / 100 : hotelSell(net * rates[rc]);
+    const margin = hotelsSeen.get(id)?.margin ?? hotelMarkup(); // market-priced in the search, else the flat markup
+    const total = payAtHotel ? Math.round(net * rates[rc] / (1 + (rc === (cur || rc) ? 0 : fxBuffer() / 100)) * 100) / 100 : hotelSell(net * rates[rc], margin);
     // net + currency = what the supplier charges; show = what the customer sees and pays in
-    roomOffers.set(offerId, { at: now, hotelId: id, account: accountOf(k), rate_id: rateId, provider_type: k.t, net, currency: rc, show: cur || rc, payAtHotel, approx: total, stay: { checkin: stay.checkin, checkout: stay.checkout, adults: +stay.adults || 2, rooms: +stay.rooms || 1 }, room: rt.room_name });
+    roomOffers.set(offerId, { at: now, hotelId: id, account: accountOf(k), rate_id: rateId, provider_type: k.t, net, currency: rc, show: cur || rc, payAtHotel, approx: total, margin, stay: { checkin: stay.checkin, checkout: stay.checkout, adults: +stay.adults || 2, rooms: +stay.rooms || 1 }, room: rt.room_name });
     offers.push({
       offerId, mcp: true, supplier: SUPPLIER[k.t] || `type${k.t}`, mappedRoomId: null, payAtHotel,
+      // Pay at the hotel earns only the hotel's commission (paid later), so the room list ranks it by this
+      commissionable: payAtHotel ? sabreCommission(rt.ratePlan) : true,
       payAtHotelAmount: payAtHotel ? { amount: net, currency: rc } : null, // what the hotel will charge, in its currency
       name: [rt.room_name || "Room", rt.bed_type].filter(Boolean).join(" · "), board: BOARD[rt.board_type] || rt.board_type || rt.mealsIncluded?.MealPlanDescription || "Room only",
       total, currency: cur || rc, ssp: null, refundable: free.length > 0, cancelBy: free[free.length - 1] || null,
@@ -436,6 +492,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
   const row = (ref) => db.prepare("SELECT * FROM mcp_bookings WHERE ref = ?").get(ref);
   const setRow = (ref, f) => { const k = Object.keys(f); db.prepare(`UPDATE mcp_bookings SET ${k.map(x => `${x} = ?`).join(", ")}, updated_at = CURRENT_TIMESTAMP WHERE ref = ?`).run(...k.map(x => f[x]), ref); };
   const fail = (msg, status) => Object.assign(new Error(msg), { status });
+  const fraud = require("./fraud").init({ db, sendEmail });
 
   // Traveller from the checkout form → the passenger record Travellez expects (id comes from the live offer)
   function toPassenger(p, id, contact) {
@@ -470,10 +527,12 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     // Charge in the currency the customer searched in (converted from the supplier's)
     const cur = String(o.c || netCur).toUpperCase(), rate = await fxRate(netCur, cur);
     if (!(rate > 0)) throw fail("We couldn't confirm this fare. Please search again.", 410);
-    const price = sell(net * rate), ref = "FL-" + crypto.randomBytes(5).toString("hex").toUpperCase();
+    // Market-priced fares carry their (signed) margin; anything else gets the flat markup
+    const price = market.sellAt(net * rate, market.signedMargin(o) ?? markup()), ref = "FL-" + crypto.randomBytes(5).toString("hex").toUpperCase();
+    const chk = await fraud.preCheck({ req, amount: price, currency: cur, email: contact.email, userId: uid(req) });
     const pi = await stripe().paymentIntents.create({
       amount: ZERO_DEC.has(cur) ? Math.round(price) : Math.round(price * 100), currency: cur.toLowerCase(), capture_method: "manual",
-      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      automatic_payment_methods: { enabled: true, allow_redirects: "never" }, ...fraud.holdOptions(chk.threeDs),
       description: `PlanurStay flight ${ref}`, receipt_email: contact.email, metadata: { type: "flight", ref, supplier: o.p },
     }, { idempotencyKey: `fl-${ref}` });
     const passengers = pax.map((p, i) => toPassenger(p, ids[i], contact));
@@ -481,10 +540,20 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, passengers_json, contact_json, supplier, user_id, email, title, start_date, end_date) VALUES (?, 'flight', 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .run(ref, pi.id, price, cur, net, JSON.stringify({ offer_id: o.i, offer_request_id: o.r, provider: off.provider || o.p, flight_type: o.t || "roundtrip", total_amount: String(off.total_amount), expires_at: off.expires_at, net_currency: netCur }), JSON.stringify(passengers), JSON.stringify(contact), o.p,
         uid(req), contact.email, String(sum.title || "Flight").slice(0, 120), day(sum.start), day(sum.end));
+    fraud.tag("mcp_bookings", ref, req, contact.email);
     return { prebookId: ref, transactionId: pi.id, secretKey: pi.client_secret, price, currency: cur, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY"), expiresAt: off.expires_at || null };
   }
 
   const locks = new Set();
+  // Card risk check after authorization: a risky card is released and nothing is booked (fraud.js)
+  async function heldBack(s, pi, ref, kind) {
+    const rv = await fraud.review(s, pi, { ref, kind, table: "mcp_bookings" });
+    if (rv.ok) return false;
+    await s.paymentIntents.cancel(pi.id).catch(e => console.warn("PI cancel:", e.message));
+    setRow(ref, { status: "failed", error: "Payment review: " + rv.reason });
+    return true;
+  }
+  const reviewed = (r) => String(r?.error || "").startsWith("Payment review:");
   async function book(refIn) {
     const ref = String(refIn || ""), r0 = row(ref);
     if (!r0) throw fail("Booking not found", 404);
@@ -496,6 +565,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
       const pi = await s.paymentIntents.retrieve(r0.payment_intent);
       if (pi.metadata?.ref !== ref) throw fail("Payment doesn't match this booking", 400);
       if (pi.status !== "requires_capture") throw fail("Your card hasn't been authorized yet", 402);
+      if (await heldBack(s, pi, ref, "Flight")) return summary(row(ref));
       const offer = JSON.parse(r0.offer_json), passengers = JSON.parse(r0.passengers_json);
       setRow(ref, { status: "booking" });
       const res = await mcp("/api/v2/flights/order", { method: "POST", timeoutMs: 120000, body: { ...offer, passengers, services: [], comment: `PlanurStay ${ref}` } }).catch(e => ({ ok: false, text: e.message }));
@@ -539,7 +609,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     return {
       bookingId: r.ref, status: ok ? "CONFIRMED" : failed ? "FAILED" : "PENDING", bookingRef: r.supplier_ref || null, pnr: r.supplier_ref || null,
       price: r.amount, currency: r.currency, supplier: r.supplier,
-      error: failed ? "The airline couldn't confirm this fare. The hold on your card has been released." : null,
+      error: failed ? (reviewed(r) ? fraud.REVIEW_MSG : "The airline couldn't confirm this fare. The hold on your card has been released.") : null,
     };
   }
 
@@ -574,16 +644,18 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     const show = o.show || o.currency, rate = await fxRate(o.currency, show);
     if (!(rate > 0)) throw fail("This price has expired. Please reload the hotel page to see the latest rooms.", 410);
     if (o.payAtHotel) return holdPayAtHotel(o, net, show, b, req);
-    const price = hotelSell(net * rate), ref = "HT-" + crypto.randomBytes(5).toString("hex").toUpperCase();
+    const price = hotelSell(net * rate, o.margin ?? hotelMarkup()), ref = "HT-" + crypto.randomBytes(5).toString("hex").toUpperCase();
+    const chk = await fraud.preCheck({ req, amount: price, currency: show, email: b.contact?.email || b.email, userId: uid(req) });
     const pi = await stripe().paymentIntents.create({
       amount: ZERO_DEC.has(show) ? Math.round(price) : Math.round(price * 100), currency: show.toLowerCase(), capture_method: "manual",
-      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      automatic_payment_methods: { enabled: true, allow_redirects: "never" }, ...fraud.holdOptions(chk.threeDs),
       description: `PlanurStay hotel ${ref}`, metadata: { type: "hotel", ref, supplier: SUPPLIER[o.provider_type] || o.provider_type },
     }, { idempotencyKey: `ht-${ref}` });
     const hotelName = hotelsSeen.get(o.hotelId)?.raw?.name || String(b.summary?.title || "Hotel stay");
     db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, supplier, user_id, title, start_date, end_date) VALUES (?, 'hotel', 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .run(ref, pi.id, price, show, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, account: o.account, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName, net_currency: o.currency }), SUPPLIER[o.provider_type] || o.provider_type,
         uid(req), hotelName.slice(0, 120), day(o.stay.checkin), day(o.stay.checkout));
+    fraud.tag("mcp_bookings", ref, req, b.contact?.email || b.email);
     return { prebookId: ref, transactionId: pi.id, secretKey: pi.client_secret, price, currency: show, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY") };
   }
 
@@ -593,16 +665,19 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
   async function holdPayAtHotel(o, net, show, b, req) {
     const ref = "HT-" + crypto.randomBytes(5).toString("hex").toUpperCase();
     const approx = o.approx ?? net;
+    const chk = await fraud.preCheck({ req, amount: 0, currency: show, email: b.contact?.email || b.email, userId: uid(req) });
+    const big = chk.threeDs || await fraud.needs3ds(approx, show);
     const s = stripe();
     const customer = await s.customers.create({ description: `PlanurStay pay-at-hotel ${ref}`, metadata: { ref, type: "hotel_guarantee" } }, { idempotencyKey: `htc-${ref}` });
     const si = await s.setupIntents.create({
-      customer: customer.id, usage: "off_session", automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      customer: customer.id, usage: "off_session", automatic_payment_methods: { enabled: true, allow_redirects: "never" }, ...fraud.holdOptions(big),
       description: `PlanurStay ${ref}: card guarantee for a pay-at-hotel booking (no-show / late cancellation only)`, metadata: { type: "hotel_guarantee", ref },
     }, { idempotencyKey: `hts-${ref}` });
     const hotelName = hotelsSeen.get(o.hotelId)?.raw?.name || String(b.summary?.title || "Hotel stay");
     db.prepare("INSERT INTO mcp_bookings (ref, kind, status, payment_intent, amount, currency, net, offer_json, supplier, user_id, title, start_date, end_date) VALUES (?, 'hotel', 'awaiting_payment', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)")
       .run(ref, si.id, show, net, JSON.stringify({ rate_id: o.rate_id, provider_type: o.provider_type, account: o.account, stay: o.stay, hotelId: o.hotelId, room: o.room, hotelName, net_currency: o.currency,
         payAtHotel: true, approx, customer: customer.id }), SUPPLIER[o.provider_type] || o.provider_type, uid(req), hotelName.slice(0, 120), day(o.stay.checkin), day(o.stay.checkout));
+    fraud.tag("mcp_bookings", ref, req, b.contact?.email || b.email);
     return { prebookId: ref, transactionId: si.id, secretKey: si.client_secret, price: 0, payAtHotel: true, payAtHotelAmount: { amount: net, currency: o.currency }, approx,
       currency: show, processor: "stripe", publishableKey: env("STRIPE_PUBLISHABLE_KEY") };
   }
@@ -626,6 +701,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
       const pi = guarantee ? await s.setupIntents.retrieve(r0.payment_intent) : await s.paymentIntents.retrieve(r0.payment_intent);
       if (pi.metadata?.ref !== ref) throw fail("Payment doesn't match this booking", 400);
       if (pi.status !== (guarantee ? "succeeded" : "requires_capture")) throw fail(guarantee ? "Your card hasn't been saved yet" : "Your card hasn't been authorized yet", 402);
+      if (!guarantee && await heldBack(s, pi, ref, "Hotel")) return hotelSummary(row(ref));
       setRow(ref, { status: "booking", contact_json: JSON.stringify(t), email: t.email });
       const res = await mcp("/api/v2/hotels/book", { method: "POST", timeoutMs: 120000, account: o.account, body: {
         rate_id: o.rate_id, provider_type: o.provider_type, amount: r0.net.toFixed(2), currency: o.net_currency || r0.currency,
@@ -661,7 +737,7 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
     return { bookingId: r.ref, status: r.status === "confirmed" ? "CONFIRMED" : failed ? "FAILED" : "PENDING", hotelConfirmationCode: r.supplier_ref || null,
       price: r.amount, currency: r.currency, supplier: r.supplier,
       ...(o.payAtHotel ? { payAtHotel: true, payAtHotelAmount: { amount: r.net, currency: o.net_currency }, approx: o.approx } : {}),
-      error: failed ? (o.payAtHotel ? "The hotel couldn't confirm this room. Nothing was charged and your card wasn't kept." : "The hotel couldn't confirm this room. The hold on your card has been released.") : null };
+      error: failed ? reviewed(r) ? fraud.REVIEW_MSG : (o.payAtHotel ? "The hotel couldn't confirm this room. Nothing was charged and your card wasn't kept." : "The hotel couldn't confirm this room. The hold on your card has been released.") : null };
   }
 
   async function notifyHotel(ref) {
@@ -712,4 +788,4 @@ function createMcp({ db, sendEmail, jwt, JWT_SECRET }) {
   return { register };
 }
 
-module.exports = { fxRates, usePhotoSource, fillPhotos, mcpCall: mcp, mcpConnected: connected, createMcp, searchFlights, mergeJourneys, toJourney, signature, searchHotels, mergeHotels, hotelRooms, _state: { flightsOn, bookingOn, hotelsOn, hotelsVisible } };
+module.exports = { earnScore, sabreCommission, fxRates, usePhotoSource, fillPhotos, mcpCall: mcp, mcpConnected: connected, createMcp, searchFlights, mergeJourneys, toJourney, signature, searchHotels, mergeHotels, hotelRooms, _state: { flightsOn, bookingOn, hotelsOn, hotelsVisible } };

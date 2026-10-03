@@ -55,6 +55,7 @@
     const iso = (d) => d.toISOString().slice(0, 10);
     root.innerHTML = `
       <div id="suppliers"></div>
+      <div id="smart"></div>
       <div class="ad-bar">
         <div class="field"><label>From</label><input type="date" id="from" value="${iso(new Date(Date.now() - 30 * 864e5))}"></div>
         <div class="field"><label>To</label><input type="date" id="to" value="${iso(new Date())}"></div>
@@ -195,6 +196,74 @@
       document.getElementById("supMsg").innerHTML = `<span class="good">${esc(label)} is now ${on ? "on" : "off"}.</span>`;
     });
     loadSuppliers();
+
+    // ─── Smart pricing & safety: market pricing, card safety, ready searches ───
+    const num = (id, v, step = 0.5, w = 96) => `<input id="${id}" type="number" min="0" step="${step}" value="${esc(v)}" style="width:${w}px">`;
+    const fld = (label, input, hint) => `<div class="field"><label${hint ? ` title="${esc(hint)}"` : ""}>${label}</label>${input}</div>`;
+    async function loadSmart(data) {
+      const box = document.getElementById("smart");
+      const d = data || await fetch("/api/admin/smart").then(r => r.json()).catch(() => null);
+      if (!d?.market) { box.innerHTML = ""; return; }
+      const m = d.market.settings, ms = d.market.stats, f = d.fraud.settings, w = d.prewarm;
+      const statLine = (k, label) => ms[k].repriced ? `${label}: ${ms[k].repriced} priced to market since restart, average margin <b>${ms[k].avgMargin}%</b> (${ms[k].raised} above the flat markup, ${ms[k].lowered} below to win the sale).` : `${label}: none priced to market since restart.`;
+      box.innerHTML = `
+      <div class="ad-card" style="margin-bottom:18px"><h3>Market pricing (Travellez hotels &amp; flights)</h3>
+        <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">When LiteAPI sells the same hotel or flight, we price just under its guest price instead of a flat markup: more margin where our cost is low, a smaller one where that wins the sale. Never below the minimum or above the maximum; with nothing to compare, the flat markup applies.</p>
+        <form id="mpForm" class="ad-bar" style="margin:0;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="mpOn" ${m.on ? "checked" : ""} style="width:18px;height:18px"> On</label>
+          ${fld("Hotels min %", num("mpHMin", m.hotelMin))}${fld("Hotels max %", num("mpHMax", m.hotelMax))}${fld("Hotels under market %", num("mpHU", m.hotelUndercut, 0.25), "How far below LiteAPI's guest price we sell")}
+          ${fld("Flights min %", num("mpFMin", m.flightMin))}${fld("Flights max %", num("mpFMax", m.flightMax))}${fld("Flights under market %", num("mpFU", m.flightUndercut, 0.25))}
+          <button class="btn btn-primary" type="submit">Save</button>
+        </form>
+        <p style="font-size:13px;color:var(--text-2);margin-top:10px">${statLine("hotel", "Hotels")}<br>${statLine("flight", "Flights")}</p>
+        <div id="mpMsg" style="font-size:13px"></div></div>
+      <div class="ad-card" style="margin-bottom:18px"><h3>Card safety</h3>
+        <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">For bookings PlanurStay pays for (Travellez flights, hotels, cars). Above the 3D Secure amount the customer confirms with their bank. After the card is approved, Stripe Radar's verdict is checked before we book: highest risk is never booked; elevated risk only with 3D Secure. Held-back bookings release the card and email support. All amounts in USD; 0 turns a limit off.</p>
+        <form id="fsForm" class="ad-bar" style="margin:0;flex-wrap:wrap">
+          ${fld("3D Secure above $", num("fs3ds", f.threeDsAboveUsd, 10, 110))}
+          ${fld("Elevated risk: block above $", num("fsEl", f.elevatedAboveUsd, 10, 110), "0 = block every elevated-risk payment without 3D Secure")}
+          ${fld("Per customer / day $", num("fsCust", f.customerDailyUsd, 50, 110))}
+          ${fld("Per customer / day bookings", num("fsCnt", f.customerDailyBookings, 1, 90))}
+          ${fld("Whole site / day $", num("fsTot", f.dailyTotalUsd, 100, 120))}
+          <button class="btn btn-primary" type="submit">Save</button>
+        </form>
+        <p style="font-size:13px;color:var(--text-2);margin-top:10px">Held back for card risk in the last 30 days: <b>${d.fraud.heldBack30d}</b>.</p>
+        <div id="fsMsg" style="font-size:13px"></div></div>
+      ${w ? `<div class="ad-card" style="margin-bottom:18px"><h3>Ready searches</h3>
+        <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Travellez hotel search takes 30–40 seconds. Every ${w.everyMin} minutes (6:00–1:00 Toronto time) we run the most likely searches in the background (top destinations at the search form's default dates, plus searches people repeat) so customers get Travellez hotels instantly. Hotel pages and checkout always re-check the live price.</p>
+        <div class="ad-bar" style="margin:0">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="pwOn" ${w.on ? "checked" : ""} style="width:18px;height:18px"> On</label>
+          <button class="btn" id="pwRun" type="button" ${w.running ? "disabled" : ""}>${w.running ? "Running…" : "Run now"}</button>
+          <span style="font-size:13px;align-self:center">${w.active ? "" : w.on ? `<span class="bad">Waiting: Travellez hotels aren't switched on.</span> ` : ""}Served instantly today: <b>${w.servedToday}</b></span>
+        </div>
+        <table class="ad-t" style="margin-top:12px"><tr><th>Ready now</th><th>Dates</th><th class="n">Hotels</th><th class="n">Took</th></tr>
+          ${w.ready.length ? w.ready.map(r => `<tr><td>${esc(r.dest)} <small>${esc(r.currency)}</small></td><td>${esc(r.checkin)} → ${esc(r.checkout)}</td><td class="n">${r.hotels}</td><td class="n">${Math.round(r.ms / 1000)}s</td></tr>`).join("")
+            : `<tr><td colspan="4" style="color:var(--text-2)">Nothing yet. ${w.next.length ? `Next: ${w.next.map(n => esc(n.dest)).join(", ")}.` : "Destinations appear once customers search."}</td></tr>`}</table>
+        <div id="pwMsg" style="font-size:13px"></div></div>` : ""}`;
+    }
+    const postSmart = async (url, body, msgId, ok) => {
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json()).catch(() => ({ error: "Network error" }));
+      if (r.success) { await loadSmart(r); document.getElementById(msgId).innerHTML = `<span class="good">${ok}</span>`; }
+      else document.getElementById(msgId).innerHTML = `<span class="bad">${esc(r.error)}</span>`;
+    };
+    document.addEventListener("submit", (e) => {
+      const v = (id) => document.getElementById(id).value;
+      if (e.target.id === "mpForm") {
+        e.preventDefault();
+        if (!confirm("Save market pricing? This changes live prices on the next search.")) return;
+        postSmart("/api/admin/market", { on: document.getElementById("mpOn").checked, hotelMin: v("mpHMin"), hotelMax: v("mpHMax"), hotelUndercut: v("mpHU"), flightMin: v("mpFMin"), flightMax: v("mpFMax"), flightUndercut: v("mpFU") }, "mpMsg", "Saved.");
+      } else if (e.target.id === "fsForm") {
+        e.preventDefault();
+        postSmart("/api/admin/fraud", { threeDsAboveUsd: v("fs3ds"), elevatedAboveUsd: v("fsEl"), customerDailyUsd: v("fsCust"), customerDailyBookings: v("fsCnt"), dailyTotalUsd: v("fsTot") }, "fsMsg", "Saved.");
+      }
+    });
+    document.addEventListener("change", (e) => {
+      if (e.target.id === "pwOn") postSmart("/api/admin/prewarm", { on: e.target.checked }, "pwMsg", e.target.checked ? "Ready searches on." : "Ready searches off.");
+    });
+    document.addEventListener("click", (e) => {
+      if (e.target.id === "pwRun") postSmart("/api/admin/prewarm", { runNow: true }, "pwMsg", "Started. Each search takes 30–40 seconds; reload in a few minutes.");
+    });
+    loadSmart();
     document.getElementById("go").onclick = load;
     document.addEventListener("submit", async (e) => {
       if (e.target.id !== "mkForm") return;

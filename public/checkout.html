@@ -554,7 +554,7 @@
         if (extras.esim) addons.push({ addon: "esimply", value: extras.esim.price, currency: extras.esim.currency, adults,
           addonDetails: { package_id: extras.esim.packageId, destination_code: extras.esim.destinationCode, start_date: sel.stay.checkin, end_date: sel.stay.checkout } });
         pb = String(sel.offer.offerId || "").startsWith("tzh:")
-          ? (await PS.api("/api/mcp/hotels/hold", { method: "POST", body: { offerId: sel.offer.offerId } })).data // RateHawk / Duffel Stays via the MCP
+          ? (await PS.api("/api/mcp/hotels/hold", { method: "POST", body: { offerId: sel.offer.offerId, email: val("email") } })).data // RateHawk / Duffel Stays via the MCP
           : (await PS.api("/api/hotels/prebook", { method: "POST", body: { offerId: sel.offer.offerId, voucherCode, usePaymentSdk: true, ...(addons.length ? { addons } : {}) } })).data;
       } else {
         const phone = phoneFull();

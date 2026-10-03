@@ -76,7 +76,7 @@
         </div>
         <div class="flex-dates hidden" id="flexDates"></div>
         <div class="sort-tabs" id="sortTabs">
-          <button class="sort-tab active" data-sort="rec"><b>Recommended</b><small id="sRec">—</small></button>
+          <button class="sort-tab active" data-sort="rec" title="Ranked by guest rating, stars, price, free cancellation and the commission we earn"><b>Recommended</b><small id="sRec">—</small></button>
           <button class="sort-tab" data-sort="price"><b>Lowest price</b><small id="sPrice">—</small></button>
           <button class="sort-tab" data-sort="rating"><b>Top rated</b><small id="sRating">—</small></button>
           <button class="sort-tab hidden" data-sort="dist" id="distTab"><b>Distance</b><small id="sDist">—</small></button>
@@ -170,7 +170,8 @@
       h.meals = h.meals || [];
       h.breakfast = /breakfast|half board|full board|all inclusive/i.test(h.board || "");
       if (h.refundAny == null) h.refundAny = h.refundable;
-      h.rec = (h.rating || 6) * 10 + (h.stars || 0) * 2 + Math.min(h.deal, 25) + Math.log10((h.reviews || 0) + 1) * 3 + (h.refundable ? 4 : 0);
+      // earn (0-5): small boost for hotels that pay us more; disclosed on the Recommended tab
+      h.rec = (h.rating || 6) * 10 + (h.stars || 0) * 2 + Math.min(h.deal, 25) + Math.log10((h.reviews || 0) + 1) * 3 + (h.refundable ? 4 : 0) + (h.earn || 0);
     };
     all.forEach(enrich);
     const priceEl = document.getElementById("fPrice");
